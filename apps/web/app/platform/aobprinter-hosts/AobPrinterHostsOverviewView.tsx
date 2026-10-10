@@ -30,34 +30,12 @@ import {
   type AobPrinterHostState,
 } from '../../practice/aobprinter-host/hostStates';
 import styles from '../../practice/manage.module.css';
+import type { AobPrinterHostOverviewRow } from '@aobplatform/contracts';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
 const REFRESH_MS = 30_000;
 
 const s = strings.aobprinterHost.overview;
-
-/**
- * ONE ROW OF `GET /platform/aobprinter-hosts`, as this page reads it. Not yet
- * in `@aobplatform/contracts`: the core endpoint is being built alongside, and
- * this is the shape the page asks of it — the practice (to link its twin),
- * status and counts, a version and a time. Liveness and status are strings so
- * a value this build has not met renders as its code.
- */
-export interface AobPrinterHostOverviewRow {
-  readonly practiceId: string;
-  readonly practiceName: string | null;
-  readonly liveness: string;
-  readonly chainStatus: string;
-  readonly regressionKind: string | null;
-  readonly localCheckOk: boolean;
-  readonly secondHostReporting: boolean;
-  readonly lastSeenAt: string | null;
-  readonly printerVersion: string | null;
-  readonly openExceptions: number;
-  readonly filedUnconfirmed: number;
-  readonly staleQueued: number;
-  readonly clockSkewMs: number | null;
-}
 
 const STATE_TONE: Record<AobPrinterHostState, Tone> = {
   regressed: 'stop',

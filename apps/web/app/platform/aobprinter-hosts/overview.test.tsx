@@ -9,7 +9,8 @@
  */
 import { describe, expect, it, vi, afterEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { AobPrinterHostsOverviewView, type AobPrinterHostOverviewRow } from './AobPrinterHostsOverviewView';
+import { AobPrinterHostsOverviewView } from './AobPrinterHostsOverviewView';
+import type { AobPrinterHostOverviewRow } from '@aobplatform/contracts';
 import { strings } from '../../strings';
 
 vi.mock('next/navigation', () => ({

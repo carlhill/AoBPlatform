@@ -278,3 +278,31 @@ export interface AobPrinterHostsView {
   readonly hosts: readonly AobPrinterHostRow[];
   readonly secondHostReporting: boolean;
 }
+
+/**
+ * ONE ROW OF `GET /platform/aobprinter-hosts` — one host, as the platform's
+ * overview lists it, worst first (§4, decision 10). Counts, versions, times
+ * and status, plus the practice so the row can open that practice's twin.
+ * Never an agreement id, a print hash or a patient. Liveness and status are
+ * strings so a value a console build has not met renders as its code.
+ */
+export interface AobPrinterHostOverviewRow {
+  readonly practiceId: string;
+  readonly practiceName: string | null;
+  readonly liveness: string;
+  readonly chainStatus: string;
+  readonly regressionKind: string | null;
+  readonly localCheckOk: boolean;
+  readonly secondHostReporting: boolean;
+  readonly lastSeenAt: string | null;
+  readonly printerVersion: string | null;
+  readonly openExceptions: number;
+  readonly filedUnconfirmed: number;
+  readonly staleQueued: number;
+  readonly clockSkewMs: number | null;
+}
+
+/** `GET /platform/aobprinter-hosts`. */
+export interface AobPrinterHostsOverview {
+  readonly hosts: readonly AobPrinterHostOverviewRow[];
+}
