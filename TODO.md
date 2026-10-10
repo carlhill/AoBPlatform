@@ -209,16 +209,15 @@ gateways only; production off until Carl says live).
 **Options 2 and 3 are being built (Carl, 10 Oct 2026, D-2026-10-10-09):**
 *"do option 2 first, N is 7 days - make N a configurable setting"*. Strike
 each one through when it lands.
-- **Paused at the measurement step, waiting on Carl.** Linking an unsigned
-  `episodic_pre` into `service_records.agreementId` would stop auto-capture
-  drafting the post-agreement for that visit. Reconciliation would then offer
-  to resend a pre-agreement for a service already rendered. Choices (a), (b)
-  and (c) are in D-2026-10-10-09, with the duplicate-draft analysis. Branch
-  `feat/unsigned-drafts-link-and-close`.
+- ~~**Paused at the measurement step, waiting on Carl.**~~ Carl chose option
+  (b), associate not link. **Built 11 Oct 2026** on branch
+  `feat/unsigned-drafts-link-and-close`; the build's own choices are listed
+  under D-2026-10-10-09 for Carl to confirm.
 
 **Originally deferred, decided by Carl to be on this list:**
 
-2. **Link the unsigned draft to the service.** When an invoice arrives for the
+2. ~~**Link the unsigned draft to the service.**~~ Built as an ASSOCIATION, not
+   a link (option (b), D-2026-10-10-09). When an invoice arrives for the
    same patient, provider and day, pms-sync should link the unsigned draft to the
    service record, so the draft reaches Reconciliation instead of being orphaned.
    Today `pms-sync.service.ts` links only an agreement with `status: 'stored'`.
@@ -227,7 +226,9 @@ each one through when it lands.
      How often that happens has not been measured, and the two drafts must not
      both end up linked.
    - *Depends on:* that measurement, and a rule for which draft wins.
-3. **Close drafts with no service after N days.** Close them as "not needed: no
+3. ~~**Close drafts with no service after N days.**~~ Built: N = 7 in
+   `content/unsigned-draft-closure.json`, settable per practice on
+   `/practice/channels` (D-2026-10-10-09). Close them as "not needed: no
    service recorded", with a vault event.
    - N belongs in the versioned rule set (hard rule 14); it is never hardcoded.
    - *Why deferred:* closing an agreement is a state change with evidence

@@ -3070,3 +3070,30 @@ reconcile between the PMS, AOBPrinter and AOBPlatform"*. So:
 **What would reopen it:** the PMS / AOBPRINTER / AoBPlatform reconciliation on
 the TODO; anything that lets a pre-agreement signed after the service cover
 it.
+
+**Built (11 Oct 2026, branch `feat/unsigned-drafts-link-and-close`).** The
+choices the build made, each for Carl to confirm or overturn:
+- **Association storage: a table, `pre_agreement_associations`**, not a column
+  on `agreements`. It carries its own facts (`automatic` or `chosen`, who
+  chose, how many drafts matched), it keeps them off the row the HARD-01/02
+  triggers guard, and two UNIQUE indexes make it one draft per service and one
+  service per draft. Vault event: `agreement.service_associated`.
+- **Every path that creates a service record associates**: the invoice sync
+  and the DB4 print record (both through `upsertServiceRecord`), and the
+  service-rendered push. `service_records.agreementId` is never touched.
+- **A service is listed for a person to choose when ANY unassociated draft
+  matches it**, not only when two did at arrival: a draft that appears after
+  the service is a choice too, because the platform never associates
+  automatically after the moment of arrival.
+- **Option 3 is more conservative than "neither linked nor associated".** A
+  draft is also left open when any service record matches its visit (same
+  patient, provider and day) though nothing is associated with it, because
+  "no service recorded" would then be untrue (wow.md §13). Also never closed:
+  a superseded draft (its story is "replaced"), a draft with a live remote
+  capture link, and one on legal hold.
+- **Closable types are content** (`unsigned-draft-closure.json`:
+  `episodic_pre`, `episodic_post`, `enduring`). `treatment_plan` is left out:
+  it spans six months, so "no service on its day" does not mean "not needed".
+- **Open in-practice capture requests on a closed agreement are left as they
+  are** (they belong to the capture module). The tablet list already drops an
+  expired agreement; whether to cancel them is a follow-up.
