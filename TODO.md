@@ -14,6 +14,99 @@ being decided.
 
 ---
 
+## The kiosk for patients with a physical impairment (Carl, 10 Oct 2026)
+
+**Carl asked for** the kiosk to work for physically impaired patients, with
+Claude's recommendation and plan, because the rules were unclear to him. This
+entry is that plan. Nothing in it is built yet.
+
+**The rules we already hold:**
+- **REQ-NFR-05: WCAG 2.2 AA on every patient surface.** The requirement adds
+  that the AoB regime is criticised for disadvantaging disabled patients, so a
+  product that handles them well has a real advantage.
+- **REQ-VUL-08:** read-aloud, large text and high contrast.
+- **REQ-VUL-01/-02:** someone else may sign as assignor, on a self-declared
+  authority basis (reg 65CB(5)).
+- **REQ-VUL-05:** the system never asks staff to assess capacity.
+- **The old "patient unable to sign" annotation was abolished by the 2025
+  regulations** (`aob-addendum-v2.md` §2.1). There is no annotation route to
+  fall back on.
+- **General law, as background only:** the Disability Discrimination Act 1992
+  (Cth) applies to the practice's services. Legal advice should confirm what it
+  requires of the practice and of us. Do not cite it in the product.
+
+**The WCAG 2.2 criteria that matter most for motor impairment** (AA unless
+marked), each to be checked on every kiosk screen:
+- **2.5.8 Target Size (Minimum):** at least 24 CSS px. We should aim for 44 px
+  or more on the tablet. Tremor and limited dexterity are the common case, not
+  the edge case.
+- **2.5.7 Dragging Movements** and **2.5.1 Pointer Gestures (A).** A drawn
+  signature is a path gesture and may count as "essential". Even so, a
+  single-tap alternative must be one obvious step away. Tap-to-approve already
+  exists on the tablet (`SignatureEvent.method = tap_to_approve`; kiosk README
+  K-4); see question 1.
+- **2.5.2 Pointer Cancellation (A):** controls act on release, not on touch, so
+  a tremor that lands on Sign and slides off does not sign.
+- **2.2.1 Timing Adjustable (A):** the idle reset ("return to the start when
+  nobody is there") must warn first and offer "I need more time" with one large
+  tap. A slow signer must never be reset mid-ceremony.
+- **2.1.1 Keyboard (A)** and switch access: the whole ceremony must work with
+  Android Switch Access or a paired switch or keyboard. No pad-only dead ends.
+- **2.4.11 Focus Not Obscured (Minimum):** a pinned action bar, like the one
+  added by `fix/kiosk-tablet-fit`, must never cover the focused control.
+- **1.3.4 Orientation:** never lock the orientation. A tablet in a wheelchair
+  user's lap may be portrait.
+- **3.3.7 Redundant Entry (A):** never make a patient re-enter what they have
+  already given.
+- **No scrolling to reach a control.** Strictly this is a usability point, not
+  a criterion, but scrolling is a motor burden. This is what
+  `fix/kiosk-tablet-fit` fixes for steps 2 and 3.
+
+**Recommendation and plan:**
+1. **Audit.** Two passes:
+   - automated: axe, plus the kiosk Playwright fit test, extended to target
+     sizes and to release-not-press activation;
+   - manual, on the real Galaxy Tab S10 with Android Switch Access and
+     TalkBack switched on.
+
+   Output: one finding per criterion per screen, written into this entry.
+2. **Fix the motor basics first.** Target sizes, pointer cancellation, the
+   "need more time" prompt before the idle reset, and tap-to-approve offered as
+   a visible equal beside the signature pad rather than hidden.
+3. **Assisted paths, written down.** Who may help, and how:
+   - another person signing as assignor for the patient (the existing
+     REQ-VUL-01/-02 path; 18 or over; never a staff member, hard rule 10);
+   - the tablet handed to the patient, or brought to them, in a stand at a
+     reachable height.
+
+   These go into the practice onboarding guide.
+4. **Practice setup guidance.** Covers how the tablet is mounted or held, the
+   stand and its angle, wheelchair reach, and the case for a stylus with a
+   thick grip. Hardware advice, not product code.
+5. **Test with real users before GA.** At least one session with people who
+   have motor impairments, arranged through a disability organisation. The
+   automated checks prove conformance, not usability.
+
+**Questions to settle before building (do not assume the answers):**
+1. **Regulatory.** May a patient who can consent but cannot physically draw
+   approve on the IN-PRACTICE tablet with tap-to-approve? REQ-SIG-01 names
+   tap-to-approve for the remote link and a drawn signature for the tablet, yet
+   the tablet already offers both. Confirm against the 2025 regulations and the
+   ETA reasoning in `aob-faq-reconciliation.md`.
+2. **Staff help.** May a staff member operate the device at the patient's spoken
+   direction, for example turning pages or holding it, while the patient gives
+   the approval? Staff can never be the assignor (REQ-VUL-04, hard rule 10).
+   Where helping ends and signing begins needs a decided line.
+3. **Read-aloud (REQ-VUL-08)** is still outstanding (kiosk README). It mainly
+   serves vision and literacy, but it also helps patients who cannot hold the
+   tablet steady enough to read it.
+
+**Why deferred rather than done:** questions 1 and 2 are regulatory and need an
+answer before the UI changes, and the audit has to come first so the fixes are
+targeted. The scrolling fix (`fix/kiosk-tablet-fit`) is already under way.
+
+---
+
 ## Translate the DB4 into Australia's main community languages, and Pacific languages (Carl, 10 Oct 2026)
 
 **What Carl asked for:** the DB4 in the main languages spoken in Australia,
