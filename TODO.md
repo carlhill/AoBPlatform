@@ -14,6 +14,35 @@ being decided.
 
 ---
 
+## The rest of core still measures "today" on UTC or the server's clock (10 Oct 2026) - D-2026-10-10-03
+
+D-2026-10-10-03 moved every day boundary in `tablet-sessions.service.ts` onto
+`practices.timezone` (`practiceDayOf` / `startOfPracticeDay`). **Deferred, not
+done, because the brief was the desk only and each of these is a behaviour
+change for another screen.** The same two shapes remain in `apps/core/src`:
+
+- `agreements/agreements.service.ts` ~2212: `lockParticulars` defaults D2 to
+  `new Date().toISOString().slice(0, 10)` when the caller passes none. A
+  statutory particular on the UTC date (D-2026-09-12-17 item 2).
+- `agreements/agreements.service.ts` ~1872: a superseding draft's D5 falls back
+  to the UTC date.
+- `service-descriptions/service-descriptions.service.ts` ~343: D2 on the UTC date.
+- `auto-capture/auto-capture.service.ts` ~260: the default day is the UTC date.
+- `arrivals/arrivals.service.ts` ~1409: the front desk's day starts at the
+  server's `setHours(0, 0, 0, 0)`.
+- `practitioner-queue/practitioner-queue.service.ts` ~686: the waiting list's
+  day starts at the server's `setHours(0, 0, 0, 0)`.
+- `arrivals/arrivals.service.ts` ~623 and ~1512: `practiceDayWindow` is right
+  wherever it runs but uses the one `PRACTICE_TIMEZONE` constant, not the
+  practice's own zone.
+- `retention/retention-sweep.service.ts` ~59: `today` is the UTC date. Probably
+  harmless for retention arithmetic; check before changing.
+- D-2026-09-12-17's LOCATION zone is not built; when it is, it should win over
+  the practice zone for a desk at that location.
+
+**Depends on:** nothing; each is the same substitution, with an e2e that pins
+the clock the way `practice-day-boundary.e2e-spec.ts` does.
+
 ## Agreements left unsigned past their day (10 Oct 2026) - D-2026-10-10-01
 
 **Being built now:** option 1, the tablet's "Unsigned from earlier days: N"

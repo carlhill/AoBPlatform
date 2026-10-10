@@ -2836,3 +2836,56 @@ Both change how agreements behave.
 **What would reopen it:** Carl declaring the chase live (this then becomes a
 production configuration change, with a registered sender); or option 2 or 3
 being built, which removes most of the orphans the tablet notice now lists.
+
+---
+
+## D-2026-10-10-03 - A practice's day is its own local day, in its own IANA timezone
+
+**Date:** 10 October 2026. **Decided by:** Carl: *"per-practice timezone, do
+it now on its own branch"*, after Claude found that the desk worked out
+"today" two different ways and both were wrong in Sydney every morning.
+
+**What was true before.** `tablet-sessions.service.ts` had two clocks.
+`today()` was the UTC date (`toISOString().slice(0, 10)`), compared with an
+appointment's calendar date; `startOfDay` was the server's local midnight
+(`setHours(0, 0, 0, 0)`). Under daylight saving Sydney is UTC+11, so the UTC
+date is still yesterday until 11am local time: every morning, today's
+appointment-linked agreements were missing from the desk and yesterday's still
+showed as today's. Production runs on UTC, so production had it as well as
+development.
+
+**The decision.**
+
+- **A practice's "day" is its own local day.**
+- **Each practice has an IANA timezone**, `practices.timezone`, defaulting to
+  `Australia/Sydney`. It is the zone NAME, never an offset (D-2026-09-12-17).
+- **Why per practice and not one constant.** Sydney, Brisbane, Adelaide,
+  Darwin, Perth and Hobart differ, and only some of them observe daylight
+  saving. A Perth practice's midnight is three hours after Sydney's in summer
+  and two in winter; a Brisbane practice's is an hour after Sydney's for half
+  the year and the same for the other half.
+- **Every desk day boundary uses that timezone:** the tablet's waiting list
+  (`readPushableRows`), "Unsigned from earlier days" (`unsignedEarlierDays`),
+  the post-service "covered today" read, the per-visit idempotency check, and
+  the agreement and service dates the desk writes when it locks particulars.
+- **The list of zones is versioned content**
+  (`packages/domain/content/practice-timezones.json`); a practice admin chooses
+  one on `/practice/channels`, and a change writes `practice.timezone_set`
+  through the outbox.
+
+**How it relates to D-2026-09-12-17.** That decision put a zone on every
+location AND on the practice, with the location's winning for anything that
+happened at a location. This builds the practice half only. The location half
+is not built; when it is, the location's zone should take precedence over this
+one for a desk at that location.
+
+**Enforced by:** `practiceDayOf` and `startOfPracticeDay`
+(`packages/domain/src/practice-day.ts`, tests across both daylight-saving
+changes); the `practices_timezone_check` CHECK and `@IsIn` on the DTO, both
+from the content list; `apps/core/test/practice-day-boundary.e2e-spec.ts`
+(`an_appointment_today_shows_on_the_desk_before_11am_sydney_time`,
+`a_perth_practice_uses_perth_midnight` and others).
+
+**What would reopen it:** a practice spanning timezones (which is D-2026-09-12-17's
+location zone, still to build), or a telehealth service rendered for a patient
+in another state.

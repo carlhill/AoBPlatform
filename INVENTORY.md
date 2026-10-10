@@ -21,7 +21,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | Files scanned for exports | 553 |
 | Files scanned for imports | 596 |
 | Exports with no comment of their own | 995 |
-| Exports imported nowhere else | 982 |
+| Exports imported nowhere else | 977 |
 
 ## Sections
 
@@ -968,6 +968,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `personUsername` | domain:account-naming.ts | A PERSON, AT ONE PRACTICE -- `audrey@hillsempire.com.xlevelup`. | **1** · core:identity/account-names.ts |
 | `placeOptionsQuery` | domain:packed-reports.ts |  | **1** · web:practice/reports/ReportsView.tsx |
 | `portalRecordIdLine` | domain:patient-message-templates.ts | The one sentence, ready to append (Carl, 4 Sep 2026). | **1** · core:messaging/portal-record-id.service.ts |
+| `practiceDayOf` | domain:practice-day.ts | `YYYY-MM-DD` FOR AN INSTANT, IN THE ZONE THE PRACTICE CHOSE (D-2026-10-10-03). | **1** · core:tablet-sessions/tablet-sessions.service.ts |
 | `practiceDayWindow` | domain:practice-day.ts | THE WINDOW FOR ONE DAY, OR FOR TODAY WHEN NOBODY NAMED ONE. | **1** · core:arrivals/arrivals.service.ts |
 | `practitionerStrength` | domain:practitioner-strength.ts |  | **1** · core:identity-dashboard/identity-dashboard.service.ts |
 | `projectKioskWaitingRow` | domain:kiosk.ts | Build a row by taking ONLY the permitted fields. | **1** · core:kiosk/kiosk.service.ts |
@@ -991,6 +992,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `sessionExpiresAt` | domain:acting-as.ts | When it will lapse, so a screen can say so rather than surprising somebody. | **1** · core:acting-as/acting-as.service.ts |
 | `shownDetailTypesFor` | domain:tablet-session.ts | WHICH ROWS THE TABLET DREW, DECIDED BY THE SERVER RATHER THAN TAKEN FROM THE DEVICE. | **1** · core:tablet-sessions/tablet-sessions.service.ts |
 | `showsBodies` | domain:correspondence-log.ts | Bodies belong to the practice that sent and the person who received. | **1** · web:correspondence/MessageLog.tsx |
+| `startOfPracticeDay` | domain:practice-day.ts | THE INSTANT OF LOCAL MIDNIGHT AT THE START OF `now`'s DAY, in the zone the practice chose (D-2026-10-10-03). | **1** · core:tablet-sessions/tablet-sessions.service.ts |
 | `summarise` | domain:reporting.ts | Totals per bucket, oldest first. | **1** · core:outbound/outbound.service.ts |
 | `summariseAudit` | domain:audit.ts | A short account of what the trail shows, for the top of the view. | **1** · core:organisations/audit.service.ts |
 | `surfaceOf` | domain:practice-surfaces.ts | Which surface owns a console page, or `always`, or null. | **1** · web:AccessGuard.tsx |
@@ -1106,7 +1108,6 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `patientMessageTemplate` | domain:patient-message-templates.ts |  | 0 |
 | `placeFilters` | domain:packed-reports.ts |  | 0 |
 | `postcodeMatchesState` | domain:address.ts |  | 0 |
-| `practiceDayOf` | domain:practice-day.ts | `YYYY-MM-DD` FOR AN INSTANT, IN THE ZONE THE PRACTICE CHOSE (D-2026-10-10-03). | 0 |
 | `practiceNameForCode` | domain:account-naming.ts | The trading name if there is one, else the practice name. | 0 |
 | `practiceToday` | domain:practice-day.ts | Today's calendar day in the practice's zone — never `toISOString().slice(0, 10)`. | 0 |
 | `preferredAssignorChannel` | domain:assignor.ts | The assignor's preferred channel (C7.2 — per ASSIGNOR, not per patient, because the signer is not always the patient). | 0 |
@@ -1119,7 +1120,6 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `sanitiseFilename` | domain:artefact.ts | Strip a filename down to something safe to store and echo back. | 0 |
 | `showsCost` | domain:correspondence-log.ts | Per-message cost is the practice's own business. | 0 |
 | `sightingFreshness` | domain:practitioner-strength.ts | How much a sighting is worth given its age. | 0 |
-| `startOfPracticeDay` | domain:practice-day.ts | THE INSTANT OF LOCAL MIDNIGHT AT THE START OF `now`'s DAY, in the zone the practice chose (D-2026-10-10-03). | 0 |
 | `startOfWeek` | domain:reporting.ts | The Monday of the week containing `at`, at 00:00 in the reporting timezone. | 0 |
 | `surfaceOfEndpointIn` | domain:practice-surfaces.ts | Which surface owns a core route, or `always`, or null when nobody has said. | 0 |
 | `surfaceOfPageIn` | domain:practice-surfaces.ts | Which surface owns a console page, or `always`, or null when nobody has said. | 0 |
@@ -1153,6 +1153,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `BILLING_ROLE_KEYS` | domain:billing-roles.ts | Just the keys, in order — the shape a `<select>` and a CHECK constraint want. | **2** · core:affiliations/affiliations.controller.ts, core:affiliations/affiliations.service.ts |
 | `CORRECTABLE_PATIENT_FIELDS` | domain:tablet-session.ts | WHAT RECEPTION MAY CORRECT ON THE PLATFORM'S MIRROR, and the list is the whole of it (TODO.md "Check-your-details", Carl 4 Sep 2026). | **2** · core:patients/patients.service.ts, web:practice/tablet/pushDesk.tsx |
 | `DEFAULT_BILLING_ROLE` | domain:billing-roles.ts | The role every affiliation starts on, and the database column's default. | **2** · core:affiliations/agreement-anchor.ts, core:practices/practices.service.ts |
+| `DEFAULT_PRACTICE_TIMEZONE` | domain:practice-timezones.ts | The column default, `Australia/Sydney`. | **2** · core:tablet-sessions/tablet-sessions.service.ts, web:practice/channels/ChannelsView.tsx |
 | `DEVICE_LABEL_MAX_LENGTH` | domain:devices.ts | A label a human chose, for a list a human reads. | **2** · core:devices/devices.controller.ts, core:devices/devices.service.ts |
 | `KIOSK_IDLE_TIMEOUT_DEFAULT_SECONDS` | domain:kiosk.ts | RETURN TO THE START WHEN NOBODY IS THERE (Carl, 4 September 2026). | **2** · web:kiosk/Ceremony.tsx, web:practice/channels/ChannelsView.tsx |
 | `LOCKED_FIELDS` | domain:amendment.ts | Fields that are explicitly refused, with the reason the applicant sees. | **2** · core:organisations/organisations.controller.ts, core:organisations/organisations.service.ts |
@@ -1161,6 +1162,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `MAX_LOGO_BYTES` | domain:practice-logo.ts | 512 KB. | **2** · core:practices/letterhead.controller.ts, web:practice/templates/TemplatesView.tsx |
 | `MAX_PASSKEYS_PER_ADMIN` | domain:practice-users.ts | SIX PASSKEYS ON THE ADMIN ACCOUNT. | **2** · core:practices/practice-users.controller.ts, core:practices/practice-users.service.ts |
 | `MAX_USERS_PER_SCOPE` | domain:practice-users.ts | FIVE PER SCOPE INSTANCE — five for the organisation, five at EACH location, five in EACH department. | **2** · core:practices/practice-users.controller.ts, core:practices/practice-users.service.ts |
+| `PRACTICE_TIMEZONE_KEYS` | domain:practice-timezones.ts | The zones, in file order, which is screen order. | **2** · core:practices/practices.dto.ts, web:practice/channels/ChannelsView.tsx |
 | `REPORT_TIMEZONE` | domain:reporting.ts |  | **2** · core:outbound/outbound.service.ts, domain:practice-day.ts |
 | `SERVICE_DESCRIPTIONS` | domain:service-descriptions.ts | The list, in file order, which is screen order. | **2** · core:arrivals/arrivals.dto.ts, core:service-descriptions/service-descriptions.service.ts |
 | `SURFACE_PROFILE_KEYS` | domain:practice-surfaces.ts | The profile keys a practice's column may hold. | **2** · core:practices/practices.dto.ts, web:practice/channels/ChannelsView.tsx |
@@ -1237,6 +1239,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `PORTAL_INVITATION_TEMPLATE_KEY` | domain:patient-message-templates.ts | The offer of portal activation (FR-1.14). | **1** · core:portal/portal-invitation.dispatcher.ts |
 | `PRACTICE_SURFACES_VERSION` | domain:practice-surfaces.ts | Recorded on the event that changes a practice's profile. | **1** · core:practices/practices.service.ts |
 | `PRACTICE_SURFACE_KEYS` | domain:practice-surfaces.ts | Just the keys, in file order — what the string table is keyed by. | **1** · web:practice/channels/ChannelsView.tsx |
+| `PRACTICE_TIMEZONES_VERSION` | domain:practice-timezones.ts | Which list a stored zone was chosen from. | **1** · core:practices/practices.service.ts |
 | `PRINT_DOCUMENT_TYPES` | domain:inbound-lanes.ts | The documents a practice's desktop can print to us (Part 8), each on its lane. | **1** · core:inbound/inbound-print-jobs.controller.ts |
 | `REASSIGNMENT_TASK_KIND` | domain:review-tasks.ts | THE KIND "REASSIGN" RAISES (PRACTITIONER-QUEUE-PAGE.md §3a rule 4). | **1** · core:practitioner-queue/practitioner-queue.service.ts |
 | `REGISTRATION_RECHECK_DAYS` | domain:ahpra.ts | ⚠ DRAFT PARAMETER — how old a sighting may be before it wants redoing. | **1** · domain:practitioner-strength.ts |
@@ -1289,7 +1292,6 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `CORRESPONDENCE_PURPOSES` | domain:correspondence-log.ts |  | 0 |
 | `DEFAULT_ATTEMPT_CAP` | domain:chase.ts | REQ-CHASE-09/-10 — the economics guard. | 0 |
 | `DEFAULT_INVITATION_CEILING` | domain:affiliation.ts |  | 0 |
-| `DEFAULT_PRACTICE_TIMEZONE` | domain:practice-timezones.ts | The column default, `Australia/Sydney`. | 0 |
 | `DEVICE_LEASE_SECONDS` | domain:outbound-queue.ts | A device's lease is longer, because a tablet on a counter may be picked up, carried to a patient, and put down again before it confirms. | 0 |
 | `DEVICE_STALE_AFTER_POLLS` | domain:devices.ts | TWO MISSED HEARTBEATS AND THE ROW SAYS SO. | 0 |
 | `DEVICE_STATES` | domain:devices.ts | `inactive` IS RECEPTION'S SWITCH; `revoked` IS THE ADMINISTRATOR'S (Carl, 4–5 Sep 2026, TODO.md "Tablets: make one inactive"). | 0 |
@@ -1345,8 +1347,6 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `PRACTICE_SURFACES` | domain:practice-surfaces.ts | Every surface, in file order. | 0 |
 | `PRACTICE_SURFACE_CONTENT` | domain:practice-surfaces.ts | The whole parsed file, for the tests and for anything that wants to enumerate. | 0 |
 | `PRACTICE_TIMEZONE` | domain:practice-day.ts | THE ZONE A PRACTICE'S DAY IS MEASURED IN — the reporting zone, deliberately the same object rather than a copy. | 0 |
-| `PRACTICE_TIMEZONES_VERSION` | domain:practice-timezones.ts | Which list a stored zone was chosen from. | 0 |
-| `PRACTICE_TIMEZONE_KEYS` | domain:practice-timezones.ts | The zones, in file order, which is screen order. | 0 |
 | `PRINT_DOCUMENT_LANES` | domain:inbound-lanes.ts |  | 0 |
 | `PROVIDER_TYPE_PROFESSIONS` | domain:ahpra.ts | Does the AHPRA profession support the provider type a practice is asserting? | 0 |
 | `PURPOSE_FAMILIES` | domain:correspondence-log.ts | WHAT THE THING ACTUALLY IS, in three facts. | 0 |
