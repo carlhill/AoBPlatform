@@ -36,6 +36,37 @@ check('web client exists', Boolean(web));
 check('web client is public (PKCE, no shipped secret)', web?.publicClient === true);
 check('web client binds the clinician browser flow', Boolean(web?.authenticationFlowBindingOverrides?.browser));
 
+/*
+ * THE TOKEN MUST SAY HOW THE SESSION SIGNED IN (AUTH-TIERS.md §5.1,
+ * D-2026-10-10-06).
+ *
+ * Revoking a tablet asks for a fresh second factor, and core judges that on the
+ * token's `amr` claim. This realm shipped with no amr mapper, so every token
+ * said nothing, core read "unknown", and revoke refused a passkey session with
+ * "password and nothing else" - for everybody, from the day it was built.
+ * Keycloak's mapper emits a value only for an execution that names one in its
+ * authenticator config, so BOTH halves are asserted: the reference on the
+ * passkey step, and the mapper on every staff-facing client.
+ */
+const configs = new Map((realm.authenticatorConfig ?? []).map((c) => [c.alias, c.config ?? {}]));
+check(
+  'the_passkey_step_names_hwk_for_the_amr_claim',
+  configs.get(passkey?.authenticatorConfig)?.['default.reference.value'] === 'hwk',
+);
+check(
+  'the disabled password step would name pwd, so a re-enabled one is reported rather than hidden',
+  !password || configs.get(password.authenticatorConfig)?.['default.reference.value'] === 'pwd',
+);
+for (const clientId of ['web', 'console']) {
+  const client = (realm.clients ?? []).find((c) => c.clientId === clientId);
+  check(
+    `the ${clientId} client puts the amr claim in the access token`,
+    (client?.protocolMappers ?? []).some(
+      (m) => m.protocolMapper === 'oidc-amr-mapper' && m.config?.['access.token.claim'] === 'true',
+    ),
+  );
+}
+
 // WebAuthn policy present at realm level.
 check('WebAuthn passwordless policy configured', Boolean(realm.webAuthnPolicyPasswordlessRpEntityName));
 
