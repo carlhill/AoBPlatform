@@ -741,6 +741,26 @@ describe('the AOBPRINTER heartbeat, platform side (e2e, real Postgres)', () => {
     expect(rows.every((r) => r.secondHostReporting === true)).toBe(true);
   });
 
+  it('two_concurrent_first_beats_serialise_on_the_practice', async () => {
+    // Two chains the platform has never seen, at the same moment: the second to commit is chain_replaced.
+    const [one, two] = await Promise.all([
+      beat(practiceA),
+      beat(practiceA, { chainId: CHAIN_B, head: { seq: 3, hash: at(CHAIN_B, 3) } }),
+    ]);
+    expect([one.status, two.status]).toEqual([200, 200]);
+    const statuses = [one, two].map((r) => (r.body as AobPrinterHeartbeatReply).chain.status).sort();
+    expect(statuses).toEqual(['regressed', 'unverified']);
+    const replaced = await aobprinterEvents('aobprinter.chain_regressed');
+    expect(replaced).toHaveLength(1);
+    expect(replaced[0].payload).toMatchObject({ kind: 'chain_replaced' });
+
+    // The same chain's first beat twice at once: one row, and neither is a 500.
+    await prisma.withPractice(practiceA, (tx) => tx.aobPrinterHost.deleteMany({}));
+    const twice = await Promise.all([beat(practiceA), beat(practiceA), beat(practiceA)]);
+    expect(twice.map((r) => r.status)).toEqual([200, 200, 200]);
+    expect(await hostsOf(practiceA)).toHaveLength(1);
+  });
+
   it('rebaselining_a_replacement_retires_the_old_chain', async () => {
     expect((await beat(practiceA)).status).toBe(200);
     const replaced = await beat(practiceA, { chainId: CHAIN_B, head: { seq: 3, hash: at(CHAIN_B, 3) } });

@@ -61,6 +61,18 @@ export function storedLocalCheck(check: AobPrinterLocalCheck): AobPrinterLocalCh
     : { ok: false, brokenAtSeq: check.brokenAtSeq, why: check.why };
 }
 
+/**
+ * ONE PRACTICE'S HOSTS, ONE WRITER AT A TIME. A transaction-scoped advisory
+ * lock keyed on the practice, taken before the rows are read. `FOR UPDATE`
+ * alone locks only rows that already exist, so two FIRST beats (no rows yet)
+ * both read "no other chain" — two `unverified` chains where decision 6 says
+ * the second is `chain_replaced` — and a duplicate first beat from one chain
+ * hit the unique key and answered 500. Released at commit or rollback.
+ */
+async function lockPracticeHosts(tx: Prisma.TransactionClient, practiceId: string): Promise<void> {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`aobprinter_hosts:${practiceId}`}))`;
+}
+
 const seenWithinOfflineWindow = (lastSeenAt: Date, now: Date) =>
   now.getTime() - lastSeenAt.getTime() <= AOBPRINTER_OFFLINE_AFTER_MS;
 
@@ -81,13 +93,14 @@ const reportingAsAHost = (r: Pick<AobPrinterHost, 'lastSeenAt' | 'retiredAt'>, n
  * needs from print jobs and agreements through the services that own those,
  * and hands the result here.
  *
- * ONE TRANSACTION PER BEAT. The practice's rows are locked `FOR UPDATE`, the
+ * ONE TRANSACTION PER BEAT. The practice is locked (`lockPracticeHosts`), the
  * domain verdict is taken, the row is written and any vault event the verdict
  * implies goes through the outbox — all inside one `withPractice`, so a row
  * that says "regressed" with no `aobprinter.chain_regressed` behind it, or the
- * reverse, cannot be committed (hard rule 11). Locking every row of the
- * practice, not only this chain's, is what makes rule 1 ("another chain not
- * retired") safe against two chains beating at once.
+ * reverse, cannot be committed (hard rule 11). Locking the practice, not only
+ * this chain's row, is what makes rule 1 ("another chain not retired") safe
+ * against two chains beating at once — including two first beats, when there
+ * is no row yet to lock.
  *
  * LOGS SAY CODES, SEQS AND IDS. A practice id, a host id, a regression kind, a
  * seq. Never a hash in full, never a patient (hard rule 9). Lines are emitted
@@ -104,6 +117,7 @@ export class AobPrinterHostsService {
     const after: Array<() => void> = [];
 
     const recorded = await this.prisma.withPractice(practiceId, async (tx) => {
+      await lockPracticeHosts(tx, practiceId);
       await tx.$queryRaw`SELECT "id" FROM core.aobprinter_hosts WHERE "practiceId" = ${practiceId}::uuid FOR UPDATE`;
       const rows = await tx.aobPrinterHost.findMany({});
       const existing = rows.find((r) => r.chainId === beat.chainId) ?? null;
@@ -368,6 +382,7 @@ export class AobPrinterHostsService {
     if (!practiceId) throw new NotFoundException('No such AOBPRINTER host.');
 
     const row = await this.prisma.withPractice(practiceId, async (tx) => {
+      await lockPracticeHosts(tx, practiceId);
       await tx.$queryRaw`SELECT "id" FROM core.aobprinter_hosts WHERE "id" = ${hostId}::uuid FOR UPDATE`;
       const host = await tx.aobPrinterHost.findFirst({ where: { id: hostId } });
       if (!host) throw new NotFoundException('No such AOBPRINTER host.');
