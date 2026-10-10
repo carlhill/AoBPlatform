@@ -1102,7 +1102,15 @@ export class TabletSessionsService {
      */
     if (offered.serviceDescription) {
       await this.agreements.transition(practiceId, offered.agreementId, 'awaiting_signature');
-      await this.agreements.lockParticulars(practiceId, offered.agreementId, { serviceDate: day.todayIso });
+      /*
+       * D2 IS PASSED AS WELL AS D5, both the practice's today
+       * (D-2026-10-10-03). Left out, `lockParticulars` defaults D2 to the UTC
+       * date, which would put the two on different days every Sydney morning.
+       */
+      await this.agreements.lockParticulars(practiceId, offered.agreementId, {
+        serviceDate: day.todayIso,
+        agreementDate: day.todayIso,
+      });
     }
 
     await this.prisma.withPractice(practiceId, async (tx) => {
