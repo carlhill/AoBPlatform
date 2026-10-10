@@ -38,45 +38,87 @@ npm run lint -w apps/web       # string-table guard + the zero-footprint rule
 
 ### Testing on a real tablet over home Wi-Fi (10 Oct 2026)
 
-Proved on a Galaxy Tab S10. The tablet cannot reach the PC's `localhost`, so it
-uses the PC's Wi-Fi address (`ipconfig`, the "Wireless LAN adapter Wi-Fi" IPv4
-address; written `<PC-IP>` below).
+Proved on a Samsung Galaxy Tab S10, on Carl's Windows 11 PC with AVG Internet
+Security. Getting it working took an evening, because five separate things
+each blocked the tablet. This is the order that works.
 
-**Repo side** (local files, none committed except `next.config.mjs`):
-- `apps/web/.env.local`: set `NEXT_PUBLIC_CORE_URL=http://<PC-IP>:3001` and
-  `DEV_LAN_HOSTS=<PC-IP>`. Without the second, Next serves the HTML but refuses
-  the scripts, and the page stays blank (`next.config.mjs` `allowedDevOrigins`).
-- `apps/core/.env`: set `CORS_ORIGINS=http://localhost:3100,http://<PC-IP>:3100`.
-- Restart core and web.
+`<PC-IP>` below is the PC's Wi-Fi address: in `ipconfig`, the IPv4 address
+under "Wireless LAN adapter Wi-Fi", e.g. `192.168.33.100`. The tablet cannot
+reach the PC's `localhost`, so it uses this address instead.
 
-**PC side.** Every one of these blocked the tablet at some point:
-1. **The VPN.** AVG Secure VPN captured local traffic until "Exclude private
-   networks" was turned on.
-2. **Windows network profile.** The Wi-Fi must be **Private** (Settings → Wi-Fi
-   → the network → Network profile type). Changing it from PowerShell needs an
-   elevated window.
-3. **Windows Firewall.** No rule covered `C:\Program Files
-odejs
-ode.exe`;
-   the only "Node.js" rules belonged to an Unreal Engine plugin. The fix, run in
-   an admin PowerShell:
-   `New-NetFirewallRule -DisplayName "AoB dev (core 3001, web 3100)" -Direction Inbound -Protocol TCP -LocalPort 3001,3100 -Profile Private -RemoteAddress LocalSubnet -Action Allow`
-4. **AVG's own firewall.** When AVG registers as the firewall, its rules decide
-   and the Windows rule does not. AVG treated the network as Public. The fix:
-   add a Network Rule with Allow, TCP, In, Public, address
-   `192.168.33.1-192.168.33.254` (AVG refuses the `/24` form), local ports
-   `3001,3100`.
+**1. Repo settings.** These are local, gitignored files, except
+`next.config.mjs`, which is committed.
+- `apps/web/.env.local`: `NEXT_PUBLIC_CORE_URL=http://<PC-IP>:3001` and
+  `DEV_LAN_HOSTS=<PC-IP>`. Without `DEV_LAN_HOSTS`, Next serves the HTML but
+  refuses the scripts, and the page stays blank (`allowedDevOrigins` in
+  `next.config.mjs`).
+- `apps/core/.env`: `CORS_ORIGINS=http://localhost:3100,http://<PC-IP>:3100`.
+  Keep `localhost` in the list, or the desktop console stops working.
 
-**Check, in order, from the tablet's Chrome:**
-1. `http://<PC-IP>:3001/health` answers. If it does not, the problem is network
-   or firewall, not the app.
-2. `http://<PC-IP>:3100/kiosk` shows the pairing screen.
-3. On the PC, use `http://localhost:3100/practice/devices` → Add tablet, and
-   type the code into the tablet. Signing in works only at `localhost`.
+**2. Start core and web yourself, in a normal terminal, from the repo root.**
+Starting from `C:\WINDOWS\system32` (an admin window's default folder) fails
+with `ENOENT package.json`.
+```
+cd C:\Users\carl\OneDrive\Documents\2026\AoBPlatform
+npm run dev -w apps/web
+```
 
-Pairing belongs to one browser at one address. A code typed on the PC at
-`<PC-IP>` pairs the PC, not the tablet. Undo the firewall and AVG rules when
-testing is finished.
+**3. VPN.** AVG Secure VPN captured the PC's local traffic. Turn on **Exclude
+private networks** in its settings.
+
+**4. Windows network profile.** The Wi-Fi must be **Private**: Settings →
+Network & internet → Wi-Fi → the network → Network profile type → Private
+network. (`Set-NetConnectionProfile` only works from an elevated PowerShell.)
+
+**5. Windows Firewall.** No allow rule covered
+`C:\Program Files\nodejs\node.exe`; the only "Node.js" rules belonged to an
+Unreal Engine plugin. Add a port rule in an **admin** PowerShell:
+```
+New-NetFirewallRule -DisplayName "AoB dev (core 3001, web 3100)" -Direction Inbound -Protocol TCP -LocalPort 3001,3100 -Profile Private -RemoteAddress LocalSubnet -Action Allow
+```
+
+**6. AVG Enhanced Firewall: the one that finally mattered.** AVG registers
+itself as the PC's firewall, so its rules decide, not only Windows'. It treated
+the network as Public.
+- **Network rule.** AVG → Basic protection → Enhanced Firewall → VIEW FIREWALL
+  RULES → NETWORK RULES → add a rule: Allow, TCP (6), In, Profile Public,
+  address `192.168.33.1-192.168.33.254` (AVG rejects the `/24` form), local
+  ports `3001,3100`. With this rule, `:3001/health` worked once, then failed
+  again after core and web were restarted.
+- **The fix that held.** Switch the **Enhanced Firewall** toggle OFF, then use
+  core and web. Windows shows a **Windows Security Alert for Node.js**: allow it
+  on **both private and public networks**. Switch the Enhanced Firewall back
+  **ON**. After that, the tablet reached both ports with the firewall on.
+- **If it breaks again after a Node.js update** (the path or version changed),
+  repeat the toggle-off-and-allow step, or set Node.js to **Allow** under VIEW
+  FIREWALL RULES → APPLICATION RULES.
+
+**7. Check from the tablet's Chrome, in order.** Type each address in full:
+Chrome autocompletes to the last one, and `:3001/kiosk` answers
+`Cannot GET /kiosk` (core's 404, not the web app's).
+1. `http://<PC-IP>:3001/health` returns a short status reply. If it does not,
+   the problem is the network or a firewall, not the app.
+2. `http://<PC-IP>:3100/kiosk` shows "Pair this tablet". The first load
+   compiles for a few seconds.
+3. On the PC, `http://localhost:3100/practice/devices` → **Add tablet**, then
+   type the 8-character code into the tablet. Signing in only works at
+   `localhost`.
+   - Pairing belongs to one browser at one address. A code typed into a kiosk
+     tab opened on the PC itself pairs the PC, not the tablet.
+4. Push an agreement from `http://localhost:3100/practice/tablet`.
+
+**Finding where it is blocked** (PowerShell, read only):
+- `netstat -ano | findstr ":3001 :3100"` shows one listener per port. Lines
+  from the tablet's address mean its requests are arriving.
+- The PC can `ping` the tablet, but the tablet's requests never appear: a
+  firewall on the PC is dropping them.
+- `Get-CimInstance -Namespace root/SecurityCenter2 -ClassName FirewallProduct`
+  lists any third-party firewall (here, AVG) that overrides Windows' rules.
+
+**When testing is finished:** delete the AVG network rule, then
+`Remove-NetFirewallRule -DisplayName "AoB dev (core 3001, web 3100)"`. To go
+back to desktop only, set `NEXT_PUBLIC_CORE_URL` in `apps/web/.env.local` back
+to `http://localhost:3001`.
 
 ### Pairing a browser as a tablet
 
