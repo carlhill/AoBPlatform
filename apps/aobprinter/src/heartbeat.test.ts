@@ -15,7 +15,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import type { AobPrinterHeartbeat, AobPrinterHeartbeatReply, SignedFormForCollection } from '@aobplatform/contracts';
+import type { AobPrinterHeartbeat, AobPrinterHeartbeatReply, AobPrinterJobState, SignedFormForCollection } from '@aobplatform/contracts';
 import { Collector, type CollectionClient } from './collector';
 import type { Db4PrintRecord } from './db4-record';
 import { HEARTBEAT_VERIFY_CHUNK, Heartbeat, HeartbeatHttpError, type HeartbeatClient, type HeartbeatFacts, type HeartbeatStore } from './heartbeat';
@@ -384,6 +384,22 @@ describe('the heartbeat', () => {
     await heartbeat.beat(signal());
 
     expect(store.auditEvents()).toHaveLength(events);
+    expect(platform.sent[1].awaitingOutcome).toEqual([sha('d')]);
+  });
+
+  it('a_print_in_a_state_the_host_does_not_recognise_writes_nothing_and_is_asked_again', async () => {
+    sendOne(sha('d'));
+    const events = store.auditEvents().length;
+    // A platform newer than this host may answer in a state it has never met.
+    const platform = aPlatform(() => ({
+      jobs: [{ sourceSha256: sha('d'), state: 'held_for_review' as AobPrinterJobState, placed: null, reason: null, agreementId: null }],
+    }));
+    const heartbeat = heartbeatWith(platform);
+    await heartbeat.beat(signal());
+    await heartbeat.beat(signal());
+
+    expect(store.auditEvents()).toHaveLength(events);
+    expect(store.auditEvents({ subject: sha('d') }).map((e) => e.kind)).not.toContain('print.not_on_platform');
     expect(platform.sent[1].awaitingOutcome).toEqual([sha('d')]);
   });
 

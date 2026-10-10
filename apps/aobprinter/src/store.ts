@@ -74,6 +74,15 @@ const VERIFY_CHAIN_CHUNK = 2_000;
 /** The kinds that record what the platform did with a sent print (decision 8). */
 const PLATFORM_OUTCOME_KINDS = ['print.processed', 'print.processing_failed', 'print.not_on_platform'] as const;
 const PLATFORM_OUTCOME_KINDS_SQL = PLATFORM_OUTCOME_KINDS.map((k) => `'${k}'`).join(', ');
+/**
+ * The platform's job state → the event that records it. `waiting` is absent
+ * (asked again); so is any state this build has never met.
+ */
+const PLATFORM_OUTCOME_KIND: Readonly<Record<string, (typeof PLATFORM_OUTCOME_KINDS)[number]>> = {
+  done: 'print.processed',
+  dead: 'print.processing_failed',
+  unknown: 'print.not_on_platform',
+};
 
 /**
  * ONE CONSISTENT PICTURE FOR ONE HEARTBEAT. Counts, codes, hashes and ids
@@ -1474,15 +1483,19 @@ export class AobPrinterStore implements OutboxStore, ReceiptsWriter, PrintsTrail
    * change (decision 8). `waiting` writes nothing — the print is asked about
    * again next beat. Once per print: a print that already has an outcome, or
    * that is not in `sent` on this host, is left alone. Returns whether it wrote.
+   *
+   * ONLY THE STATES THIS HOST KNOWS. `done`, `dead` and `unknown` each name
+   * their event; a state this build has never met (a newer platform) writes
+   * nothing, so the print is asked about again — never recorded as "not on
+   * the platform" when the platform said something else.
    */
   recordPlatformOutcome(sha: string, outcome: AobPrinterJobOutcome): boolean {
-    if (outcome.state === 'waiting') return false;
+    const kind: AuditKind | undefined = PLATFORM_OUTCOME_KIND[outcome.state as string];
+    if (!kind) return false;
     return this.transaction(() => {
       if (this.jobState(sha) !== 'sent') return false;
       const already = this.db.prepare(`SELECT 1 AS x FROM audit_events WHERE subject = ? AND kind IN (${PLATFORM_OUTCOME_KINDS_SQL}) LIMIT 1`).get(sha);
       if (already) return false;
-      const kind: AuditKind =
-        outcome.state === 'done' ? 'print.processed' : outcome.state === 'dead' ? 'print.processing_failed' : 'print.not_on_platform';
       this.audit({
         kind,
         direction: 'out',
