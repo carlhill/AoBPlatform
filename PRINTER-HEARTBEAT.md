@@ -17,7 +17,7 @@ never recorded as confirmed).
 | 3 | Alert on silence | A **5-minute server sweep** logs `ALERT` once when a host goes offline, and once when it comes back. Log only, no vault event. | A console page only helps someone looking at it; silence is the alarm that matters. |
 | 4 | Audit log no longer matches | **One vault event on the transition** into `regressed` (`aobprinter.chain_regressed`), plus an `ALERT` log and a console flag. The flag stays until someone re-baselines. | Rare, and it is evidence about evidence. |
 | 5 | External anchor | `aobprinter.chain_anchored` written to the vault **at most hourly** while the chain is consistent and has advanced. | Otherwise the "external anchor" is a Postgres row a DBA can edit. |
-| 6 | New audit log for a practice that already has one | **Always** the regression **`chain_replaced`** (vault event per decision 4) until re-baselined, even if the old chain was reporting minutes earlier. If both chains keep reporting, the **two-hosts** ALERT and console notice appear *as well*. The ALERT fires when both are live at once (the older chain reports after the newer one first appeared), once per episode; a reinstall whose old chain stops raises none. *(Clarified by Carl, 10 Oct: the platform cannot tell a log rewritten on the same host from a second host, so the safe reading wins.)* | A full rewrite changes the hash of event 1. Calling that "a new host" would defeat the anchor. Two hosts breaks the "one AOBPRINTER per practice" rule (D-2026-09-28-04 amendment). |
+| 6 | New audit log for a practice that already has one | **Always** the regression **`chain_replaced`** (vault event per decision 4) until re-baselined, even if the old chain was reporting minutes earlier. If both chains keep reporting, the **two-hosts** ALERT and console notice appear *as well*. The ALERT fires, and the console notice shows, when both are live at once (the older chain reports after the newer one first appeared), the ALERT once per episode; a reinstall whose old chain stops raises neither. *(Clarified by Carl, 10 Oct: the platform cannot tell a log rewritten on the same host from a second host, so the safe reading wins.)* | A full rewrite changes the hash of event 1. Calling that "a new host" would defeat the anchor. Two hosts breaks the "one AOBPRINTER per practice" rule (D-2026-09-28-04 amendment). |
 | 7 | Who may re-baseline | **Platform operator only**: `PLATFORM_ADMIN`, the existing `@FreshSecondFactor`, a reason code from a fixed list (`reinstalled`, `database_restored`, `investigated`), and an `aobprinter.chain_rebaselined` vault event. Re-baselining accepts the chain's **current head**; it does not retire the chain. Re-baselining a **`chain_replaced`** row accepts the new chain as the practice's chain, so every other chain for the practice is **retired** (`retiredAt`, `retiredBy`) in the same transaction, and the event carries `retiredChains`. Re-baselining any other regression retires nothing. Re-baselining a row clears that row's own retirement; a **retired** row (one that has not reported since its retirement) cannot be re-baselined: `409 aobprinter_chain_retired`. *(10 Oct, after the build found a rewrite after a re-baseline passed as `unverified`; third amendment, Claude, Carl to confirm.)* | A practice may not verify its own evidence. Reuses existing guards; no auth-flow change. Only an accepted replacement ends the old chain; otherwise decision 6 would stop applying after the first re-baseline. |
 | 8 | "Processed by AoB" on the host | Stored as **audit events** (`print.processed`, `print.processing_failed`, `print.not_on_platform`), not a new stage or column. **No SQLite schema bump.** | The stage model of D-2026-09-29-01 stays as decided, and rolling the host back to an earlier build still opens its database. |
 | 9 | Which prints the heartbeat asks about | Prints in `sent` with no recorded platform outcome, sent in the **last 14 days**, at most **100 per beat**. Returns in `filed`, at most 100. | Bounded payload; older ones are visible on the platform anyway. |
@@ -225,9 +225,14 @@ The migration is applied by hand in dev (wow §2 item 7).
 - vault events through `enqueueVaultEvent`, in the same transaction (decisions 4 and 5).
 
 **Liveness.** `aobPrinterHostLiveness(lastSeenAt, intervalMs, now)` (decision 2).
-`secondHostReporting` is true when two chain ids for the practice have both been
-seen within the offline window (decision 6). A retired chain silent since its
-retirement does not count.
+`secondHostReporting` is true when two chains for the practice are both live at
+once (decision 6): both inside the offline window, and the older chain (by first
+beat) has reported since the newer one first appeared. The ALERT, the practice
+page and the overview share one predicate (`bothLiveAtOnce`, through
+`twoChainsLiveAtOnce`); the overview function returns each row's `createdAt` for
+it (migration `20261010040000_aobprinter_hosts_overview_live_at_once`). A
+reinstall whose old chain stops is not two at once, however recently the old
+chain last reported. A retired chain silent since its retirement does not count.
 
 ## 4. The console pages
 
@@ -244,7 +249,7 @@ way `DevicesView` does. Ages use `deviceSeenAgo`. All strings live in
 **States, worst first.** Each names what was observed. A remedy is shown only
 where it is true for that record (§7c, wow §13).
 1. **Regressed.** One string per kind, naming the expected and received seq and hash (8 characters each) and the time. An unmapped kind shows its code. Operators see Re-baseline.
-2. **Two hosts reporting.**
+2. **Two audit logs reporting at the same time.** Says only what was observed: two logs, each reporting since the other first appeared. It does not claim two machines.
 3. **Local check failed**, at seq N, as a link or content failure.
 4. **Offline / stale.** "Not heard from since …", with the last report kept on screen with its age.
 5. **Open exceptions.** Returns link to their patient. Prints show the code and the hash prefix (decision 13).
