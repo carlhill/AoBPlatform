@@ -79,7 +79,7 @@ export function carriesSecondFactor(method: SessionAuthMethod): boolean {
 export const SECOND_FACTOR_MAX_AGE_SECONDS = 300;
 
 /** Why a high-stakes act was refused — the code, not the sentence. */
-export type StepUpRefusal = 'reauthentication_required' | 'second_factor_required';
+export type StepUpRefusal = 'reauthentication_required' | 'second_factor_required' | 'sign_in_method_unrecorded';
 
 /** The answer to "may this session do the irreversible thing", and why not. */
 export interface StepUpDecision {
@@ -93,13 +93,21 @@ export interface StepUpDecision {
 /**
  * May this session perform a high-stakes act?
  *
- * TWO QUESTIONS, NOT ONE, and they fail differently on purpose.
+ * THREE ANSWERS, NOT ONE, and they fail differently on purpose.
  *
- * `second_factor_required` means the session never presented a second factor
- * at all — a password-only session, which no flow in this product produces,
- * or an unreadable one. Re-authenticating will not help until the account has
- * a second factor to present, so the answer is a different sentence and a
- * different destination.
+ * `second_factor_required` means the session SAID it presented a password and
+ * nothing else — which no flow in this product produces. Re-authenticating
+ * will not help until the account has a second factor to present, so the
+ * answer is a different sentence and a different destination.
+ *
+ * `sign_in_method_unrecorded` means the session said NOTHING about how it
+ * signed in: no `amr` claim, or nothing in it we recognise. That is a fact
+ * about the sign-in service, not about the person, and it is still a refusal
+ * — "we cannot tell" is never "yes". It is kept apart from the password case
+ * because telling a passkey user they signed in with a password is a claim
+ * about their record the system never observed (CLAUDE.md §7, wow.md §13). The
+ * main realm issued no `amr` at all until D-2026-10-10-06, and every passkey
+ * session was told exactly that.
  *
  * `reauthentication_required` means the session is fine but old. That one IS
  * fixed by signing in again, which is what the surface offers.
@@ -116,6 +124,7 @@ export function mayPerformHighStakesAct(input: {
   nowSeconds: number;
   maxAgeSeconds?: number;
 }): StepUpDecision {
+  if (input.method === 'unknown') return { allowed: false, reason: 'sign_in_method_unrecorded' };
   if (!carriesSecondFactor(input.method)) return { allowed: false, reason: 'second_factor_required' };
   const maxAge = input.maxAgeSeconds ?? SECOND_FACTOR_MAX_AGE_SECONDS;
   if (typeof input.authTimeSeconds !== 'number' || !Number.isFinite(input.authTimeSeconds)) {

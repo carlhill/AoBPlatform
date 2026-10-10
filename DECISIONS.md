@@ -2930,3 +2930,37 @@ exposure, is a risk with nothing to show for it. Revisit after GA.
 **What would reopen it:** a Node 24 security end-of-life notice, or a
 dependency that needs 26.
 
+
+---
+
+## D-2026-10-10-06 - The main realm's tokens say how the session signed in, and "cannot tell" is never called a password
+
+**Date:** 10 October 2026. **Decided by:** Carl, *"do both fixes"*, after
+revoking a tablet failed for his passkey session with "This account signs in
+with a password and nothing else".
+
+**What was wrong.** The `aobplatform` realm requires a passkey, but its tokens
+carried no `amr` claim: there was no amr mapper, and no step named a value.
+Core's fresh-second-factor check (hard rule 15, AUTH-TIERS.md §5.2) read
+"unknown" and refused it, which is correct. But it refused under
+`second_factor_required` and told the person they had signed in with a
+password, which the system never observed. Revoke and re-baseline could not
+work on this realm for anybody.
+
+**Decision:**
+1. **The realm emits `amr`.** `oidc-amr-mapper` on `web` and `console`; the
+   passkey step names `hwk`, the disabled password step `pwd`. In
+   `realm-export.json`, asserted by `realm-export.test.mjs`, and applied to an
+   existing realm by `infra/keycloak/apply-amr.mjs` (adds only; changes no
+   requirement). Applied to Carl's dev Keycloak on 10 Oct after a backup.
+2. **A session that says nothing is refused under its own code,
+   `sign_in_method_unrecorded`.** Still a refusal: "we cannot tell" is never
+   "yes". Its message says only what was observed (the sign-in service did not
+   say how the sign-in was made) and that nothing changed; it names no cause,
+   because the server never saw one. It offers no "sign in again" control, because this service cannot
+   tell whether signing in again would help (CLAUDE.md §7, wow.md §13).
+   `second_factor_required` is kept for a session that positively says `pwd`
+   alone.
+
+**What would reopen it:** a realm or identity provider that cannot emit
+`amr`, which would need a different way to prove the method.

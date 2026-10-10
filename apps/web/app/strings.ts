@@ -4290,6 +4290,9 @@ export const strings = {
     stepUpSecondFactorMissing:
       'This account signs in with a password and nothing else, so it cannot revoke a tablet. Add an '
       + 'authenticator app or a passkey to the account, then try again.',
+    stepUpMethodUnrecorded:
+      'The sign-in service did not say how this sign-in was made, so the server cannot confirm a passkey was used, and '
+      + 'revoking a tablet needs that. Nothing was changed.',
     stepUpUnmapped: (code: string) =>
       `The server refused this and gave a reason this screen does not recognise: ${code}. Nothing was changed.`,
 
@@ -4740,6 +4743,9 @@ export const strings = {
       stepUpSecondFactorMissing:
         'This account signs in with a password and nothing else, so it cannot re-baseline. Add an authenticator app or a '
         + 'passkey to the account, then try again.',
+      stepUpMethodUnrecorded:
+        'The sign-in service did not say how this sign-in was made, so the server cannot confirm a passkey was used, and '
+        + 're-baselining needs that. Nothing was changed.',
       stepUpUnmapped: (code: string) =>
         `The server refused this and gave a reason this screen does not recognise: ${code}. Nothing was changed.`,
     },
