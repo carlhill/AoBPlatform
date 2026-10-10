@@ -293,6 +293,52 @@ describe('the AOBPRINTER heartbeat, platform side (e2e, real Postgres)', () => {
     );
   });
 
+  it('a_local_check_carrying_extra_text_is_stored_without_it', async () => {
+    // A passing check that also carries the failing shape's fields: only what `ok: true` declares is kept.
+    const passing = await beat(practiceA, {
+      localCheck: { ok: true, verifiedThroughSeq: 10, brokenAtSeq: 4, why: 'link' },
+    });
+    expect(passing.status).toBe(200);
+    expect((await hostsOf(practiceA))[0].localCheck).toEqual({ ok: true, verifiedThroughSeq: 10 });
+
+    // And a failing one: no `verifiedThroughSeq` rides along.
+    const failing = await beat(practiceA, {
+      localCheck: { ok: false, brokenAtSeq: 4, why: 'content', verifiedThroughSeq: 3 },
+    });
+    expect(failing.status).toBe(200);
+    expect((await hostsOf(practiceA))[0].localCheck).toEqual({ ok: false, brokenAtSeq: 4, why: 'content' });
+
+    // Free text in `why`, or a seq that is not an integer, is refused whatever `ok` says.
+    for (const localCheck of [
+      { ok: true, verifiedThroughSeq: 1, why: 'the operator typed something here' },
+      { ok: false, brokenAtSeq: 4, why: 'the operator typed something here' },
+      { ok: true, verifiedThroughSeq: 1, brokenAtSeq: 2.5 },
+      { ok: false, brokenAtSeq: 4, why: 'link', verifiedThroughSeq: 'ten' },
+      { ok: true },
+      { ok: false, brokenAtSeq: 4 },
+    ]) {
+      expect((await beat(practiceA, { localCheck })).status).toBe(400);
+    }
+    expect(JSON.stringify((await hostsOf(practiceA))[0])).not.toContain('the operator typed');
+  });
+
+  it('a_chain_point_without_its_hash_is_refused_and_an_explicit_null_is_written', async () => {
+    // Omitting the hash is refused: undefined would leave the stored hash behind a new seq.
+    expect((await beat(practiceA, { head: { seq: 10 } })).status).toBe(400);
+    expect((await beat(practiceA, { atAnchor: { seq: 10 } })).status).toBe(400);
+    expect(await hostsOf(practiceA)).toEqual([]);
+
+    expect((await beat(practiceA)).status).toBe(200);
+    // An explicit null is a value: the head and the anchor move together, hash and all.
+    const res = await beat(practiceA, { head: { seq: 11, hash: null } });
+    expect(res.status).toBe(200);
+    const [row] = await hostsOf(practiceA);
+    expect(row.headSeq).toBe(11);
+    expect(row.headHash).toBeNull();
+    expect(row.anchorSeq).toBe(10);
+    expect(row.anchorHash).toBe(at(CHAIN_A, 10));
+  });
+
   it('a_heartbeat_records_last_seen_versions_and_stage_counts', async () => {
     const hostClock = new Date(Date.now() + 7 * 60 * 1000).toISOString();
     expect((await beat(practiceA, { sentAt: hostClock })).status).toBe(200);

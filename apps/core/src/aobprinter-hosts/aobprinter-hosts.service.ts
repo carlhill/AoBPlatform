@@ -48,6 +48,19 @@ interface RegressionDetail {
   received: AobPrinterChainPoint;
 }
 
+/**
+ * THE HOST'S OWN CHECK AS STORED: rebuilt from only the fields its `ok` value
+ * declares (the contract's `AobPrinterLocalCheck` union), never the object the
+ * request carried. The DTO has already refused a `why` outside `link|content`
+ * and a seq that is not an integer; this makes the stored shape exact (hard
+ * rule 9: no free text reaches storage).
+ */
+export function storedLocalCheck(check: AobPrinterLocalCheck): AobPrinterLocalCheck {
+  return check.ok
+    ? { ok: true, verifiedThroughSeq: check.verifiedThroughSeq }
+    : { ok: false, brokenAtSeq: check.brokenAtSeq, why: check.why };
+}
+
 const seenWithinOfflineWindow = (lastSeenAt: Date, now: Date) =>
   now.getTime() - lastSeenAt.getTime() <= AOBPRINTER_OFFLINE_AFTER_MS;
 
@@ -160,12 +173,13 @@ export class AobPrinterHostsService {
         counts: beat.counts as unknown as Prisma.InputJsonValue,
         openExceptions: input.exceptions as unknown as Prisma.InputJsonValue,
         filedUnconfirmed: input.filedUnconfirmed as unknown as Prisma.InputJsonValue,
-        localCheck: beat.localCheck as unknown as Prisma.InputJsonValue,
+        localCheck: storedLocalCheck(beat.localCheck) as unknown as Prisma.InputJsonValue,
+        // A seq and its hash are written together, always: `?? null` so an absent hash can never skip the column.
         headSeq: verdict.head.seq,
-        headHash: verdict.head.hash,
+        headHash: verdict.head.hash ?? null,
         headAdvancedAt,
         anchorSeq: verdict.anchor.seq,
-        anchorHash: verdict.anchor.hash,
+        anchorHash: verdict.anchor.hash ?? null,
         anchorVerifiedAt: verdict.anchorVerified ? now : (existing?.anchorVerifiedAt ?? null),
         vaultAnchoredAt: anchorToVault ? now : lastAnchored,
         chainStatus: verdict.status,

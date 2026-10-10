@@ -38,15 +38,34 @@ const MAX_INT = 2_147_483_647;
 
 class ChainPointDto {
   @IsInt() @Min(0) @Max(MAX_INT) seq!: number;
-  /** Null where the host holds no hash at that seq — which at the anchor is itself a finding (rule 5). */
-  @IsOptional() @IsString() @Matches(SHA256) hash!: string | null;
+  /**
+   * REQUIRED: a hash, or an explicit null where the host holds no hash at that
+   * seq — which at the anchor is itself a finding (rule 5). Omitted is refused:
+   * an `undefined` hash would leave the column's old hash behind a new seq.
+   */
+  @ValidateIf((o: ChainPointDto) => o.hash !== null) @IsString() @Matches(SHA256) hash!: string | null;
 }
 
+/**
+ * THE HOST'S OWN CHECK. Each field is required when its `ok` value declares it,
+ * and checked whenever it is present, whatever `ok` says — so free text in
+ * `why`, or a seq that is not an integer, never reaches the service. The
+ * service then stores only the fields that `ok` value declares
+ * (`storedLocalCheck`), so the stored shape is the contract's union exactly.
+ */
 class LocalCheckDto {
   @IsBoolean() ok!: boolean;
-  @ValidateIf((o: LocalCheckDto) => o.ok === true) @IsInt() @Min(0) @Max(MAX_INT) verifiedThroughSeq?: number;
-  @ValidateIf((o: LocalCheckDto) => o.ok === false) @IsInt() @Min(0) @Max(MAX_INT) brokenAtSeq?: number;
-  @ValidateIf((o: LocalCheckDto) => o.ok === false) @IsIn(['link', 'content']) why?: 'link' | 'content';
+  @ValidateIf((o: LocalCheckDto) => o.ok === true || o.verifiedThroughSeq !== undefined)
+  @IsInt()
+  @Min(0)
+  @Max(MAX_INT)
+  verifiedThroughSeq?: number;
+  @ValidateIf((o: LocalCheckDto) => o.ok === false || o.brokenAtSeq !== undefined)
+  @IsInt()
+  @Min(0)
+  @Max(MAX_INT)
+  brokenAtSeq?: number;
+  @ValidateIf((o: LocalCheckDto) => o.ok === false || o.why !== undefined) @IsIn(['link', 'content']) why?: 'link' | 'content';
 }
 
 class PrintStageCountsDto {
