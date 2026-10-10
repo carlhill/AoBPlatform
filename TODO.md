@@ -84,6 +84,35 @@ change for another screen.** The same two shapes remain in `apps/core/src`:
 **Depends on:** nothing; each is the same substitution, with an e2e that pins
 the clock the way `practice-day-boundary.e2e-spec.ts` does.
 
+## Per-practice timezone: follow-ups from the Opus review (10 Oct 2026) - D-2026-10-10-03
+
+Recorded from the review of `fix/tablet-day-boundary`; no code change on that
+branch for any of these.
+
+- **(a) Every existing practice was defaulted to `Australia/Sydney` and nobody
+  confirmed it.** The migration gave the column a default so the desk would
+  keep working, but D-2026-09-12-17 says the state proposes a zone and a person
+  confirms it. Two things follow: onboarding should propose a zone from the
+  practice's state and ask for it to be confirmed rather than taking the
+  default silently; and any existing practice outside NSW/VIC/ACT/TAS needs its
+  zone checked on `/practice/channels` before its desk's day boundary can be
+  trusted (a Perth practice on Sydney time turns its day two or three hours
+  early; Brisbane, Adelaide and Darwin by up to an hour and a half).
+- **(b) PRE-EXISTING, NOT INTRODUCED HERE - touches hard rule 2 (REQ-REG-06).**
+  `offerEpisodicInstead` in `apps/core/src/tablet-sessions/tablet-sessions.service.ts`
+  (~1104-1113, from 50373f8, 5 Sep 2026) moves the new agreement to
+  `awaiting_signature` and THEN calls `lockParticulars`, in separate
+  transactions. If the lock throws (rules service down, render failure), the
+  agreement is left at `awaiting_signature` with unlocked particulars. Nothing
+  can be signed in that state - the push re-locks before any signature
+  (`prepareLockOrRefuse` runs whenever `particularsLockedAt` is null) - but the
+  state itself should be unreachable. **For Carl to decide; deliberately not
+  fixed on the timezone branch.** The obvious shape is to lock first and
+  transition after, or both in one transaction the way the push does.
+- **(c) Rebuild the vault container before shipping.** The branch adds the
+  `practice.timezone_set` event type (`packages/contracts/src/vault.ts`); a
+  vault image built before it will not know the type.
+
 ## Agreements left unsigned past their day (10 Oct 2026) - D-2026-10-10-01
 
 **Being built now:** option 1, the tablet's "Unsigned from earlier days: N"

@@ -135,6 +135,31 @@ export function practiceToday(now: Date = new Date()): string {
 }
 
 /**
+ * ONE DAY FORMATTER PER ZONE, built on first use and kept (Opus review,
+ * 10 October 2026). `practiceDayOf` runs once per row on the desk's lists, and
+ * constructing an `Intl.DateTimeFormat` costs far more than calling one. A
+ * formatter is immutable and holds no clock, so sharing it changes nothing it
+ * returns. The map is bounded by the zones that reach here — the content list
+ * and the column's CHECK — and an unknown zone throws in the constructor, so
+ * it is never stored.
+ */
+const dayFormatters = new Map<string, Intl.DateTimeFormat>();
+
+function dayFormatterFor(timeZone: string): Intl.DateTimeFormat {
+  let fmt = dayFormatters.get(timeZone);
+  if (!fmt) {
+    fmt = new Intl.DateTimeFormat('en-GB', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+    dayFormatters.set(timeZone, fmt);
+  }
+  return fmt;
+}
+
+/**
  * `YYYY-MM-DD` FOR AN INSTANT, IN THE ZONE THE PRACTICE CHOSE
  * (D-2026-10-10-03). The per-practice form of `practiceToday`: a practice in
  * Perth and one in Sydney are on different days for two (or three) hours of
@@ -146,12 +171,7 @@ export function practiceToday(now: Date = new Date()): string {
  * here.
  */
 export function practiceDayOf(instant: Date, timeZone: string): string {
-  const fmt = new Intl.DateTimeFormat('en-GB', {
-    timeZone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  });
+  const fmt = dayFormatterFor(timeZone);
   const p = Object.fromEntries(fmt.formatToParts(instant).map((part) => [part.type, part.value]));
   return `${p.year}-${p.month}-${p.day}`;
 }

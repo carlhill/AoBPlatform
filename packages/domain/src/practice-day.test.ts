@@ -185,6 +185,54 @@ describe("one day, in the practice's own zone", () => {
     );
   });
 
+  /*
+   * ONE FORMATTER PER ZONE (Opus review, 10 October 2026). "Unsigned from
+   * earlier days" calls `practiceDayOf` once per row, and building an
+   * `Intl.DateTimeFormat` costs far more than using one.
+   */
+  it('practice_day_of_builds_one_formatter_per_zone', () => {
+    const at = new Date('2026-10-12T21:30:00Z');
+    // Warm both zones, then count constructions from here on.
+    practiceDayOf(at, 'Australia/Sydney');
+    practiceDayOf(at, 'Australia/Perth');
+    const built = jest.spyOn(Intl, 'DateTimeFormat');
+    try {
+      for (let i = 0; i < 50; i += 1) {
+        practiceDayOf(new Date(at.getTime() + i * 3_600_000), 'Australia/Sydney');
+        practiceDayOf(new Date(at.getTime() + i * 3_600_000), 'Australia/Perth');
+      }
+      expect(built).not.toHaveBeenCalled();
+    } finally {
+      built.mockRestore();
+    }
+  });
+
+  it('the_cached_formatter_agrees_with_a_fresh_one_across_both_daylight_saving_changes', () => {
+    // What `practiceDayOf` did before the cache: a new formatter every call.
+    const uncached = (instant: Date, timeZone: string): string => {
+      const fmt = new Intl.DateTimeFormat('en-GB', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' });
+      const p = Object.fromEntries(fmt.formatToParts(instant).map((part) => [part.type, part.value]));
+      return `${p.year}-${p.month}-${p.day}`;
+    };
+    // Every 15 minutes across Sydney's April and October changes, the zones
+    // interleaved so a cache that confused one zone for another would show.
+    const windows: Array<[string, string]> = [
+      ['2026-04-04T00:00:00Z', '2026-04-06T00:00:00Z'],
+      ['2026-10-03T00:00:00Z', '2026-10-05T00:00:00Z'],
+    ];
+    const zones = ['Australia/Sydney', 'Australia/Perth', 'Australia/Brisbane', 'Australia/Adelaide'];
+    let compared = 0;
+    for (const [from, to] of windows) {
+      for (let t = Date.parse(from); t < Date.parse(to); t += 15 * 60_000) {
+        for (const zone of zones) {
+          expect(practiceDayOf(new Date(t), zone)).toBe(uncached(new Date(t), zone));
+          compared += 1;
+        }
+      }
+    }
+    expect(compared).toBe(2 * 48 * 4 * 4);
+  });
+
   it('an_unknown_zone_is_refused_rather_than_read_as_utc', () => {
     expect(() => practiceDayOf(new Date('2026-10-12T21:30:00Z'), 'Mars/Olympus_Mons')).toThrow(RangeError);
     expect(() => startOfPracticeDay(new Date('2026-10-12T21:30:00Z'), 'Mars/Olympus_Mons')).toThrow(RangeError);
