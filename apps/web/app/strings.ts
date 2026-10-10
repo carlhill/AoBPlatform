@@ -4637,6 +4637,9 @@ export const strings = {
     filedTitle: (n: number) => (n === 1 ? 'One return is filed on the host but not recorded as confirmed' : `${n} returns are filed on the host but not recorded as confirmed`),
     filed: {
       written_back: 'The platform has recorded this return as written back. The host marks it confirmed on its next report.',
+      written_back_different_file:
+        'The platform has recorded a return as written back for this agreement, but its file has a different hash from the one filed on the host. '
+        + 'The host keeps a return filed while the hashes differ, so it will not mark this one confirmed.',
       offered: 'The platform has not recorded this return as written back, and is still offering it for collection.',
       not_offered: 'The platform has not recorded this return as written back, and is no longer offering it for collection.',
     },

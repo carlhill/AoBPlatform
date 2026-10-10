@@ -510,20 +510,25 @@ describe('the AOBPRINTER heartbeat, platform side (e2e, real Postgres)', () => {
       filedUnconfirmed: [
         { agreementId, sha256: signed },
         { agreementId: unknownAgreement, sha256: sha('something else') },
+        // The same agreement, filed on the host as a DIFFERENT file from the one the platform wrote back.
+        { agreementId, sha256: sha('a different file') },
       ],
     });
     expect(res.status).toBe(200);
     expect((res.body as AobPrinterHeartbeatReply).returns).toEqual([
       { agreementId, writtenBack: true, sha256Matches: true, listed: false },
       { agreementId: unknownAgreement, writtenBack: false, sha256Matches: false, listed: false },
+      { agreementId, writtenBack: true, sha256Matches: false, listed: false },
     ]);
 
-    // The console reads the same answer, with the patient resolved on the server.
+    // The console reads the same answer, with the patient resolved on the server. A
+    // different file is its own verdict: the host keeps it filed, so it never confirms.
     currentPrincipal = { ...STAFF, practiceId: practiceA };
     const view = (await http().get('/aobprinter-hosts').set('x-practice-id', practiceA)).body as AobPrinterHostsView;
     expect(view.hosts[0].filedUnconfirmed).toEqual([
       { agreementId, sha256: signed, verdict: 'written_back', patientId: patientA },
       { agreementId: unknownAgreement, sha256: sha('something else'), verdict: 'not_offered', patientId: null },
+      { agreementId, sha256: sha('a different file'), verdict: 'written_back_different_file', patientId: patientA },
     ]);
   });
 

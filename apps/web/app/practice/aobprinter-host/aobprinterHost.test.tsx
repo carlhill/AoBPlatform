@@ -292,6 +292,23 @@ describe('the AOBPRINTER host page', () => {
     expect(print.querySelector('a')).toBeNull();
   });
 
+  it('a_return_written_back_as_a_different_file_says_so_and_promises_no_confirmation', async () => {
+    const row = host({
+      filedUnconfirmed: [
+        { agreementId: AGREEMENT, sha256: HASH_B, verdict: 'written_back_different_file', patientId: PATIENT },
+      ],
+    });
+    stubHosts({ hosts: [row], secondHostReporting: false });
+    render(<AobPrinterHostView practiceId={PRACTICE} />);
+
+    const filed = await screen.findByTestId('aobprinter-state-filed_unconfirmed');
+    expect(filed.textContent).toContain(t.filed.written_back_different_file);
+    // The host keeps a return filed when the hashes differ, so "confirmed on its next report" would be false here.
+    expect(filed.textContent).not.toContain(t.filed.written_back);
+    expect(filed.textContent).not.toContain('next report');
+    expect(filed.querySelector('a')?.getAttribute('href')).toBe(`/practice/patients/${PATIENT}`);
+  });
+
   it('an_unmapped_reason_code_shows_its_code', async () => {
     const row = host({
       chain: {

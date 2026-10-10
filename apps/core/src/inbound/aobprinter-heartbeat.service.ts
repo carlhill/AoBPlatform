@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import type {
   AobPrinterFiledUnconfirmedRow,
+  AobPrinterFiledUnconfirmedVerdict,
   AobPrinterHeartbeat,
   AobPrinterHeartbeatReply,
   AobPrinterHostException,
@@ -53,12 +54,25 @@ export class AobPrinterHeartbeatService {
         ...(patientId ? { patientId } : {}),
       };
     });
+    /*
+     * WRITTEN BACK IS TWO VERDICTS. The host confirms a return only when the
+     * platform wrote back the same file (`sha256Matches`); otherwise it keeps
+     * it filed (heartbeat.ts `applyReply`). So "reconciles on the next report"
+     * is true only of the first, and a different file is said as itself.
+     */
     const filedUnconfirmed: AobPrinterFiledUnconfirmedRow[] = beat.filedUnconfirmed.map((f, i) => {
       const status = returns[i];
+      const verdict: AobPrinterFiledUnconfirmedVerdict = status.writtenBack
+        ? status.sha256Matches
+          ? 'written_back'
+          : 'written_back_different_file'
+        : status.listed
+          ? 'offered'
+          : 'not_offered';
       return {
         agreementId: f.agreementId,
         sha256: f.sha256,
-        verdict: status.writtenBack ? 'written_back' : status.listed ? 'offered' : 'not_offered',
+        verdict,
         patientId: status.patientId,
       };
     });

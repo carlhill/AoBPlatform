@@ -219,11 +219,15 @@ export interface AobPrinterHostException extends AobPrinterOpenException {
 /**
  * WHAT THE PLATFORM SAYS ABOUT A RETURN FILED BUT NOT RECORDED AS CONFIRMED
  * (§4 state 6):
- *  - `written_back` — recorded; reconciles on the next report;
+ *  - `written_back` — recorded, and the file the host filed is the one the
+ *    platform wrote back; reconciles on the next report;
+ *  - `written_back_different_file` — recorded, but the platform's file has a
+ *    different hash from the one the host filed. The host keeps such a return
+ *    filed (it never confirms a file it does not hold), so it never reconciles;
  *  - `offered` — not recorded, still offered for collection;
  *  - `not_offered` — not recorded and no longer offered.
  */
-export type AobPrinterFiledUnconfirmedVerdict = 'written_back' | 'offered' | 'not_offered';
+export type AobPrinterFiledUnconfirmedVerdict = 'written_back' | 'written_back_different_file' | 'offered' | 'not_offered';
 
 /** A filed return with the platform's verdict and its patient. */
 export interface AobPrinterFiledUnconfirmedRow extends AobPrinterFiledReturn {
