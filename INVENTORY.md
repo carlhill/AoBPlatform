@@ -17,7 +17,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 | | Count |
 |---|---|
-| Exported symbols indexed | 2416 |
+| Exported symbols indexed | 2418 |
 | Files scanned for exports | 571 |
 | Files scanned for imports | 614 |
 | Exports with no comment of their own | 1001 |
@@ -35,7 +35,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 - [Contracts types](#contracts-types) — 118
 - [Contracts functions and constants](#contracts-functions-and-constants) — 32
 - [Core services, controllers and modules](#core-services-controllers-and-modules) — 287
-- [Core helpers, constants and types](#core-helpers-constants-and-types) — 197
+- [Core helpers, constants and types](#core-helpers-constants-and-types) — 199
 - [AOBPRINTER (the desktop print channel)](#aobprinter-the-desktop-print-channel-) — 163
 
 ## Web components
@@ -1756,6 +1756,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `VaultEventType` | contracts:vault.ts |  | **2** · vault:events/create-event.dto.ts, vault-client:relay.ts |
 | `AobPrinterChainRegressionView` | contracts:aobprinter-heartbeat.ts | A regression as stored on the row: the finding, and when it was made. | **1** · core:aobprinter-hosts/aobprinter-hosts.service.ts |
 | `AobPrinterExceptionStage` | contracts:aobprinter-heartbeat.ts | One of `AOBPRINTER_EXCEPTION_STAGES`. | **1** · aobprinter:store.ts |
+| `AobPrinterFiledUnconfirmedVerdict` | contracts:aobprinter-heartbeat.ts | WHAT THE PLATFORM SAYS ABOUT A RETURN FILED BUT NOT RECORDED AS CONFIRMED (§4 state 6): - `written_back` — recorded, and the file the host filed is the one the platform wrote back; reconciles on the next report; - `written_back_different_file` — recorded, but the platform's file has a different hash from the one the host filed. | **1** · core:inbound/aobprinter-heartbeat.service.ts |
 | `AobPrinterHostsOverview` | contracts:aobprinter-heartbeat.ts | `GET /platform/aobprinter-hosts`. | **1** · core:aobprinter-hosts/aobprinter-hosts.service.ts |
 | `AobPrinterJobState` | contracts:aobprinter-heartbeat.ts | What the platform knows of a print job the host asked about. | **1** · core:inbound/inbound-print-jobs.service.ts |
 | `AobPrinterOpenException` | contracts:aobprinter-heartbeat.ts | Ids and codes only. | **1** · aobprinter:store.ts |
@@ -1807,7 +1808,6 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `WriteArtefactRequest` | contracts:pms-adapter.ts |  | **1** · connector:mock-adapter.ts |
 | `WriteBackManifest` | contracts:print-capture.ts | THE WRITE-BACK MANIFEST — the small JSON beside the PDF in the patient's folder (DB4-AND-AOBL.md §7, row 3b). | **1** · aobprinter:collector.ts |
 | `WriteResult` | contracts:pms-adapter.ts |  | **1** · connector:mock-adapter.ts |
-| `AobPrinterFiledUnconfirmedVerdict` | contracts:aobprinter-heartbeat.ts | WHAT THE PLATFORM SAYS ABOUT A RETURN FILED BUT NOT RECORDED AS CONFIRMED (§4 state 6): - `written_back` — recorded; reconciles on the next report; - `offered` — not recorded, still offered for collection; - `not_offered` — not recorded and no longer offered. | 0 |
 | `AobPrinterHostChainView` | contracts:aobprinter-heartbeat.ts | The chain as the console shows it. | 0 |
 | `ArrivalEvent` | contracts:arrivals.ts |  | 0 |
 | `ArrivalRefusalReason` | contracts:arrivals.ts |  | 0 |
@@ -2166,7 +2166,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Core helpers, constants and types
 
-197 exports.
+199 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -2254,6 +2254,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `correctionBody` | core:notices/notice-template.ts | Correction notices supersede rather than replace (REQ-DEL-06). | **1** · core:notices/notices.service.ts |
 | `createAddressValidator` | core:organisations/address-validator.ts |  | **1** · core:organisations/organisations.module.ts |
 | `decideDb4Reprint` | core:inbound/db4-reprint.ts |  | **1** · core:inbound/db4-assignment.handler.ts |
+| `effectiveRetiredAt` | core:aobprinter-hosts/aobprinter-hosts.service.ts | RETIRED, AS EVERY READER OF THE ROW MEANS IT (PRINTER-HEARTBEAT.md §3): the stamp, unless the chain has reported SINCE it was retired — then it is a host still running beside the accepted one, and counts as live for rule 1, for the two-hosts notice, for the sweep, for the console and for re-baselining. | **1** · core:aobprinter-hosts/aobprinter-hosts.sweep.ts |
 | `extractText` | core:artefacts/extract-text.ts |  | **1** · core:artefacts/artefacts.service.ts |
 | `formatAbn` | core:render/agreement-document.ts | Group an ABN the way the register prints it. | **1** · core:practices/letterhead.service.ts |
 | `hashSecret` | core:devices/device-credential.ts |  | **1** · core:devices/devices.service.ts |
@@ -2365,6 +2366,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `ourStringsOf` | core:render/signed-db4-document.ts | THE STRINGS THIS CODEBASE AUTHORED — the ones hard rule 12 is about. | 0 |
 | `renderedStringsOf` | core:render/agreement-document.ts | Every string that will be drawn on the page, in one list — including the particulars' own values, because a service description or a provider name is as much a line on the contract as a template paragraph is. | 0 |
 | `reproducedStringsOf` | core:render/signed-db4-document.ts | THE STRINGS REPRODUCED FROM THE FORM. | 0 |
+| `storedLocalCheck` | core:aobprinter-hosts/aobprinter-hosts.service.ts | THE HOST'S OWN CHECK AS STORED: rebuilt from only the fields its `ok` value declares (the contract's `AobPrinterLocalCheck` union), never the object the request carried. | 0 |
 | `templateValuesFor` | core:agreements/agreements.service.ts | THE PARTICULARS, TURNED INTO THE VALUES THE WORDS NEED. | 0 |
 | `unwrapJsonp` | core:organisations/abr.ts | Strip the `callback( … )` padding the JSON endpoints answer with. | 0 |
 
