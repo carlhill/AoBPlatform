@@ -2,6 +2,7 @@ import { Type } from 'class-transformer';
 import {
   KIOSK_IDLE_TIMEOUT_MAX_SECONDS,
   KIOSK_IDLE_TIMEOUT_MIN_SECONDS,
+  PRACTICE_TIMEZONE_KEYS,
   SURFACE_PROFILE_KEYS,
 } from '@aobplatform/domain';
 import {
@@ -116,6 +117,20 @@ export class UpdateConfigDto {
   @IsOptional()
   @IsIn(SURFACE_PROFILE_KEYS as string[])
   surfaceProfile?: string;
+
+  /**
+   * THE ZONE THIS PRACTICE'S DAY IS MEASURED IN (D-2026-10-10-03). Every desk
+   * day boundary turns at midnight here.
+   *
+   * THE LIST COMES FROM THE CONTENT FILE, never from a literal here.
+   * `PRACTICE_TIMEZONE_KEYS` is `packages/domain/content/practice-timezones.json`,
+   * and the CHECK on the column copies the same list — so a zone that is not
+   * on it is refused here with a 400 and, if anything got past this, by the
+   * database.
+   */
+  @IsOptional()
+  @IsIn(PRACTICE_TIMEZONE_KEYS as string[])
+  timezone?: string;
 
   @IsOptional()
   @IsBoolean()

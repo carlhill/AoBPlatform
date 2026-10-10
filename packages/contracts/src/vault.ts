@@ -571,6 +571,17 @@ export const VAULT_EVENT_TYPES = [
    */
   'practice.surface_profile_set',
   /**
+   * THE ZONE A PRACTICE'S DAY IS MEASURED IN (D-2026-10-10-03).
+   *
+   * Every desk day boundary turns at midnight in this zone: which agreements
+   * are today's on the tablet's list, which fall to "Unsigned from earlier
+   * days", and the date the desk writes as D2 when it locks particulars.
+   * Moving it moves every one of those lines, so who moved it, from what, to
+   * what, and from which version of the zone list is evidence. A zone name is
+   * not PII (REQ-LOG-08).
+   */
+  'practice.timezone_set',
+  /**
    * THE PATIENT WOULD RATHER AGREE EACH VISIT (Carl, 4 Sep 2026).
    *
    * Its own event, and not a flavour of the walk-away, because it is a

@@ -7,6 +7,7 @@ import {
   IdentifierSetError,
   isBillingRole,
   PRACTICE_SURFACES_VERSION,
+  PRACTICE_TIMEZONES_VERSION,
   profileSurfaces,
 } from '@aobplatform/domain';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
@@ -105,6 +106,7 @@ export class PracticesService {
           kioskIdleTimeoutSeconds: dto.kioskIdleTimeoutSeconds,
           enduringByDefault: dto.enduringByDefault,
           surfaceProfile: dto.surfaceProfile,
+          timezone: dto.timezone,
           writeBackProven: dto.writeBackProven,
           senderIdRegistered: dto.senderIdRegistered,
         },
@@ -222,6 +224,37 @@ export class PracticesService {
              */
             surfaces: profileSurfaces(dto.surfaceProfile).join(', '),
             surfacesVersion: PRACTICE_SURFACES_VERSION,
+            ...(actor ? { setBy: actor.name } : {}),
+          },
+        });
+      }
+
+      /*
+       * THE ZONE THIS PRACTICE'S DAY IS MEASURED IN (D-2026-10-10-03) —
+       * evidenced when it moves, the same treatment as the settings above.
+       *
+       * It decides which agreements are "today's" on the desk and the tablet,
+       * and which fall to "Unsigned from earlier days", and it is the date the
+       * desk writes as D2 when it locks particulars. Moving it moves where
+       * every one of those lines falls, so who moved it and to what is
+       * evidence. Written through the outbox in the same transaction as the
+       * row it evidences (hard rule 11).
+       *
+       * THE CONTENT VERSION TRAVELS WITH IT (hard rule 14), as the surface
+       * profile's does. A zone name is not PII (REQ-LOG-08).
+       *
+       * ONLY WHEN IT ACTUALLY CHANGES, because this endpoint is a whole-form
+       * save and the console posts every field on every press.
+       */
+      if (dto.timezone !== undefined && dto.timezone !== practice.timezone) {
+        await enqueueVaultEvent(tx, {
+          type: 'practice.timezone_set',
+          actor: actor ? { principalType: actor.principalType, id: actor.id } : SYSTEM_ACTOR,
+          subject: { type: 'Practice', id: practiceId },
+          payload: {
+            timezone: dto.timezone,
+            previous: practice.timezone,
+            timezonesVersion: PRACTICE_TIMEZONES_VERSION,
             ...(actor ? { setBy: actor.name } : {}),
           },
         });
