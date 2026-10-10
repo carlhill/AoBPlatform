@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import type { Agreement as DbAgreement, Prisma, TabletSession } from '@prisma/client';
 import {
 
+  DEFAULT_PRACTICE_TIMEZONE,
   TABLET_SESSION_IDLE_MS,
   canChangeTabletSessionState,
   computeSignability,
@@ -12,8 +13,10 @@ import {
   isServiceDescription,
   latestVisitState,
   mayBeProviderOnAgreement,
+  practiceDayOf,
   projectTabletSessionPatient,
   shownDetailTypesFor,
+  startOfPracticeDay,
   type AgreementType,
   type ConfirmableDetailType,
   type PushBlockedReason,
@@ -397,6 +400,44 @@ export class TabletSessionsService {
     private readonly reconciliation: ReconciliationService,
   ) {}
 
+  /**
+   * NOW, FOR THE DESK'S DAY BOUNDARY ONLY (D-2026-10-10-03).
+   *
+   * A FIELD, NOT A PROVIDER, because it is the smallest seam that lets an e2e
+   * pin "8:30am in Sydney" without faking the process clock under Prisma, the
+   * vault client and supertest (`practice-day-boundary.e2e-spec.ts` sets it).
+   * Read only by `practiceDay`; nothing else in this service consults it.
+   */
+  clock: () => Date = () => new Date();
+
+  /**
+   * THE PRACTICE'S "TODAY", READ ONCE PER REQUEST (D-2026-10-10-03).
+   *
+   * A practice's day is its own local day, in the IANA zone on
+   * `practices.timezone`. `todayIso` is compared with `Appointment.date` (a
+   * calendar date); `startOfDay` is the instant of local midnight, compared
+   * with `createdAt` / `serviceRenderedAt`. Both come from the same zone and
+   * the same instant, so no row can be today by one and yesterday by the
+   * other — which is what the UTC date and the server's midnight did between
+   * them every Sydney morning.
+   *
+   * INSIDE THE CALLER'S TRANSACTION where there is one, so the zone is read
+   * under the same `withPractice` scope as the rows it buckets. A missing row
+   * (it cannot be, inside a practice scope) falls back to the column default
+   * rather than to UTC.
+   */
+  private async practiceDay(tx: Prisma.TransactionClient): Promise<PracticeDay> {
+    const practice = await tx.practice.findFirst({ select: { timezone: true } });
+    const timeZone = practice?.timezone ?? DEFAULT_PRACTICE_TIMEZONE;
+    const now = this.clock();
+    return { timeZone, todayIso: practiceDayOf(now, timeZone), startOfDay: startOfPracticeDay(now, timeZone) };
+  }
+
+  /** `practiceDay` for a caller that has no transaction open. */
+  private practiceDayFor(practiceId: string): Promise<PracticeDay> {
+    return this.prisma.withPractice(practiceId, (tx) => this.practiceDay(tx));
+  }
+
   // -------------------------------------------------------------------------
   // The console
   // -------------------------------------------------------------------------
@@ -515,6 +556,8 @@ export class TabletSessionsService {
      * patient the tablet again is not the moment to re-litigate it (HARD-02 —
      * a locked agreement is corrected by superseding, never by editing).
      */
+    // D2 and D5's "today" is the practice's own day (D-2026-10-10-03).
+    const { todayIso } = await this.practiceDayFor(practiceId);
     const prepared: PreparedLock | null = context.agreement.particularsLockedAt
       ? null
       : await this.prepareLockOrRefuse(
@@ -538,8 +581,8 @@ export class TabletSessionsService {
              * to be on or BEFORE its agreement date, and "today" would be a
              * silent lie about a service rendered yesterday afternoon.
              */
-            serviceDate: context.serviceDate ?? context.appointmentDate ?? today(),
-            agreementDate: today(),
+            serviceDate: context.serviceDate ?? context.appointmentDate ?? todayIso,
+            agreementDate: todayIso,
             /*
              * D6b — POST-AGREEMENTS ONLY (REQ-REG-01; s 65C(4) table item 6).
              * `undefined` on every other type, so C7 keeps its "applies to
@@ -1015,10 +1058,15 @@ export class TabletSessionsService {
       if (!agreement) return null;
       const live = await tx.tabletSession.findFirst({ where: { agreementId, endedAt: null } });
       const practice = await tx.practice.findFirst({});
-      return { agreement, live, practiceDefaultD6a: practice?.defaultServiceDescription ?? null };
+      return {
+        agreement,
+        live,
+        practiceDefaultD6a: practice?.defaultServiceDescription ?? null,
+        day: await this.practiceDay(tx),
+      };
     });
     if (!found) throw pushRefusals.agreementNotFound();
-    const { agreement, live, practiceDefaultD6a } = found;
+    const { agreement, live, practiceDefaultD6a, day } = found;
 
     if (live) {
       throw new ConflictException(
@@ -1027,7 +1075,7 @@ export class TabletSessionsService {
       );
     }
 
-    const already = await this.openEpisodicForVisit(practiceId, agreement);
+    const already = await this.openEpisodicForVisit(practiceId, agreement, day);
     if (already) {
       return { agreementId: already, enduringAgreementId: agreement.id, reused: true };
     }
@@ -1054,7 +1102,7 @@ export class TabletSessionsService {
      */
     if (offered.serviceDescription) {
       await this.agreements.transition(practiceId, offered.agreementId, 'awaiting_signature');
-      await this.agreements.lockParticulars(practiceId, offered.agreementId, { serviceDate: today() });
+      await this.agreements.lockParticulars(practiceId, offered.agreementId, { serviceDate: day.todayIso });
     }
 
     await this.prisma.withPractice(practiceId, async (tx) => {
@@ -1180,11 +1228,9 @@ export class TabletSessionsService {
   private async openEpisodicForVisit(
     practiceId: string,
     source: Pick<DbAgreement, 'affiliationId' | 'patientId'>,
+    day: PracticeDay,
   ): Promise<string | null> {
     if (!source.affiliationId) return null;
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
-    const todayIso = today();
 
     return this.prisma.withPractice(practiceId, async (tx) => {
       const candidates = await tx.agreement.findMany({
@@ -1207,10 +1253,7 @@ export class TabletSessionsService {
       );
 
       for (const candidate of candidates) {
-        const appointment = appointmentByAgreement.get(candidate.id);
-        const forToday = appointment
-          ? appointment.date.toISOString().slice(0, 10) === todayIso
-          : candidate.createdAt >= startOfDay;
+        const forToday = dayOf(candidate, appointmentByAgreement.get(candidate.id), day) === 'today';
         if (!forToday) continue;
         const open = await tx.captureRequest.findFirst({
           where: { agreementId: candidate.id, status: 'open' },
@@ -1392,10 +1435,8 @@ export class TabletSessionsService {
    */
   async pushable(practiceId: string): Promise<PushableRow[]> {
     await this.settle(practiceId);
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
 
-    const rows = await this.readPushableRows(practiceId, startOfDay);
+    const rows = await this.readPushableRows(practiceId);
 
     /*
      * AND THEN THE ONE QUESTION THE ROWS CANNOT ANSWER THEMSELVES: has the
@@ -1535,10 +1576,8 @@ export class TabletSessionsService {
    * there is no field for one and the service record holds none.
    */
   async coveredToday(practiceId: string): Promise<CoveredServiceRow[]> {
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
-
     return this.prisma.withPractice(practiceId, async (tx) => {
+      const { startOfDay } = await this.practiceDay(tx);
       const records = await tx.serviceRecord.findMany({
         where: {
           visitDecision: { in: ['covered', 'covered_by_enduring'] },
@@ -1608,11 +1647,8 @@ export class TabletSessionsService {
    * a push, a signature or a bill (hard rule 8).
    */
   async unsignedEarlierDays(practiceId: string): Promise<EarlierUnsignedList> {
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
-    const todayIso = today();
-
     const read = await this.prisma.withPractice(practiceId, async (tx) => {
+      const day = await this.practiceDay(tx);
       const candidates = await tx.agreement.findMany({
         where: { status: { in: [...PUSHABLE_STATUSES] }, signatureEventId: null },
         orderBy: { createdAt: 'asc' },
@@ -1628,14 +1664,16 @@ export class TabletSessionsService {
       );
       const earlier = candidates.filter(
         (agreement) =>
-          dayOf(agreement, appointmentByAgreement.get(agreement.id), startOfDay, todayIso) === 'earlier',
+          dayOf(agreement, appointmentByAgreement.get(agreement.id), day) === 'earlier',
       );
       const live = await this.withoutDeadEnds(tx, earlier);
       if (live.length === 0) return null;
 
       const forDateOf = (agreement: (typeof live)[number]): string => {
         const appointment = appointmentByAgreement.get(agreement.id);
-        return appointment ? appointment.date.toISOString().slice(0, 10) : localIsoDate(agreement.createdAt);
+        return appointment
+          ? appointment.date.toISOString().slice(0, 10)
+          : practiceDayOf(agreement.createdAt, day.timeZone);
       };
       /* OLDEST FIRST, with ties broken on fields nothing on this list can move. */
       const sorted = [...live].sort(
@@ -1813,8 +1851,9 @@ export class TabletSessionsService {
   }
 
   /** The rows themselves — one transaction, no network calls. See `pushable`. */
-  private async readPushableRows(practiceId: string, startOfDay: Date): Promise<PushableRow[]> {
+  private async readPushableRows(practiceId: string): Promise<PushableRow[]> {
     return this.prisma.withPractice(practiceId, async (tx) => {
+      const day = await this.practiceDay(tx);
       const candidates = await tx.agreement.findMany({
         where: { status: { in: [...PUSHABLE_STATUSES] }, signatureEventId: null },
         orderBy: { createdAt: 'asc' },
@@ -1828,10 +1867,8 @@ export class TabletSessionsService {
         appointments.filter((a) => a.agreementId).map((a) => [a.agreementId as string, a]),
       );
 
-      const todayIso = today();
       const dueToday = candidates.filter(
-        (agreement) =>
-          dayOf(agreement, appointmentByAgreement.get(agreement.id), startOfDay, todayIso) === 'today',
+        (agreement) => dayOf(agreement, appointmentByAgreement.get(agreement.id), day) === 'today',
       );
       if (dueToday.length === 0) return [];
 
@@ -3140,36 +3177,40 @@ export class TabletSessionsService {
   }
 }
 
-/** Today, as the ISO date every particular in this system is written in. */
-function today(): string {
-  return new Date().toISOString().slice(0, 10);
+/**
+ * ONE PRACTICE'S "TODAY" AT ONE INSTANT (D-2026-10-10-03) — see
+ * `TabletSessionsService.practiceDay`, the only place one is made.
+ */
+interface PracticeDay {
+  /** The IANA zone on `practices.timezone`. */
+  timeZone: string;
+  /** `YYYY-MM-DD` in that zone — the ISO date every particular is written in. */
+  todayIso: string;
+  /** The instant of local midnight at the start of `todayIso`. */
+  startOfDay: Date;
 }
 
 /**
  * WHICH DAY AN UNSIGNED AGREEMENT IS FOR, RELATIVE TO TODAY — the one reading
  * of "today" the desk uses (`readPushableRows`, `unsignedEarlierDays`): the
  * appointment's date where the agreement has a booking, and the day the draft
- * was created where it does not. Moved here unchanged from `readPushableRows`
- * (D-2026-10-10-01) so the earlier-days list is exactly what fell off it.
+ * was created where it does not (D-2026-10-10-01), both measured in the
+ * practice's own zone (D-2026-10-10-03).
+ *
+ * `Appointment.date` IS A `@db.Date`, which Prisma hands back as UTC midnight
+ * of that calendar date — so its ISO prefix IS the calendar date, in any zone.
+ * Only "today" needed the practice's clock.
  */
 function dayOf(
   agreement: { createdAt: Date },
   appointment: { date: Date } | undefined,
-  startOfDay: Date,
-  todayIso: string,
+  day: PracticeDay,
 ): 'earlier' | 'today' | 'later' {
   if (appointment) {
     const date = appointment.date.toISOString().slice(0, 10);
-    return date === todayIso ? 'today' : date < todayIso ? 'earlier' : 'later';
+    return date === day.todayIso ? 'today' : date < day.todayIso ? 'earlier' : 'later';
   }
-  return agreement.createdAt >= startOfDay ? 'today' : 'earlier';
-}
-
-/** A timestamp's calendar day on this server's clock — the clock `startOfDay` is set on. */
-function localIsoDate(at: Date): string {
-  const month = String(at.getMonth() + 1).padStart(2, '0');
-  const day = String(at.getDate()).padStart(2, '0');
-  return `${at.getFullYear()}-${month}-${day}`;
+  return agreement.createdAt >= day.startOfDay ? 'today' : 'earlier';
 }
 
 /**
