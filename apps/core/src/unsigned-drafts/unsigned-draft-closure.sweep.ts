@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import {
+  PRACTICE_TIMEZONE,
   UNSIGNED_DRAFT_CLOSURE_MIN_DAYS,
   UNSIGNED_DRAFT_CLOSURE_TYPES,
   UNSIGNED_OPEN_STATUSES,
@@ -22,8 +23,6 @@ const REASON: UnsignedDraftClosureReason = 'no_service_recorded';
 const PRACTICE_PAGE = 500;
 /** Drafts read per page; each is then decided in a transaction of its own. */
 const DRAFT_PAGE = 100;
-/** Drafts examined per practice per run, so one practice's backlog cannot hold the sweep. */
-const MAX_DRAFTS_PER_PRACTICE_RUN = 2_000;
 const NIL_UUID = '00000000-0000-0000-0000-000000000000';
 
 /** Why a due draft was left open. Counted, never logged with a patient in it. */
@@ -117,6 +116,15 @@ export interface ClosureResult {
 export class UnsignedDraftClosureSweep {
   private readonly logger = new Logger(UnsignedDraftClosureSweep.name);
 
+  /**
+   * DRAFTS EXAMINED PER PRACTICE PER RUN, so one practice's backlog cannot hold
+   * the sweep. Every run starts from the oldest, so anything that stays
+   * ineligible for ever must be filtered out in the READ, or enough of it
+   * would fill the cap and starve the drafts behind it. A property so a test
+   * can prove that with a handful of rows rather than two thousand.
+   */
+  maxDraftsPerPracticeRun = 2_000;
+
   constructor(private readonly prisma: PrismaService) {}
 
   @Cron(CronExpression.EVERY_HOUR)
@@ -166,7 +174,8 @@ export class UnsignedDraftClosureSweep {
     const cutoff = creationCutoff(today, rule.days);
 
     let cursor = { createdAt: new Date(0), id: NIL_UUID };
-    while (result.examined < MAX_DRAFTS_PER_PRACTICE_RUN) {
+    while (result.examined < this.maxDraftsPerPracticeRun) {
+      const limit = Math.min(DRAFT_PAGE, this.maxDraftsPerPracticeRun - result.examined);
       const page = await this.prisma.withPractice(practiceId, (tx) =>
         tx.$queryRaw<Array<{ id: string; createdAt: Date }>>`
           SELECT a."id", a."createdAt" FROM "agreements" a
@@ -179,8 +188,36 @@ export class UnsignedDraftClosureSweep {
             AND NOT EXISTS (SELECT 1 FROM "service_records" s WHERE s."agreementId" = a."id")
             AND NOT EXISTS (SELECT 1 FROM "pre_agreement_associations" p WHERE p."agreementId" = a."id")
             AND NOT EXISTS (SELECT 1 FROM "agreements" n WHERE n."supersedesAgreementId" = a."id")
+            /*
+             * AND NO SERVICE RECORD MATCHES THE VISIT (re-review, finding 3):
+             * same patient, the visit's practice-local day (the booking's date,
+             * else the creation day in PRACTICE_TIMEZONE, as visitDayOf reads
+             * it) and the same servicing provider -- by affiliation, by the
+             * legacy provider row, or by a legacy row that shares the
+             * affiliation's PMS linkage key or provider number (the two keys
+             * anchorForLegacyProvider trusts most). This is at least as wide
+             * as servicesMatchingDraft for those keys, so an excluded draft is
+             * one the closer would skip anyway; the closer still re-checks
+             * every draft that IS read, under its lock.
+             */
+            AND NOT EXISTS (
+              SELECT 1 FROM "service_records" s
+              WHERE s."patientId" = a."patientId"
+                AND s."serviceDate" = COALESCE(
+                  (SELECT ap."date" FROM "appointments" ap WHERE ap."agreementId" = a."id" LIMIT 1),
+                  ((a."createdAt" AT TIME ZONE 'UTC') AT TIME ZONE ${PRACTICE_TIMEZONE})::date)
+                AND (
+                  (a."affiliationId" IS NOT NULL AND s."affiliationId" = a."affiliationId")
+                  OR (a."providerId" IS NOT NULL AND s."providerId" = a."providerId")
+                  OR (a."affiliationId" IS NOT NULL AND s."providerId" IN (
+                    SELECT p."id" FROM "providers" p
+                    JOIN "affiliations" af ON af."id" = a."affiliationId"
+                    WHERE (p."pmsLinkageKey" IS NOT NULL AND p."pmsLinkageKey" = af."pmsLinkageKey")
+                       OR (p."providerNumber" IS NOT NULL AND p."providerNumber" = af."providerNumber")))
+                )
+            )
           ORDER BY a."createdAt", a."id"
-          LIMIT ${DRAFT_PAGE}::int`,
+          LIMIT ${limit}::int`,
       );
       for (const row of page) {
         result.examined += 1;
@@ -188,7 +225,7 @@ export class UnsignedDraftClosureSweep {
         if (outcome === 'closed') result.closed += 1;
         else result.skipped[outcome] = (result.skipped[outcome] ?? 0) + 1;
       }
-      if (page.length < DRAFT_PAGE) break;
+      if (page.length < limit) break;
       cursor = page[page.length - 1]!;
     }
     return result;

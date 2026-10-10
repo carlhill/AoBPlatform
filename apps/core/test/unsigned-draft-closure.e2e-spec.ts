@@ -283,11 +283,12 @@ describe('unsigned draft closure after N days (e2e, real Postgres)', () => {
     const result = await sweep.closeForPractice(f.practiceId, sweepAt);
     expect(result.closed).toBe(0);
     /*
-     * Linked, associated and superseded drafts are filtered out of the read
-     * itself (they never become closable, so they are not re-examined every
-     * hour); the rest are examined under their row lock and skipped by name.
+     * Linked, associated, superseded and service-matched drafts are filtered
+     * out of the read itself (they never become closable, so they are not
+     * re-examined every hour); the rest are examined under their row lock and
+     * skipped by name.
      */
-    expect(result.skipped).toEqual({ service_matches_visit: 1, on_tablet: 1, live_remote_link: 1 });
+    expect(result.skipped).toEqual({ on_tablet: 1, live_remote_link: 1 });
     for (const id of [linked, associated, matched, replaced, onTablet, liveLink, held, young]) {
       expect((await agreement(f, id)).status).toBe('draft');
     }
@@ -306,6 +307,40 @@ describe('unsigned draft closure after N days (e2e, real Postgres)', () => {
       tx.agreement.count({ where: { id: { in: ids }, status: { not: 'expired' } } }),
     );
     expect(left).toBe(0);
+  });
+
+  it('more_service_matched_drafts_than_the_cap_never_starve_a_newer_due_draft', async () => {
+    const f = await practice();
+    const day = dayAgo(40);
+    // Older drafts, each with a service recorded for its visit: permanently ineligible.
+    for (let i = 0; i < 6; i += 1) {
+      const visitDay = addCalendarDays(day, -i);
+      await draft(f, at(visitDay));
+      await prisma.withPractice(f.practiceId, (tx) =>
+        tx.serviceRecord.create({
+          data: {
+            practiceId: f.practiceId,
+            pmsInvoiceKey: `closure-cap-${randomUUID()}`,
+            patientId: f.patientId,
+            providerId: f.anchor.providerId,
+            serviceDate: new Date(`${visitDay}T00:00:00Z`),
+            mbsItemNumbers: ['23'],
+          },
+        }),
+      );
+    }
+    // And a newer one with no service, due.
+    const newer = await draft(f, at(addCalendarDays(day, 1)));
+
+    const previousCap = sweep.maxDraftsPerPracticeRun;
+    sweep.maxDraftsPerPracticeRun = 5;
+    try {
+      const result = await sweep.closeForPractice(f.practiceId, at(addCalendarDays(day, 10)));
+      expect(result.closed).toBe(1);
+    } finally {
+      sweep.maxDraftsPerPracticeRun = previousCap;
+    }
+    expect((await agreement(f, newer)).status).toBe('expired');
   });
 
   it('the_platform_run_pages_past_practices_with_nothing_due', async () => {
