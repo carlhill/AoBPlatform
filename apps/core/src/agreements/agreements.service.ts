@@ -27,6 +27,7 @@ import { CaptureService } from '../capture/capture.service';
 import { WriteBackService } from '../pms/write-back.service';
 import {
   AgreementTemplateError,
+  UNSIGNED_OPEN_STATUSES,
   renderAgreementTemplate,
   type RenderedAgreementTemplate,
   assertNoForbiddenAgreementFields,
@@ -2568,9 +2569,34 @@ export class AgreementsService {
     prepared: PreparedLock | null,
     verificationEventId: string,
   ): Promise<DbAgreement> {
+    /*
+     * THE ROW LOCK FIRST, FOR BOTH BRANCHES (re-review of D-2026-10-10-09).
+     * The push checked the status OUTSIDE this transaction; the closure sweep
+     * may have closed the agreement since. Under the lock a closed agreement
+     * is refused by name, and one that has otherwise moved on is refused as
+     * not pushable -- before any event is written or any session opened, so
+     * the whole push transaction rolls back.
+     */
+    await lockAndRefuseIfClosed(tx, agreementId);
     const before = await tx.agreement.findFirst({ where: { id: agreementId } });
     if (!before) throw new NotFoundException('Agreement not found.');
     const from = before.status as AgreementStatus;
+    /*
+     * STILL UNSIGNED AND OPEN, under the lock. Both branches: a re-push can
+     * meet a locked agreement still at `draft` (locked without a status move)
+     * as well as one at `awaiting_signature`. `assertPushable` made the finer
+     * pushable check outside the transaction; this is the part a concurrent
+     * writer could have changed since.
+     */
+    const stillPushable =
+      before.signatureEventId === null && (UNSIGNED_OPEN_STATUSES as readonly string[]).includes(from);
+    if (!stillPushable) {
+      throw new ConflictException({
+        statusCode: 409,
+        reason: 'agreement_not_pushable',
+        message: `An agreement in status ${from} cannot be sent to a tablet. Corrections supersede rather than edit (HARD-02).`,
+      });
+    }
 
     if (!prepared) {
       if (!before.particularsLockedAt) {

@@ -21,7 +21,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | Files scanned for exports | 583 |
 | Files scanned for imports | 626 |
 | Exports with no comment of their own | 1020 |
-| Exports imported nowhere else | 1040 |
+| Exports imported nowhere else | 1039 |
 
 ## Sections
 
@@ -787,6 +787,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `relationshipNeedsFreeText` | domain:assignor-relationships.ts | True for the one option that reveals a required "Please describe" box. | **4** · web:kiosk/rules/assignor.ts, web:kiosk/screens/AssignorScreen.tsx, web:practice/patients/NewAgreementPanel.tsx, +1 more |
 | `AgreementTemplateError` | domain:agreement-templates.ts |  | **3** · core:agreements/agreements.service.ts, core:templates/templates.service.ts, web:practice/templates/TemplateForm.tsx |
 | `IdentifierSetError` | domain:identifiers.ts |  | **3** · core:portal/portal.service.ts, core:practices/practices.service.ts, core:verification/verification.service.ts |
+| `UNSIGNED_OPEN_STATUSES` | domain:pre-agreement-association.ts | UNSIGNED AND STILL OPEN: every status from which the lifecycle allows `expired`. | **3** · core:agreements/agreements.service.ts, core:agreements/pre-agreement-association.ts, core:unsigned-drafts/unsigned-draft-closure.sweep.ts |
 | `authorityBasisFor` | domain:assignor-relationships.ts | The basis for a chosen relationship, and the note that goes with it. | **3** · web:kiosk/rules/assignor.ts, web:practice/patients/NewAgreementPanel.tsx, web:practice/tablet/pushDesk.tsx |
 | `basicServiceDescriptionOf` | domain:service-descriptions.ts | D6a, READ THE SAME WAY EVERYWHERE IT MATTERS — ONE COPY (Carl flagged the gap live, 4 Sep 2026, over `supersedeForCorrection` losing it; unified 7 Sep 2026 after a review found the helper byte-identical in two services). | **3** · core:agreements/agreements.service.ts, core:kiosk/kiosk.service.ts, core:tablet-sessions/tablet-sessions.service.ts |
 | `buildMessageLog` | domain:correspondence-log.ts | The log, from the dispatches that happened and the sends that were suppressed before they could. | **3** · web:patient/messages/[token]/PatientMessagesView.tsx, web:practice/correspondence/CorrespondenceView.tsx, web:practitioner/messages/MessagesView.tsx |
@@ -810,7 +811,6 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `CeremonyError` | domain:enrolment-ceremony.ts |  | **2** · core:common/domain-exception.filter.ts, core:identity/identity.service.ts |
 | `ContactError` | domain:contacts.ts |  | **2** · core:organisations/applicant.service.ts, core:organisations/organisations.service.ts |
 | `PendingEmailChangeError` | domain:pending-email-change.ts |  | **2** · core:identity/practitioner-email.service.ts, core:organisations/pending-email.service.ts |
-| `UNSIGNED_OPEN_STATUSES` | domain:pre-agreement-association.ts | UNSIGNED AND STILL OPEN: every status from which the lifecycle allows `expired`. | **2** · core:agreements/pre-agreement-association.ts, core:unsigned-drafts/unsigned-draft-closure.sweep.ts |
 | `abnLookupUrl` | domain:external-links.ts | One ABN's page on ABN Lookup. | **2** · web:OrgConsole.tsx, web:apply/ApplyForm.tsx |
 | `afterFailure` | domain:outbound-queue.ts | What happens after a failed attempt. | **2** · core:inbound/inbound-print-jobs.service.ts, core:outbound/outbound.service.ts |
 | `afterPermanentFailure` | domain:outbound-queue.ts | A permanent failure — a malformed address, a destination that does not exist. | **2** · core:inbound/inbound-print-jobs.service.ts, core:outbound/outbound.service.ts |
@@ -1295,6 +1295,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `PORTAL_INVITATION_TEMPLATE_KEY` | domain:patient-message-templates.ts | The offer of portal activation (FR-1.14). | **1** · core:portal/portal-invitation.dispatcher.ts |
 | `PRACTICE_SURFACES_VERSION` | domain:practice-surfaces.ts | Recorded on the event that changes a practice's profile. | **1** · core:practices/practices.service.ts |
 | `PRACTICE_SURFACE_KEYS` | domain:practice-surfaces.ts | Just the keys, in file order — what the string table is keyed by. | **1** · web:practice/channels/ChannelsView.tsx |
+| `PRACTICE_TIMEZONE` | domain:practice-day.ts | THE ZONE A PRACTICE'S DAY IS MEASURED IN — the reporting zone, deliberately the same object rather than a copy. | **1** · core:unsigned-drafts/unsigned-draft-closure.sweep.ts |
 | `PRACTICE_TIMEZONES_VERSION` | domain:practice-timezones.ts | Which list a stored zone was chosen from. | **1** · core:practices/practices.service.ts |
 | `PRINT_DOCUMENT_TYPES` | domain:inbound-lanes.ts | The documents a practice's desktop can print to us (Part 8), each on its lane. | **1** · core:inbound/inbound-print-jobs.controller.ts |
 | `REASSIGNMENT_TASK_KIND` | domain:review-tasks.ts | THE KIND "REASSIGN" RAISES (PRACTITIONER-QUEUE-PAGE.md §3a rule 4). | **1** · core:practitioner-queue/practitioner-queue.service.ts |
@@ -1409,7 +1410,6 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `PRACTICE_CODE_PATTERN` | domain:account-naming.ts | What a code may contain once allocated. | 0 |
 | `PRACTICE_SURFACES` | domain:practice-surfaces.ts | Every surface, in file order. | 0 |
 | `PRACTICE_SURFACE_CONTENT` | domain:practice-surfaces.ts | The whole parsed file, for the tests and for anything that wants to enumerate. | 0 |
-| `PRACTICE_TIMEZONE` | domain:practice-day.ts | THE ZONE A PRACTICE'S DAY IS MEASURED IN — the reporting zone, deliberately the same object rather than a copy. | 0 |
 | `PRE_AGREEMENT_ASSOCIATION_HOW` | domain:pre-agreement-association.ts | HOW AN ASSOCIATION WAS MADE: `automatic` when exactly one draft matched as the service arrived, `chosen` when a person picked one on Reconciliation. | 0 |
 | `PRINT_DOCUMENT_LANES` | domain:inbound-lanes.ts |  | 0 |
 | `PROVIDER_TYPE_PROFESSIONS` | domain:ahpra.ts | Does the AHPRA profession support the provider type a practice is asserting? | 0 |

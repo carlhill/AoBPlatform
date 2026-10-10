@@ -6568,6 +6568,13 @@ export const strings = {
       device_busySomeone: 'another patient',
       agreement_not_found: 'That agreement is no longer available.',
       agreement_not_pushable: 'This agreement has moved on and cannot be sent to a tablet.',
+      /*
+       * D-2026-10-10-09 option 3, at the desk: the closure sweep closed it between
+       * the list being drawn and Send. What was recorded, and nothing sent.
+       */
+      agreement_closed_unsigned:
+        'This agreement was closed as not needed: no service was recorded for its visit within the practice’s '
+        + 'set number of days. Nothing was sent to the tablet.',
       service_description_missing:
         'This agreement still needs a description of the service, chosen from the current list — the tablet '
         + 'never asks a patient for it.',
