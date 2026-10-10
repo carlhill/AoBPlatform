@@ -44,6 +44,23 @@ change for another screen.** The same two shapes remain in `apps/core/src`:
   `agreement.createdAt` UTC-date fallback (used only for an agreement with no
   D5), should move to the practice's day so it stays comparable with the D5
   above. Not a statutory particular; left out of the D5 fix's brief.
+- **Still open, and it can put D5 wrong (review of `fix/d2-practice-date`,
+  10 Oct 2026):** `practitioner-queue/practitioner-queue.service.ts` ~511-513
+  and ~565. The "service rendered" window picks its day with
+  `getFullYear/getMonth/getDate` on `arrivedAt`, which is the UTC day on a UTC
+  server. The service record it selects supplies the agreement's D5. Before
+  11am Sydney time, a patient with an undecided service record from yesterday
+  gets today's "service rendered" press raised as a post-agreement against
+  YESTERDAY's service: a wrong statutory date. The usual case is a harmless
+  `awaiting_item_numbers`. Fix next: the same `practiceDayOf` substitution, with
+  a pinned-clock e2e.
+- **Still open, ordering (pre-existing):** an arrival moves its draft to
+  `awaiting_signature` BEFORE `lockParticulars` runs. If the lock fails (e.g. a
+  rule such as C5, D5 on or after D2, for an arrival that straddles local midnight
+  or a connector backlog delivered next morning), `POST /arrivals` errors with
+  the draft already at `awaiting_signature` and unlocked. Signing stays blocked,
+  so hard rule 2 holds, but the state should not be reachable. Same shape as the
+  per-visit offer item on `fix/tablet-day-boundary`; Carl's call.
 - `arrivals/arrivals.service.ts` ~1409: the front desk's day starts at the
   server's `setHours(0, 0, 0, 0)`.
 - `practitioner-queue/practitioner-queue.service.ts` ~686: the waiting list's
