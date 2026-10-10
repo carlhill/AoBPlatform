@@ -2,10 +2,13 @@ import { Test } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
+import type { ValidationResponse } from '@aobplatform/contracts';
 import { SERVICE_DESCRIPTIONS } from '@aobplatform/domain';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { TabletSessionsService } from '../src/tablet-sessions/tablet-sessions.service';
+import { DevicesService } from '../src/devices/devices.service';
+import { RULES_CLIENT } from '../src/rules-client/rules-client.module';
 import { createServicingProvider, deleteSeededAnchors, type SeededAnchor } from './anchor';
 
 /**
@@ -259,6 +262,227 @@ describe('the desk turns at the practice\'s own midnight (e2e, real Postgres)', 
     }
     expect(desk).toEqual(expect.arrayContaining([ids[1], ids[3]]));
     expect(before).toEqual(expect.arrayContaining([ids[0], ids[2]]));
+  });
+});
+
+/**
+ * AND D2 AND D5 ARE WRITTEN ON THE PRACTICE'S DAY WHEN THE DESK LOCKS
+ * (D-2026-10-10-03; Opus review, 10 October 2026).
+ *
+ * The desk locks particulars in two places — the push and "agree each visit
+ * instead" — and both pass the practice's today as D2 (agreement date) and, for
+ * a walk-in with no booking, D5 (service date). The suite above pins which rows
+ * are TODAY's; nothing pinned what date a lock stamps on the agreement. A lock
+ * on the UTC date would put a Sydney morning's agreement on yesterday's date,
+ * hashed into the Signed Assignment Agreement.
+ *
+ * THE RULES CLIENT IS A STUB THAT PASSES, because what is under test is the
+ * date the desk supplies, not the rule set's verdict on it; the lock still
+ * assembles, renders and commits through the real path.
+ */
+describe('the desk locks D2 and D5 on the practice\'s own date (e2e, real Postgres)', () => {
+  let app: INestApplication;
+  let prisma: PrismaService;
+  let tablet: TabletSessionsService;
+  let realClock: () => Date;
+
+  const sydney = randomUUID();
+  const perth = randomUUID();
+  const anchors = new Map<string, Anchors>();
+  const tablets = new Map<string, string>();
+
+  const passingRules = {
+    validate: async (): Promise<ValidationResponse> => ({
+      valid: true,
+      results: [{ rule: 'C5', outcome: 'pass', message: 'D5 and D2 are consistent.', citation: 's 65C(4)' }],
+      ruleSetVersion: 'test-rules-1',
+      mappingVersion: 'test-mapping-1',
+    }),
+  };
+
+  const http = () => request(app.getHttpServer());
+  const at = (instant: string | Date) => {
+    const fixed = new Date(instant);
+    tablet.clock = () => new Date(fixed);
+  };
+
+  async function seed(practiceId: string, name: string, timezone?: string): Promise<void> {
+    await prisma.withPractice(practiceId, async (tx) => {
+      await tx.practice.create({
+        data: {
+          id: practiceId,
+          name,
+          // The per-visit offer locks only when the practice has a default D6a.
+          defaultServiceDescription: SERVICE_DESCRIPTIONS[0],
+          ...(timezone ? { timezone } : {}),
+        },
+      });
+      const anchor = await createServicingProvider(tx, practiceId, {
+        name: 'Dr Example Provider',
+        providerType: 'general_practitioner',
+        address: '1 Example Street, Sampletown NSW 2000',
+      });
+      const patient = await tx.patient.create({
+        data: {
+          practiceId,
+          familyName: 'Sampleton',
+          givenNames: 'Jamie',
+          dateOfBirth: new Date('1957-03-14'),
+          address: '12 Example Street, Exampletown NSW 2000',
+        },
+      });
+      const assignor = await tx.assignor.create({
+        data: { practiceId, name: 'Jamie Sampleton', authorityBasis: 'self' },
+      });
+      anchors.set(practiceId, { anchor, patientId: patient.id, assignorId: assignor.id });
+    });
+    const devices = app.get(DevicesService);
+    const registered = await devices.registerForDev(practiceId, 'Lock-date tablet');
+    await devices.pair(registered.code, `lock-date-${practiceId}`);
+    tablets.set(practiceId, registered.deviceId);
+  }
+
+  async function draft(practiceId: string, type: 'episodic_pre' | 'enduring'): Promise<string> {
+    const a = anchors.get(practiceId)!;
+    return prisma.withPractice(practiceId, async (tx) => {
+      const row = await tx.agreement.create({
+        data: {
+          practiceId,
+          type,
+          anchorKind: 'provider',
+          affiliationId: a.anchor.id,
+          patientId: a.patientId,
+          assignorId: a.assignorId,
+          assignorIsPatient: true,
+          enduringPathway: type === 'enduring' ? 'mymedicare' : null,
+          status: 'draft',
+          serviceDescription: type === 'episodic_pre' ? SERVICE_DESCRIPTIONS[0] : null,
+          assignorConfirmedAt: new Date(),
+        },
+      });
+      return row.id;
+    });
+  }
+
+  async function particularsOf(practiceId: string, agreementId: string): Promise<Record<string, unknown>> {
+    const row = await prisma.withPractice(practiceId, (tx) =>
+      tx.agreement.findFirst({ where: { id: agreementId }, select: { particulars: true, particularsLockedAt: true } }),
+    );
+    expect(row?.particularsLockedAt).not.toBeNull();
+    return (row?.particulars ?? {}) as Record<string, unknown>;
+  }
+
+  /** A walk-in: no appointment, so D5 falls to the practice's today. */
+  async function pushWalkIn(practiceId: string): Promise<string> {
+    signedInAt(practiceId);
+    const agreementId = await draft(practiceId, 'episodic_pre');
+    await http()
+      .post(`/devices/${tablets.get(practiceId)}/push`)
+      .set('x-practice-id', practiceId)
+      .send({ agreementId })
+      .expect(201);
+    return agreementId;
+  }
+
+  async function offerPerVisit(practiceId: string): Promise<string> {
+    signedInAt(practiceId);
+    const enduring = await draft(practiceId, 'enduring');
+    const offered = await http()
+      .post(`/agreements/${enduring}/offer-episodic`)
+      .set('x-practice-id', practiceId)
+      .send({})
+      .expect(201);
+    expect(offered.body.reused).toBe(false);
+    return offered.body.agreementId as string;
+  }
+
+  beforeAll(async () => {
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+      .overrideProvider(RULES_CLIENT)
+      .useValue(passingRules)
+      .compile();
+    app = moduleRef.createNestApplication();
+    app.use((req: { principal?: unknown }, _res: unknown, next: () => void) => {
+      if (currentPrincipal) req.principal = currentPrincipal;
+      next();
+    });
+    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+    await app.init();
+    prisma = app.get(PrismaService);
+    tablet = app.get(TabletSessionsService);
+    realClock = tablet.clock;
+
+    await seed(sydney, 'Lock Date Practice (Sydney)');
+    await seed(perth, 'Lock Date Practice (Perth)', 'Australia/Perth');
+  });
+
+  afterEach(async () => {
+    tablet.clock = realClock;
+    // Each case starts with no agreements: the per-visit offer is idempotent
+    // per provider × patient × day, so an earlier case's agreement for the same
+    // patient on the same day would be reused rather than locked afresh.
+    for (const practiceId of [sydney, perth]) {
+      await prisma.withPractice(practiceId, async (tx) => {
+        await tx.tabletSession.deleteMany({});
+        await tx.captureRequest.deleteMany({});
+        await tx.agreement.deleteMany({});
+      });
+    }
+  });
+
+  afterAll(async () => {
+    for (const practiceId of [sydney, perth]) {
+      await prisma.withPractice(practiceId, async (tx) => {
+        await tx.tabletSession.deleteMany({});
+        await tx.devicePairingCode.deleteMany({ where: { practiceId } });
+        await tx.device.deleteMany({});
+        await tx.captureRequest.deleteMany({});
+        await tx.agreement.deleteMany({});
+        await tx.assignor.deleteMany({});
+        await tx.patient.deleteMany({});
+        await tx.provider.deleteMany({});
+        await deleteSeededAnchors(tx);
+        await tx.vaultOutbox.deleteMany({ where: { subjectId: practiceId } });
+        await tx.practice.deleteMany({});
+      });
+    }
+    await app?.close();
+  });
+
+  it('a_push_before_11am_sydney_locks_d2_and_d5_on_the_practice_date', async () => {
+    // 8:30am AEDT on 7 October; the UTC date is still the 6th.
+    at(SYDNEY_MORNING);
+    const particulars = await particularsOf(sydney, await pushWalkIn(sydney));
+    expect(particulars.agreementDate).toBe('2026-10-07');
+    expect(particulars.serviceDate).toBe('2026-10-07');
+  });
+
+  it('the_per_visit_offer_locks_d2_and_d5_on_the_practice_date', async () => {
+    at(SYDNEY_MORNING);
+    const particulars = await particularsOf(sydney, await offerPerVisit(sydney));
+    expect(particulars.agreementDate).toBe('2026-10-07');
+    expect(particulars.serviceDate).toBe('2026-10-07');
+  });
+
+  /*
+   * 11:30pm AWST on 6 October — already 2:30am on the 7th in Sydney. A lock on
+   * the default zone would say the 7th. (UTC and Perth share a date at this
+   * instant; a lock on UTC is what the two Sydney cases above catch.)
+   */
+  const PERTH_LATE = '2026-10-06T15:30:00Z';
+
+  it('a_perth_push_locks_on_the_perth_date', async () => {
+    at(PERTH_LATE);
+    const particulars = await particularsOf(perth, await pushWalkIn(perth));
+    expect(particulars.agreementDate).toBe('2026-10-06');
+    expect(particulars.serviceDate).toBe('2026-10-06');
+  });
+
+  it('a_perth_per_visit_offer_locks_on_the_perth_date', async () => {
+    at(PERTH_LATE);
+    const particulars = await particularsOf(perth, await offerPerVisit(perth));
+    expect(particulars.agreementDate).toBe('2026-10-06');
+    expect(particulars.serviceDate).toBe('2026-10-06');
   });
 });
 

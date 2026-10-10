@@ -2884,7 +2884,11 @@ one for a desk at that location.
 changes); the `practices_timezone_check` CHECK and `@IsIn` on the DTO, both
 from the content list; `apps/core/test/practice-day-boundary.e2e-spec.ts`
 (`an_appointment_today_shows_on_the_desk_before_11am_sydney_time`,
-`a_perth_practice_uses_perth_midnight` and others).
+`a_perth_practice_uses_perth_midnight` and others; and, for the dates a lock
+writes, `a_push_before_11am_sydney_locks_d2_and_d5_on_the_practice_date`,
+`the_per_visit_offer_locks_d2_and_d5_on_the_practice_date`,
+`a_perth_push_locks_on_the_perth_date` and
+`a_perth_per_visit_offer_locks_on_the_perth_date`).
 
 **What would reopen it:** a practice spanning timezones (which is D-2026-09-12-17's
 location zone, still to build), or a telehealth service rendered for a patient
