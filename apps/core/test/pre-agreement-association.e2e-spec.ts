@@ -477,6 +477,22 @@ describe('pre-agreement association, option (b) (e2e, real Postgres + fixture ad
     expect(events).toHaveLength(1);
   });
 
+  it('an_association_is_never_deleted_as_a_side_effect_of_deleting_its_draft_or_service', async () => {
+    const p = await patient();
+    const day = dayAgo(16);
+    const pre = await draft({ patient: p, createdAt: middayOf(day) });
+    const inv = invoice(p.key, day);
+    adapter.invoices = [inv];
+    await sync();
+    const record = await recordFor(inv.pmsInvoiceKey);
+    expect(await associationOf(pre)).not.toBeNull();
+
+    // RESTRICT, not CASCADE: the fact stays unless somebody removes it on purpose.
+    await expect(prisma.withPractice(practiceA, (tx) => tx.agreement.delete({ where: { id: pre } }))).rejects.toThrow();
+    await expect(prisma.withPractice(practiceA, (tx) => tx.serviceRecord.delete({ where: { id: record.id } }))).rejects.toThrow();
+    expect(await associationOf(pre)).not.toBeNull();
+  });
+
   it('cross_practice_association_reads_and_choices_fail_closed', async () => {
     const p = await patient();
     const day = dayAgo(13);
