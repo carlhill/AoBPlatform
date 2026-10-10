@@ -166,7 +166,7 @@ plain-English text. `tautala_ai.md` (the TAUTALA entry, further down) is the rel
 
 ---
 
-## The signature step on screens smaller than 1280×800 (10 Oct 2026) - waiting on Carl
+## ~~The signature step on screens smaller than 1280×800 (10 Oct 2026)~~ - decided: (a), accepted below 1280×800 (D-2026-10-10-10)
 
 The kiosk's no-scroll rule holds from 1280×800 up (D-2026-10-10-10). The
 signature step (pad, Back, Clear, Sign) fits at every size from there,

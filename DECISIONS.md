@@ -3062,7 +3062,12 @@ height as a separate choice (option 3).
 fine"*). At 1280×800 and larger, including every size of the 14" tablet, every
 page fits whole and nothing scrolls. Below that (shorter than 800px, or
 narrower than 1280px in landscape), a DB4 page that cannot fit may scroll as a
-whole page, never a box inside it. The signature step must fit at every size.
+whole page, never a box inside it. The signature step fits at 1280×800 and up.
+Below that it falls just short (25px at 1024×600, 52px at 960×600, with Edge's
+bars showing); there the signature page scrolls as a whole and every control
+stays reachable. Carl chose to accept this rather than shrink the kiosk footer:
+*"go with (a) for the signature step"*. Landscape on the 14" tablet confirmed
+working by Carl the same night.
 
 **Built on:** `fix/kiosk-tablet-fit` (items 1 and 2).
 
