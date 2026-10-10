@@ -111,6 +111,9 @@ describe('the DB4 parser, over a page actually printed to AOBPRINTER', () => {
       capturedAt: CAPTURED_AT,
     })!;
     expect(record.services?.map((s) => s.benefitAssigned)).toEqual(['$1,045.05', '$ 45.05', '7.15']);
+    // With a space after the `$`, -09-1 left the `$` on the end of the
+    // description; -10-1 takes it into the amount, so the description is clean.
+    expect(record.services?.[1]?.description).toBe('Level B Surgery');
   });
 
   it('the two templates differ ONLY in how the amount is carried', () => {
