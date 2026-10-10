@@ -4588,9 +4588,9 @@ export const strings = {
     regressedStays: 'This stays flagged until a platform operator re-baselines it. A practice cannot clear it from this page.',
 
     /* 2. TWO HOSTS. */
-    secondHostTitle: 'Two hosts are reporting for this practice',
+    secondHostTitle: 'Two audit logs are reporting at the same time for this practice',
     secondHostBody: (minutes: number) =>
-      `Two different audit logs have both reported in the last ${minutes} minutes. A practice runs one AOBPRINTER. Each host below says when it last reported.`,
+      `Two different audit logs are both reporting: each has reported since the other first appeared, and both in the last ${minutes} minutes. A practice runs one AOBPRINTER. Each row below says when its log last reported.`,
 
     /* 3. THE HOST'S OWN CHECK. */
     localCheckTitle: 'The host’s own check of its audit log failed',
@@ -4759,7 +4759,7 @@ export const strings = {
       neverSeen: 'Never',
       states: {
         regressed: 'Audit log no longer matches',
-        second_host: 'Two hosts reporting',
+        second_host: 'Two audit logs at once',
         local_check_failed: 'Host’s own check failed',
         offline: 'Not reporting',
         stale: 'Reporting late',
