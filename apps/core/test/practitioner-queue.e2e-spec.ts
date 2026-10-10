@@ -689,6 +689,12 @@ describe('the practitioner queue — who is waiting for me (e2e, real Postgres)'
      * invoice: D5 and D6b, and no decision yet.
      */
     const invoiceKey = `pq-invoice-${randomUUID()}`;
+    // Dated from the arrival itself, not from now: the arrival was seeded 50
+    // minutes ago, so in the first 50 minutes after local midnight "now" and
+    // the visit fall on different days.
+    const { arrivedAt } = await prisma.withPractice(practiceId, (tx) =>
+      tx.arrival.findUniqueOrThrow({ where: { id: signedArrivalId }, select: { arrivedAt: true } }),
+    );
     await prisma.withPractice(practiceId, (tx) =>
       tx.serviceRecord.create({
         data: {
@@ -700,9 +706,9 @@ describe('the practitioner queue — who is waiting for me (e2e, real Postgres)'
            * THE PRACTICE'S DATE OF THE VISIT, not `new Date()`: a `@db.Date`
            * column keeps the UTC date part, which is yesterday in Sydney until
            * 11am, and the service-rendered window is the practice's own day
-           * (D-2026-10-10-03). The arrival was seeded minutes ago.
+           * (D-2026-10-10-03).
            */
-          serviceDate: new Date(practiceDayOf(new Date(), DEFAULT_PRACTICE_TIMEZONE)),
+          serviceDate: new Date(practiceDayOf(arrivedAt, DEFAULT_PRACTICE_TIMEZONE)),
           // Obviously fake, and shape-valid: the point is that they came from
           // the PMS and not from this page.
           mbsItemNumbers: ['23'],
