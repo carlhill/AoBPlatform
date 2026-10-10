@@ -21,13 +21,26 @@ D-2026-10-10-03 moved every day boundary in `tablet-sessions.service.ts` onto
 done, because the brief was the desk only and each of these is a behaviour
 change for another screen.** The same two shapes remain in `apps/core/src`:
 
-- `agreements/agreements.service.ts` ~2212: `lockParticulars` defaults D2 to
+- ~~`agreements/agreements.service.ts` ~2212: `lockParticulars` defaults D2 to
   `new Date().toISOString().slice(0, 10)` when the caller passes none. A
-  statutory particular on the UTC date (D-2026-09-12-17 item 2).
-- `agreements/agreements.service.ts` ~1872: a superseding draft's D5 falls back
-  to the UTC date.
-- `service-descriptions/service-descriptions.service.ts` ~343: D2 on the UTC date.
-- `auto-capture/auto-capture.service.ts` ~260: the default day is the UTC date.
+  statutory particular on the UTC date (D-2026-09-12-17 item 2).~~ **Fixed
+  10 Oct 2026 (`fix/d2-practice-date`)**: the practice's date, via
+  `readPracticeDay` (`apps/core/src/practices/practice-day.ts`).
+- ~~`agreements/agreements.service.ts` ~1872: a superseding draft's D5 falls back
+  to the UTC date.~~ **Fixed 10 Oct 2026**, same helper.
+- ~~`service-descriptions/service-descriptions.service.ts` ~343: D2 on the UTC
+  date.~~ **Fixed 10 Oct 2026**, D2 and its D5 fallback both.
+- ~~`auto-capture/auto-capture.service.ts` ~260: the default day is the UTC
+  date.~~ **Fixed 10 Oct 2026.** All four pinned in
+  `apps/core/test/practice-date-particulars.e2e-spec.ts`.
+- **Found 10 Oct 2026, not yet fixed:** `arrivals/arrivals.service.ts` ~847
+  (an arrival's D5 when the caller sends no `serviceDate`) and ~1974 (D5 on the
+  draft a practitioner move makes) both write D5 as `arrivedAt`'s UTC date: a
+  statutory date, not a day window. In both, `practice` is already read in the
+  same transaction; the fix is `practiceDayOf(arrivedAt, zone)`. ~2997 (the
+  coverage prefill's `createdAt` fallback) should move with them so the two
+  stay comparable. Needs its own failing arrivals e2e first. The reception
+  form sends `serviceDate` explicitly, so this mainly reaches API callers.
 - `arrivals/arrivals.service.ts` ~1409: the front desk's day starts at the
   server's `setHours(0, 0, 0, 0)`.
 - `practitioner-queue/practitioner-queue.service.ts` ~686: the waiting list's
