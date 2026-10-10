@@ -20,6 +20,12 @@
  * platform never parses, sums, rounds or reformats one (hard rule 4,
  * D-2026-09-14-02), and the ragged presets exist precisely to prove the screen
  * does not either.
+ *
+ * THE `$` IS PART OF THE STRING SINCE 10 OCTOBER 2026 (D-2026-10-10-08). A real
+ * PracSoft DB4 prints `$45.05`, and AOBPRINTER's template
+ * `pracsoft3-db4-2026-10-1` now carries it that way, so this tool, which stands
+ * in for AOBPRINTER, sends `$45.05` too. The -09-1 template stripped the
+ * symbol; the ragged preset keeps one row in that older shape.
  */
 
 export interface ServiceRow {
@@ -127,10 +133,11 @@ export const BLANK: Draft = {
   locationState: 'NSW',
   locationPostcode: '2999',
   providers: [{ ...SERVICING }, { ...PAYEE }],
-  services: [row('23', 'Level B Surgery', '45.05')],
+  services: [row('23', 'Level B Surgery', '$45.05')],
   queueName: 'default',
   queueLabel: 'Front desk printer',
-  parserTemplateVersion: 'pracsoft3-db4-v1',
+  // What AOBPRINTER stamps by default (DEFAULT_TEMPLATE_VERSION in apps/aobprinter/src/template.ts).
+  parserTemplateVersion: 'pracsoft3-db4-2026-10-1',
   capturedAt: '',
 };
 
@@ -149,7 +156,7 @@ export const PRESETS: readonly Preset[] = [
     why: 'Everything read. Places, and sends to a tablet with no band at all.',
     apply: (d) => ({
       ...d,
-      services: [row('23', 'Level B Surgery', '45.05'), row('10990', 'Bulk billing incentive', '7.15')],
+      services: [row('23', 'Level B Surgery', '$45.05'), row('10990', 'Bulk billing incentive', '$7.15')],
     }),
   },
   {
@@ -190,15 +197,15 @@ export const PRESETS: readonly Preset[] = [
   {
     key: 'ragged-amounts',
     label: 'Ragged amounts',
-    why: 'Whole dollars, a symbol, one decimal, a grouping comma and a zero — reproduced exactly, aligned on the point.',
+    why: 'Whole dollars, no symbol (the -09-1 shape), one decimal, a grouping comma and a zero — reproduced exactly, aligned on the point.',
     apply: (d) => ({
       ...d,
       services: [
-        row('23', 'Level B, whole dollars', '45'),
-        row('36', 'Level C, with a symbol', '$45.05'),
-        row('75870', 'Attendance, one decimal', '1234.5'),
-        row('14206', 'Iron infusion, grouped', '1,234.55'),
-        row('10990', 'Incentive, nothing charged', '0.00'),
+        row('23', 'Level B, whole dollars', '$45'),
+        row('36', 'Level C, no symbol (a -09-1 record)', '45.05'),
+        row('75870', 'Attendance, one decimal', '$1234.5'),
+        row('14206', 'Iron infusion, grouped', '$1,234.55'),
+        row('10990', 'Incentive, nothing charged', '$0.00'),
       ],
     }),
   },
