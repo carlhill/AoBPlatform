@@ -706,7 +706,7 @@ skips without `E2E_PRACTICE_USER` / `E2E_PRACTICE_PASSWORD`.
   credential"). Like a payment terminal paired to a merchant: the console
   registers a tablet and shows a code, the tablet exchanges it once for an
   opaque credential, and the server resolves the practice from the credential
-  on every request thereafter. Revoke and rotate are **console** acts — a
+  on every request thereafter. Revoke and Re-Pair Tablet (the rotate act) are **console** acts — a
   tablet that can un-pair itself is a tablet a passer-by can un-pair.
   **Pairing is not a Keycloak login**: there is no person to authenticate at a
   tablet, and hard rule 15 (practitioner and admin auth is WebAuthn passkeys)
