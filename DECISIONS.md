@@ -3057,11 +3057,11 @@ silent. It is closed by upgrading AOBPRINTER, not by this check.
 
 **Not done here - proposed to Carl.** Widening the row pattern so that
 whole-dollar amounts and credits are read as rows is a template change and needs
-a new version (`pracsoft3-db4-2026-10-2`), not an edit. Credit rows need a
-regulatory read first. Is a negative line on an assignment form something the
-patient assigns? Should it appear on the Signed-DB4? Is it ever on a real DB4 at
-all? Until that is answered, the count makes the gap visible and stops it at the
-desk. Hard rule 4 is unchanged: nothing parses, compares or computes an amount.
+a new version (`pracsoft3-db4-2026-10-2`), not an edit. Whether reversals
+(credit rows) are allowed on a DB4 at all is OPEN: Carl, 11 October 2026,
+*"Not sure if reversals are allowed"*. The question is recorded as
+**Q-2026-10-11-01** below, and no template reads a credit until it closes.
+Until then, the count makes the gap visible and stops it at the desk. Hard rule 4 is unchanged: nothing parses, compares or computes an amount.
 The count is of lines, not of figures.
 
 **Tests.** `apps/aobprinter/src/parser.test.ts`
@@ -3081,3 +3081,50 @@ whole-dollar amounts, which would lower the count for those shapes without
 changing this check; a template that declares the services block's edges, which
 would narrow the count to that block; or the first real PracSoft print showing
 date-led lines that are not services.
+
+## Q-2026-10-11-01 - OPEN: may a DB4 carry a reversal (a credit line)?
+
+**Status: OPEN.** This is a question, not a decision. It is recorded so the
+answer has somewhere to land, and so the behaviour the code already has is
+visible. Carl Hill, 11 October 2026, on D-2026-10-11-01: *"Not sure if
+reversals are allowed. Leave Reversals in the decision register."*
+
+**The question.** May a printed DB4 list a reversal or credit against a
+service, such as `-$10.00` or `($10.00)`? If it may, what is the patient
+assigning on that line? Should the Signed-DB4 reproduce it? Does PracSoft ever
+print one on a DB4, or only on an invoice?
+
+**What the documents say: nothing found.** The s 65C data set has no amount
+in it at all (hard rule 4, REQ-REG-04), so the requirements never address a
+negative one. CLAUDE.md §7c says priors on this regime are stale, so this gap
+is flagged here and not filled from memory.
+
+**What the code does today, so it can be overturned.** A reversal line is
+NOT read as a service row under either shipped template
+(`pracsoft3-db4-2026-09-1`, `-10-1`). AOBPRINTER counts it in
+`unparsedServiceLines`, and Send-to-tablet refuses the form with
+`print_record_service_lines_unread` (D-2026-10-11-01). That is the
+conservative direction. The patient is never shown, and never signs, a copy
+missing a line the practice printed. The form is not sent to the tablet, and
+care is not blocked (hard rule 8): the agreement is taken on paper or after
+the service.
+
+**What is NOT done until this closes.** No template version reads a credit.
+Nothing interprets the sign of an amount, nets a reversal against a service,
+or decides that a reversed service drops off the form. Any of those would be
+AoB forming an opinion about a figure, which hard rule 4 forbids.
+
+**What would close this.** A citation that says whether a DB4 may carry a
+reversal and on what terms: an MBS or Services Australia claiming rule, or a
+line in the requirements. The first real PracSoft print of a reversed service
+would also help. If reversals are allowed, a new template version
+(`pracsoft3-db4-2026-10-2` or later; hard rule 14) reads the line exactly as
+printed, as a string. If they are not allowed, the current refusal stands, and
+the band's copy may gain a line saying so.
+
+**Where:** `apps/aobprinter/src/parser.ts` (`countUnparsedServiceLines`),
+`packages/contracts/src/db4-print-record-check.ts`
+(`print_record_service_lines_unread`). Named tests are in
+`apps/aobprinter/src/parser.test.ts` ("a credit with a minus sign", "a credit
+in brackets"). The open template work is in TODO.md, "Read credits and
+whole-dollar amounts as service rows?".

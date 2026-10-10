@@ -25,9 +25,9 @@ shipped templates these shapes are dropped from `services`: `-$10.00`,
 Reading them is a template change, so it needs a new version
 (`pracsoft3-db4-2026-10-2`), not an edit (hard rule 14). Questions to answer
 first:
-1. **Credits need a regulatory read.** Is a negative line on an assignment form
-   something the patient assigns? Should the Signed-DB4 reproduce it? Does a
-   real PracSoft DB4 ever print one?
+1. **Reversals (credits): OPEN in the decision register as Q-2026-10-11-01**
+   (Carl, 11 Oct 2026: *"Not sure if reversals are allowed"*). No template
+   reads one until that question closes.
 2. **Whole-dollar `$45`** looks safe to read as printed (still a string, never
    parsed: hard rule 4). Does PracSoft's real output print it?
 3. **A row with no amount:** should it be read as a row with no
