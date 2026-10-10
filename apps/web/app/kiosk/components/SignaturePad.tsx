@@ -6,8 +6,18 @@
  *
  * BOTH REPRESENTATIONS ARE CAPTURED AND BOTH ARE NOW SENT (REQ-SIG-01/-02).
  * The VECTOR is the stroke points with the gaps between strokes preserved; the
- * RASTER is the same canvas as a PNG. The Expo build captured only the vector,
+ * RASTER is the same drawing as a PNG. The Expo build captured only the vector,
  * because a react-native View cannot rasterise itself; a canvas can.
+ *
+ * THE RASTER IS ONE PIXEL PER PAD PIXEL, WHATEVER THE SCREEN (review, 10 Oct
+ * 2026). It used to be the on-screen canvas itself, which is sized in DEVICE
+ * pixels: on a 14" tablet at three device pixels per CSS pixel, with the
+ * larger pad, a dense signature came to ~1.6 MB against the server's 512 KB
+ * (`MAX_SIGNATURE_RASTER_BYTES`) — a refusal the patient could not fix. So the
+ * strokes are drawn again, exactly as captured, into an off-screen canvas of
+ * `padWidth` x `padHeight` and that is what is sent. The screen keeps its
+ * full resolution; the record gets an image whose size is the pad's, like
+ * the vector beside it, and no longer depends on which tablet took it.
  *
  * WHAT USED TO BE OPEN HERE IS CLOSED. `POST /agreements/:id/sign` took a
  * method, a channel and a capture request and no payload, so both
@@ -44,13 +54,21 @@
  * resizes, and the last can land mid-stroke.
  *
  * So from the first pointerdown of a stroke until `clear()`, the pad keeps the
- * size it had: the canvas element is pinned to it in pixels, the backing store
- * is not touched and the logical size is not rewritten, so vector, raster and
- * pad size are measured in one space. Its frame may clip it or leave room
- * round it until the patient clears; the signature itself does not move.
- * Clearing unpins it and re-measures. With no ink and no stroke in progress a
- * resize re-measures freely, exactly as before. The points are never rescaled:
- * what is stored is what the hand produced (REQ-SIG-02).
+ * size it had: the backing store is not touched and the logical size is not
+ * rewritten, so vector, raster and pad size are measured in one space. The
+ * pad is measured AT the pointerdown and pinned there and then, so a layout
+ * change in the same frame as the touch (full screen arriving as the patient
+ * reaches for the glass) cannot stretch the box the first points are read
+ * against. Clearing unpins it and re-measures. With no ink and no stroke in
+ * progress a resize re-measures freely, exactly as before.
+ *
+ * THE PATIENT SEES ALL OF THEIR INK (review, 10 Oct 2026). Pinned inside a
+ * frame that has since shrunk — signed upright, then turned on its side — the
+ * pad is SCALED DOWN to fit at its own shape, never clipped: ink that is in
+ * the stored raster and vector must be on the screen when they press Sign.
+ * A touch on a scaled pad is mapped back into the pad's own space, so a
+ * stroke added afterwards lands under the finger and in the same coordinates
+ * as the rest. A point is never rescaled after it is captured (REQ-SIG-02).
  *
  * POINTER EVENTS, NOT MOUSE-PLUS-TOUCH. One code path for a finger, a stylus
  * and a mouse; `touch-action: none` on the canvas is what stops a drag
@@ -84,6 +102,19 @@ export interface SignaturePadHandle {
 
 const LINE_WIDTH = 3;
 
+/** Draw strokes, as captured, onto a context already set up to draw them. */
+function drawStrokes(ctx: CanvasRenderingContext2D, strokes: readonly { points: readonly Point[] }[]): void {
+  for (const stroke of strokes) {
+    if (stroke.points.length < 2) continue;
+    ctx.beginPath();
+    ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
+    for (let i = 1; i < stroke.points.length; i += 1) {
+      ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
+    }
+    ctx.stroke();
+  }
+}
+
 export function SignaturePad({
   handleRef,
   onInkChange,
@@ -115,18 +146,31 @@ export function SignaturePad({
     const canvas = canvasRef.current;
     const ctx = context();
     if (!canvas || !ctx) return;
-    const ratio = typeof window === 'undefined' ? 1 : (window.devicePixelRatio ?? 1);
-    ctx.clearRect(0, 0, canvas.width / ratio, canvas.height / ratio);
-    for (const stroke of [...strokesRef.current, { points: currentRef.current }]) {
-      if (stroke.points.length < 2) continue;
-      ctx.beginPath();
-      ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
-      for (let i = 1; i < stroke.points.length; i += 1) {
-        ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
-      }
-      ctx.stroke();
-    }
+    // EVERY DEVICE PIXEL, under an identity transform. Dividing by today's
+    // ratio would miss part of a bitmap sized at another one, and a raster
+    // must never carry ink the vector does not (review, 10 Oct 2026).
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.restore();
+    drawStrokes(ctx, [...strokesRef.current, { points: currentRef.current }]);
   }, [context]);
+
+  /**
+   * PIN THE CANVAS AT THE PAD'S SIZE, SCALED DOWN IF ITS FRAME IS SMALLER.
+   * The ratio is kept, so the ink is shown at its own shape; it is never
+   * enlarged, so a pad pinned in a larger frame simply leaves room round it.
+   */
+  const pin = useCallback((canvas: HTMLCanvasElement) => {
+    const { width, height } = padSizeRef.current;
+    // The frame's INNER box: its 1px border is not room the pad can use.
+    const frame = canvas.parentElement;
+    const room = frame ? { width: frame.clientWidth, height: frame.clientHeight } : null;
+    const scale =
+      room && room.width > 0 && room.height > 0 ? Math.min(1, room.width / width, room.height / height) : 1;
+    canvas.style.width = `${width * scale}px`;
+    canvas.style.height = `${height * scale}px`;
+  }, []);
 
   /**
    * THE BACKING STORE IS SIZED IN DEVICE PIXELS, the element in CSS pixels.
@@ -141,11 +185,10 @@ export function SignaturePad({
     const held = strokesRef.current.length > 0 || drawingRef.current || currentRef.current.length > 0;
     const frozen = padSizeRef.current;
     if (held && frozen.width > 0 && frozen.height > 0) {
-      // INK, OR A STROKE IN PROGRESS: keep the size it was drawn at. See the
-      // module note — pinned in CSS pixels, backing store and logical size
-      // untouched, so nothing already captured is reinterpreted.
-      canvas.style.width = `${frozen.width}px`;
-      canvas.style.height = `${frozen.height}px`;
+      // INK, OR A STROKE IN PROGRESS: keep the size it was drawn at, fitted
+      // to the frame. Backing store and logical size untouched, so nothing
+      // already captured is reinterpreted. See the module note.
+      pin(canvas);
       return;
     }
     canvas.style.width = '';
@@ -168,20 +211,22 @@ export function SignaturePad({
         ? '#16181a'
         : (getComputedStyle(canvas).color || '#16181a');
     redraw();
-  }, [context, redraw]);
+  }, [context, pin, redraw]);
 
   useEffect(() => {
     resize();
     if (typeof window === 'undefined') return;
     window.addEventListener('resize', resize);
     /*
-     * AND WHEN ITS OWN BOX CHANGES WITHOUT THE WINDOW DOING SO — a column
-     * reflowing, a font arriving. While the pad is pinned its box cannot
-     * change, so this cannot fire into a frozen pad.
+     * AND WHEN ITS FRAME CHANGES WITHOUT THE WINDOW DOING SO — a column
+     * reflowing, a font arriving. The FRAME is observed, not the canvas:
+     * pinning resizes the canvas, and an observer that resized the element it
+     * watches would loop ("ResizeObserver loop completed with undelivered
+     * notifications"). The frame's size is set by CSS and never by the canvas.
      */
-    const observer =
-      typeof ResizeObserver === 'undefined' || !canvasRef.current ? null : new ResizeObserver(() => resize());
-    if (observer && canvasRef.current) observer.observe(canvasRef.current);
+    const frame = canvasRef.current?.parentElement ?? null;
+    const observer = typeof ResizeObserver === 'undefined' || !frame ? null : new ResizeObserver(() => resize());
+    if (observer && frame) observer.observe(frame);
     return () => {
       window.removeEventListener('resize', resize);
       observer?.disconnect();
@@ -193,10 +238,23 @@ export function SignaturePad({
     // a caller ever destructures the handle.
     const toPngDataUrl = (): string | null => {
       const canvas = canvasRef.current;
-      if (!canvas || typeof canvas.toDataURL !== 'function') return null;
+      if (!canvas || typeof document === 'undefined') return null;
       if (strokesRef.current.length === 0) return null;
+      const { width, height } = padSizeRef.current;
+      if (!(width > 0) || !(height > 0)) return null;
       try {
-        return canvas.toDataURL('image/png');
+        // At the pad's own size, one pixel per pad pixel (see the module note).
+        const out = document.createElement('canvas');
+        out.width = Math.round(width);
+        out.height = Math.round(height);
+        const ctx = typeof out.getContext === 'function' ? out.getContext('2d') : null;
+        if (!ctx || typeof out.toDataURL !== 'function') return null;
+        ctx.lineWidth = LINE_WIDTH;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.strokeStyle = context()?.strokeStyle ?? '#16181a';
+        drawStrokes(ctx, strokesRef.current);
+        return out.toDataURL('image/png');
       } catch {
         // A tainted or unsupported canvas. The vector is still captured and
         // the ceremony must not stop for a missing thumbnail.
@@ -243,10 +301,18 @@ export function SignaturePad({
     return () => {
       ref.current = null;
     };
-  }, [handleRef, onInkChange, redraw, resize]);
+  }, [context, handleRef, onInkChange, redraw, resize]);
 
   function pointFrom(event: React.PointerEvent<HTMLCanvasElement>): Point {
     const rect = event.currentTarget.getBoundingClientRect();
+    /*
+     * IN THE PAD'S OWN SPACE. Unscaled this is 1 and the point is the CSS
+     * pixel it always was; on a pad scaled down to fit a smaller frame it maps
+     * the touch back to where it falls on the pad as signed.
+     */
+    const pad = padSizeRef.current;
+    const scaleX = rect.width > 0 && pad.width > 0 ? pad.width / rect.width : 1;
+    const scaleY = rect.height > 0 && pad.height > 0 ? pad.height / rect.height : 1;
     const now = typeof event.timeStamp === 'number' ? event.timeStamp : 0;
     if (timeOriginRef.current === null) timeOriginRef.current = now;
     /*
@@ -257,8 +323,8 @@ export function SignaturePad({
      */
     const pressure = typeof event.pressure === 'number' && event.pressure > 0 ? event.pressure : undefined;
     return {
-      x: event.clientX - rect.left,
-      y: event.clientY - rect.top,
+      x: (event.clientX - rect.left) * scaleX,
+      y: (event.clientY - rect.top) * scaleY,
       t: now - timeOriginRef.current,
       ...(pressure === undefined ? {} : { p: pressure }),
     };
@@ -276,6 +342,13 @@ export function SignaturePad({
         data-testid="signature-pad"
         onPointerDown={(event) => {
           event.currentTarget.setPointerCapture(event.pointerId);
+          // THE FIRST TOUCH MEASURES AND PINS. With nothing held, the pad is
+          // re-measured now — whatever the layout did this frame — and pinned
+          // before a single point is read (see the module note).
+          const canvas = event.currentTarget;
+          const held = strokesRef.current.length > 0 || currentRef.current.length > 0;
+          if (!held) resize();
+          pin(canvas);
           drawingRef.current = true;
           currentRef.current = [pointFrom(event)];
         }}

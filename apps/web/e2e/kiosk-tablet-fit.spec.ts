@@ -527,3 +527,150 @@ test('kiosk_reflows_at_400_percent_zoom', async ({ page }) => {
   await reachable(page.getByTestId('sign-control'), 'Sign');
   await reachable(page.getByTestId('leave-for-reception'), 'Step 3 See reception');
 });
+
+/*
+ * THE LARGEST RASTER STILL FITS THE SERVER'S LIMIT (review, 10 Oct 2026). The
+ * pad is bigger now — up to the full portrait column, or ~830px across in
+ * landscape — and a tablet draws at three device pixels per CSS pixel, so the
+ * PNG the pad sends can be ~2.3k x 1.4k. A dense, deliberately scribbled
+ * signature at the largest pad on a DPR-3 screen must still come in under
+ * `MAX_SIGNATURE_RASTER_BYTES` (512 KB, `packages/domain/src/signature.ts`),
+ * or the sign call is refused for a reason the patient cannot fix.
+ */
+test.describe('the signature raster at device ratio 3', () => {
+  test.use({ deviceScaleFactor: 3 });
+  // Sixteen hundred pointer moves take most of a minute on their own.
+  test.setTimeout(180_000);
+  for (const size of [
+    { width: 924, height: 1478 },
+    { width: 1478, height: 924 },
+  ]) {
+    test(`a_dense_signature_raster_stays_under_the_limit_at_${size.width}x${size.height}`, async ({ page }) => {
+      await page.setViewportSize(size);
+      await openPairedKiosk(page, {});
+      await expect(page.getByTestId('check-details-heading')).toBeVisible();
+      for (const tick of await page.locator('[data-testid^="detail-tick-"]').all()) await tick.click();
+      await page.getByTestId('check-details-continue').click();
+      await page.getByTestId('db4-page-continue').click();
+      await page.getByTestId('affirm-episodic_details_correct_v1').check();
+      await page.getByTestId('db4-page-continue').click();
+      await page.getByTestId('affirm-episodic_assign_v1').check();
+      await page.getByTestId('continue-to-sign').click();
+      const pad = page.getByTestId('signature-pad');
+      await expect(pad).toBeVisible();
+      const box = await pad.boundingBox();
+      expect(box).not.toBeNull();
+      if (!box) return;
+
+      // Forty strokes of a seeded random walk across the whole pad.
+      let seed = 7;
+      const random = () => {
+        seed = (seed * 1103515245 + 12345) % 2147483648;
+        return seed / 2147483648;
+      };
+      for (let stroke = 0; stroke < 40; stroke += 1) {
+        let x = box.x + 10 + random() * (box.width - 20);
+        let y = box.y + 10 + random() * (box.height - 20);
+        await page.mouse.move(x, y);
+        await page.mouse.down();
+        for (let step = 0; step < 40; step += 1) {
+          x = Math.min(box.x + box.width - 5, Math.max(box.x + 5, x + (random() - 0.5) * 120));
+          y = Math.min(box.y + box.height - 5, Math.max(box.y + 5, y + (random() - 0.5) * 120));
+          await page.mouse.move(x, y);
+        }
+        await page.mouse.up();
+      }
+
+      // WHAT THE SIGN CALL SENDS, read off the request itself rather than off
+      // the screen: the raster on the wire is the one the server measures.
+      let sent: { rasterPngBase64?: string; padWidth?: number; padHeight?: number } | null = null;
+      await page.route(
+        (url) => url.pathname.endsWith('/sign'),
+        async (route) => {
+          if (route.request().method() === 'OPTIONS') {
+            await route.fulfill({
+              status: 204,
+              headers: {
+                'access-control-allow-origin': WEB_ORIGIN,
+                'access-control-allow-headers': '*',
+                'access-control-allow-methods': 'POST, OPTIONS',
+              },
+            });
+            return;
+          }
+          sent = (route.request().postDataJSON() as { signature?: typeof sent })?.signature ?? null;
+          await route.abort();
+        },
+      );
+      await page.getByTestId('sign-control').click();
+      await expect.poll(() => sent !== null, { message: 'the sign call carried a signature' }).toBe(true);
+      const signature = sent as unknown as { rasterPngBase64: string; padWidth: number; padHeight: number };
+      const png = Buffer.from(signature.rasterPngBase64, 'base64');
+      const raster = { width: png.readUInt32BE(16), height: png.readUInt32BE(20), bytes: png.length };
+      test.info().annotations.push({
+        type: 'raster',
+        description: `${size.width}x${size.height}: ${raster.width}x${raster.height}, ${raster.bytes} bytes`,
+      });
+      // One pixel per pad pixel, at any device ratio.
+      expect(raster.width).toBe(Math.round(signature.padWidth));
+      expect(raster.height).toBe(Math.round(signature.padHeight));
+      expect(raster.bytes, `${raster.width}x${raster.height} PNG`).toBeLessThan(512 * 1024);
+    });
+  }
+});
+
+/*
+ * TURNED AFTER SIGNING, THE PATIENT STILL SEES ALL OF THEIR INK (review, 10
+ * Oct 2026). Signed upright, then rotated: the pad keeps its size for the
+ * record and is scaled down to fit its new frame, never clipped. And the pad
+ * watches its frame rather than itself, so pinning it cannot start a
+ * ResizeObserver loop.
+ */
+test('kiosk_a_signed_pad_turned_on_its_side_shows_all_of_its_ink', async ({ page }) => {
+  await page.addInitScript(() => {
+    (window as unknown as { kioskErrors: string[] }).kioskErrors = [];
+    window.addEventListener('error', (event) => {
+      (window as unknown as { kioskErrors: string[] }).kioskErrors.push(String(event.message));
+    });
+  });
+  await page.setViewportSize({ width: 924, height: 1478 });
+  await openPairedKiosk(page, {});
+  await expect(page.getByTestId('check-details-heading')).toBeVisible();
+  for (const tick of await page.locator('[data-testid^="detail-tick-"]').all()) await tick.click();
+  await page.getByTestId('check-details-continue').click();
+  await page.getByTestId('db4-page-continue').click();
+  await page.getByTestId('affirm-episodic_details_correct_v1').check();
+  await page.getByTestId('db4-page-continue').click();
+  await page.getByTestId('affirm-episodic_assign_v1').check();
+  await page.getByTestId('continue-to-sign').click();
+  const pad = page.getByTestId('signature-pad');
+  await expect(pad).toBeVisible();
+  const before = await pad.boundingBox();
+  expect(before).not.toBeNull();
+  if (!before) return;
+  await page.mouse.move(before.x + 20, before.y + 20);
+  await page.mouse.down();
+  await page.mouse.move(before.x + before.width / 2, before.y + before.height / 2, { steps: 5 });
+  await page.mouse.move(before.x + before.width - 10, before.y + before.height - 10, { steps: 5 });
+  await page.mouse.up();
+
+  await page.setViewportSize({ width: 1478, height: 924 });
+  await page.waitForTimeout(300);
+  const fit = await pad.evaluate((canvas: HTMLCanvasElement) => {
+    const shown = canvas.getBoundingClientRect();
+    const frame = canvas.parentElement!.getBoundingClientRect();
+    // Inside the frame's border, which is where the pad can be seen.
+    return {
+      inside:
+        shown.left >= frame.left + 0.5 &&
+        shown.top >= frame.top + 0.5 &&
+        shown.right <= frame.right - 0.5 &&
+        shown.bottom <= frame.bottom - 0.5,
+      shape: shown.width / shown.height,
+    };
+  });
+  expect(fit.inside, 'the whole pad, and so all of the ink, is inside its frame').toBe(true);
+  expect(fit.shape).toBeCloseTo(before.width / before.height, 1);
+  const errors = await page.evaluate(() => (window as unknown as { kioskErrors: string[] }).kioskErrors);
+  expect(errors.filter((message) => /ResizeObserver/.test(message))).toEqual([]);
+});
