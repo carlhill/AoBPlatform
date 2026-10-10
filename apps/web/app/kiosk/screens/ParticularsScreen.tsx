@@ -726,6 +726,54 @@ export function ParticularsScreen({
     />
   );
 
+  /** The step's primary: turn the sheet, or continue to sign. */
+  const primaryButton =
+    nextPage && paged ? (
+      /*
+        GATED ON THIS PAGE'S OWN TICKS (Carl, 27 September 2026). A
+        `GuardedButton` rather than a `PrimaryButton` so the blocked state
+        is a real `button[disabled]` with no handler, exactly as the
+        sign-off control is, and so the reason is on the control rather
+        than left for somebody to work out from an unticked box.
+      */
+      <GuardedButton
+        label={strings.particulars.db4.continueToNextPage}
+        state={
+          pageOutstanding === 0
+            ? { disabled: false }
+            : { disabled: true, disabledLabel: strings.particulars.db4.continueNotTicked(pageOutstanding) }
+        }
+        onPress={() => turnTo(nextPage, nextSheet)}
+        testId="db4-page-continue"
+      />
+    ) : (
+      <GuardedButton
+        label={strings.particulars.continueToSign}
+        state={
+          readyToSign
+            ? { disabled: false }
+            : {
+                disabled: true,
+                disabledLabel:
+                  validation.state === 'valid'
+                    ? strings.particulars.continueNotAffirmed(outstanding)
+                    : strings.particulars.continueNotReady,
+              }
+        }
+        onPress={onContinue}
+        testId="continue-to-sign"
+      />
+    );
+
+  /** The longest label the primary could wear on any sheet (see `reserve`). */
+  const longestPrimaryLabel = [
+    strings.particulars.db4.continueToNextPage,
+    strings.particulars.db4.continueNotTicked(Math.max(1, statements.length)),
+    strings.particulars.continueToSign,
+    strings.particulars.continueNotAffirmed(Math.max(1, statements.length)),
+    strings.particulars.continueNotReady,
+  ].reduce((longest, label) => (label.length > longest.length ? label : longest));
+
   /**
    * A CONTROL THAT IS ONLY ON SOME SHEETS, KEPT FOR MEASURING (review of
    * d0e4f94). The decline and the shortcut to an outstanding tick appear on
@@ -767,41 +815,27 @@ export function ParticularsScreen({
         reserve(false, () => <SecondaryButton label={strings.chrome.backAction} onPress={noop} />)
       ) : null}
       <div className={`${styles.grow} ${styles.primaryStack}`}>
-        {nextPage && paged ? (
-          /*
-            GATED ON THIS PAGE'S OWN TICKS (Carl, 27 September 2026). A
-            `GuardedButton` rather than a `PrimaryButton` so the blocked state
-            is a real `button[disabled]` with no handler, exactly as the
-            sign-off control is, and so the reason is on the control rather
-            than left for somebody to work out from an unticked box.
-          */
+        {/*
+          SIZED: THE PRIMARY'S LONGEST LABEL, KEPT FOR MEASURING (final review
+          of 92f513a). "Continue", "Continue — 2 boxes still to tick", "Continue
+          to sign — not ready yet": the label changes from sheet to sheet, and
+          a label that wraps is a taller row. While measuring, the real button
+          is set aside and this one — never shown, never pressable — stands in,
+          so every sheet is sized for the longest label it could carry.
+        */}
+        {reserve(false, () => (
           <GuardedButton
-            label={strings.particulars.db4.continueToNextPage}
-            state={
-              pageOutstanding === 0
-                ? { disabled: false }
-                : { disabled: true, disabledLabel: strings.particulars.db4.continueNotTicked(pageOutstanding) }
-            }
-            onPress={() => turnTo(nextPage, nextSheet)}
-            testId="db4-page-continue"
+            label={longestPrimaryLabel}
+            state={{ disabled: true, disabledLabel: longestPrimaryLabel }}
+            onPress={noop}
           />
+        ))}
+        {sized ? (
+          <div className={styles.db4Block} data-db4-primary="">
+            {primaryButton}
+          </div>
         ) : (
-          <GuardedButton
-            label={strings.particulars.continueToSign}
-            state={
-              readyToSign
-                ? { disabled: false }
-                : {
-                    disabled: true,
-                    disabledLabel:
-                      validation.state === 'valid'
-                        ? strings.particulars.continueNotAffirmed(outstanding)
-                        : strings.particulars.continueNotReady,
-                  }
-            }
-            onPress={onContinue}
-            testId="continue-to-sign"
-          />
+          primaryButton
         )}
         {/*
           AND WHERE THE OUTSTANDING BOX IS ON ANOTHER PAGE, THE WAY TO IT.
@@ -1864,7 +1898,8 @@ function measureDb4Sheets(
   const headings = all('[data-db4-page-heading]');
   const leads = all('[data-db4-lead]');
   const reserves = all('[data-db4-reserve]');
-  const touched = [...blocks, ...wraps, ...ticks, ...tags, ...headings, ...leads, ...reserves];
+  const primaries = all('[data-db4-primary]');
+  const touched = [...blocks, ...wraps, ...ticks, ...tags, ...headings, ...leads, ...reserves, ...primaries];
   const drawn = touched.map((element) => element.className);
   const firstId = blocks[0]?.dataset.db4Block ?? null;
   const titleId = root.querySelector<HTMLElement>('[data-db4-title]')?.dataset.db4Block ?? null;
@@ -1891,6 +1926,8 @@ function measureDb4Sheets(
     for (const element of leads) element.className = first ? classes.inFlow : classes.readOnly;
     // Every sheet is sized for the tallest action row it could carry.
     for (const element of reserves) element.classList.remove(hidden);
+    // The real primary steps aside for its longest-label stand-in.
+    for (const element of primaries) element.classList.add(hidden);
     return main.scrollHeight <= main.clientHeight;
   };
 
