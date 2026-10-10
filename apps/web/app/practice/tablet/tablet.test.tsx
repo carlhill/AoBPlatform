@@ -2553,6 +2553,16 @@ describe('the refusal words', () => {
     expect(info.text).toBe(strings.tablet.rulesRefused);
   });
 
+  it('a_push_refused_because_the_sweep_closed_the_agreement_says_so_in_words', () => {
+    // D-2026-10-10-09 option 3: the closure sweep closed it between the desk's check and the push.
+    const info = describeRefusal('agreement_closed_unsigned');
+    expect(info.text).toBe(strings.tablet.blocked.agreement_closed_unsigned);
+    expect(info.text).toContain('closed as not needed');
+    // Mapped, so not shown as a bare code; and no link to a fix the desk cannot know is true.
+    expect(info.code).toBeUndefined();
+    expect(info.link).toBeUndefined();
+  });
+
   it('a_refused_print_record_says_what_could_not_be_read_not_just_a_code', () => {
     const info = describeRefusal('print_record_incomplete', {
       checks: ['print_record_benefit_missing', 'print_record_irn_missing'],

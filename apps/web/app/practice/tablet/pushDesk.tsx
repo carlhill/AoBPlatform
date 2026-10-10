@@ -638,6 +638,13 @@ export function describeRefusal(
         link: destination('/practice/reconciliation', strings.tablet.toReconciliationRow, ctx),
       };
     /*
+     * CLOSED BY THE SWEEP BETWEEN THE LIST AND SEND (D-2026-10-10-09 option 3).
+     * NO LINK: whether this visit needs another agreement is not something the
+     * refusal can know (wow.md §13), and the row leaves the list on the next read.
+     */
+    case 'agreement_closed_unsigned':
+      return { reason, text: strings.tablet.blocked.agreement_closed_unsigned };
+    /*
      * NO LINK, AND THAT IS THE POINT (CLAUDE.md §7). The fix is not on another
      * screen: it is the control `fixFor` puts in this band, on this row. A
      * destination here would be directions to a place the reader is already
