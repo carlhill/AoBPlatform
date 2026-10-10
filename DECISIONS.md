@@ -2870,3 +2870,33 @@ second host started beside it.
   well. A rewrite must never pass as a second host.
 - **A restart keeps the previous chain status (rule 6).** It does not reset to
   `unverified`.
+
+---
+
+## D-2026-10-10-04 - The product builds, tests and runs on Node.js 24 LTS
+
+**Date:** 10 October 2026. **Decided by:** Carl, *"do it - move everything to
+Node 24"*, after Claude found that the product still ran on Node 20.
+**Built on:** branch `chore/node-24`, based on `main`. `main` does not yet hold
+this file, so the record lives here with the others.
+
+**Why.** Node 20 reached end of life on 30 April 2026 and gets no security
+fixes. The four service images (core, rules, vault, web) and CI were still
+built and tested on it. CI also could not run AOBPRINTER's tests, because
+`node:sqlite` needs 22.5 or later (D-2026-09-28-04). Node 24 is the current LTS
+line, supported until April 2028. It is what the development machine runs and
+what AOBPRINTER ships with, so one version covers every place the code runs.
+
+**What changed:**
+- the four Dockerfiles: `node:24-alpine`;
+- `.github/workflows/ci.yml`: `node-version: 24`;
+- the root `engines` floor: `>=24.0.0`;
+- `@types/node`: `^24.19.0` in every workspace.
+
+**Why not 26.** Node 26 becomes LTS around the end of October 2026. Moving to
+a release line in its first weeks of LTS, months before a GA with statutory
+exposure, is a risk with nothing to show for it. Revisit after GA.
+
+**What would reopen it:** a Node 24 security end-of-life notice, or a
+dependency that needs 26.
+
