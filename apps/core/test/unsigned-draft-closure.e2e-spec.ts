@@ -4,6 +4,8 @@ import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import {
   SERVICE_DESCRIPTIONS,
+  UNSIGNED_DRAFT_CLOSURE_MAX_DAYS,
+  UNSIGNED_DRAFT_CLOSURE_MIN_DAYS,
   UNSIGNED_DRAFT_CLOSURE_VERSION,
   addCalendarDays,
   practiceDayWindow,
@@ -318,6 +320,17 @@ describe('unsigned draft closure after N days (e2e, real Postgres)', () => {
     // And it is ordered, so a cursor can page through every practice.
     const ordered = [...rows.map((r) => r.practiceId)].sort();
     expect(rows.map((r) => r.practiceId)).toEqual(ordered);
+  });
+
+  it('the_live_database_check_equals_the_content_bounds', async () => {
+    const [row] = await prisma.$queryRaw<Array<{ def: string }>>`
+      SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
+      WHERE conname = 'practices_unsigned_draft_closure_days_range'`;
+    const numbers = [...row!.def.matchAll(/(\d+)/g)].map((m) => Number(m[1]));
+    expect([Math.min(...numbers), Math.max(...numbers)]).toEqual([
+      UNSIGNED_DRAFT_CLOSURE_MIN_DAYS,
+      UNSIGNED_DRAFT_CLOSURE_MAX_DAYS,
+    ]);
   });
 
   it('a_rerun_closes_nothing_twice', async () => {
