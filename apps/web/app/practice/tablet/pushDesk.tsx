@@ -606,14 +606,22 @@ export function describePrintedNameDifference(
  * THE BAND ITSELF — a WARNING under the row, beside (never instead of) any
  * reason it cannot go. Nothing in it disables anything.
  */
-export function PrintedNameBand({ row }: { row: Pick<PushableRow, 'agreementId' | 'printedNameDiffers'> }) {
+export function PrintedNameBand({
+  row,
+}: {
+  row: Pick<PushableRow, 'agreementId' | 'printedNameDiffers' | 'pushable'>;
+}) {
   const info = describePrintedNameDifference(row.printedNameDiffers);
   if (!info) return null;
   const copy = strings.tablet.printedName;
   const testId = `printed-name-${row.agreementId}`;
   return (
     <div className={rowStyles.band}>
-      <Notice tone="warn" title={copy.title} data-testid={testId} data-code={info.code}>
+      {/*
+        `status`, not the Notice default `alert`: a warning that never blocks
+        should not interrupt a screen reader assertively on every row that has one.
+      */}
+      <Notice tone="warn" title={copy.title} role="status" data-testid={testId} data-code={info.code}>
         {info.known ? (
           <>
             <p>{copy.observed}</p>
@@ -624,7 +632,12 @@ export function PrintedNameBand({ row }: { row: Pick<PushableRow, 'agreementId' 
               <dd data-testid={`${testId}-recorded`}>{info.recorded}</dd>
             </dl>
             {info.differs && <p>{info.differs}</p>}
-            <p>{copy.stillSends}</p>
+            {/*
+              TRUE FOR THIS ROW (wow.md §13). "Send to tablet still works" on a
+              row blocked for another reason would contradict the blocked band.
+            */}
+            <p data-testid={`${testId}-send`}>{row.pushable ? copy.stillSends : copy.notTheBlock}</p>
+            <p>{copy.patientSees}</p>
             <p data-testid={`${testId}-fix`}>{copy.fix}</p>
             <p>{copy.limit}</p>
           </>

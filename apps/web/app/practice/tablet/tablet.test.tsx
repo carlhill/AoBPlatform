@@ -3234,6 +3234,30 @@ describe('a DB4 whose printed name differs from the patient record', () => {
     );
   });
 
+  it('on a row blocked for another reason it never says Send still works', async () => {
+    // wow.md §13: the blocked band says this row cannot be sent; this band must not contradict it.
+    signedInAtPractice();
+    stubFetch({ rows: [{ ...DIFFERS, pushable: false, blockedReason: 'service_description_missing' as const }] });
+    render(<TabletView practiceId={PRACTICE} />);
+    await waitFor(() => expect(screen.getByTestId(`printed-name-${READY.agreementId}`)).toBeTruthy());
+    const send = screen.getByTestId(`printed-name-${READY.agreementId}-send`);
+    expect(send.textContent).toBe(strings.tablet.printedName.notTheBlock);
+    expect(screen.getByTestId(`printed-name-${READY.agreementId}`).textContent).not.toContain(
+      strings.tablet.printedName.stillSends,
+    );
+  });
+
+  it('is announced politely, not as an alert', async () => {
+    signedInAtPractice();
+    stubFetch({ rows: [DIFFERS] });
+    render(<TabletView practiceId={PRACTICE} />);
+    await waitFor(() => expect(screen.getByTestId(`printed-name-${READY.agreementId}`)).toBeTruthy());
+    expect(screen.getByTestId(`printed-name-${READY.agreementId}`).getAttribute('role')).toBe('status');
+    expect(screen.getByTestId(`printed-name-${READY.agreementId}-send`).textContent).toBe(
+      strings.tablet.printedName.stillSends,
+    );
+  });
+
   it('an unmapped notice code shows its code, and no remedy it was not written for', async () => {
     signedInAtPractice();
     stubFetch({

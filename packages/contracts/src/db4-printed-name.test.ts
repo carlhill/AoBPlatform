@@ -102,6 +102,17 @@ describe('the printed name against the patient record', () => {
     }
   });
 
+  it('a lookalike letter from another script IS a difference - no NFKC, no confusable folding', () => {
+    // Cyrillic "а" (U+0430) in place of Latin "a".
+    const printed = { givenNames: 'Testа Mae', familyName: record.familyName };
+    expect(db4PrintedNamePartsDiffering(printed, record)).toEqual(['given_names']);
+  });
+
+  it('a zero-width character IS a difference - it is not whitespace and is never stripped', () => {
+    const printed = { givenNames: 'Tes​ta Mae', familyName: record.familyName };
+    expect(db4PrintedNamePartsDiffering(printed, record)).toEqual(['given_names']);
+  });
+
   it('comparableNamePart is idempotent', () => {
     const once = comparableNamePart(' O’ Fake–Name ');
     expect(comparableNamePart(once)).toBe(once);
