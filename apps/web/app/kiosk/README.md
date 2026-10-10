@@ -39,12 +39,27 @@ npm run lint -w apps/web       # string-table guard + the zero-footprint rule
 ### Testing on a real tablet over home Wi-Fi (10 Oct 2026)
 
 Proved on a Samsung Galaxy Tab S10, on Carl's Windows 11 PC with AVG Internet
-Security. Getting it working took an evening, because five separate things
+Security. Getting it working took an evening, because six separate things
 each blocked the tablet. This is the order that works.
 
 `<PC-IP>` below is the PC's Wi-Fi address: in `ipconfig`, the IPv4 address
 under "Wireless LAN adapter Wi-Fi", e.g. `192.168.33.100`. The tablet cannot
 reach the PC's `localhost`, so it uses this address instead.
+
+**0. Same network, and the PC can see the tablet.** This one cost the most
+time. Carl's home has two Wi-Fi networks on two different routers:
+- `IggyDAce_5G` (192.168.33.x) keeps its devices apart, so the PC could not
+  reach the tablet, and even the router's own page did not load;
+- `IggyDAce` (192.168.86.x) works.
+
+Put both devices on the same working network, then check from the PC:
+`ping <tablet-IP>`. "Destination host unreachable" means no firewall or app
+change will help. Changing networks changes `<PC-IP>`, so update both env
+files and the AVG rule's address range, then **restart web**. Web bakes
+`NEXT_PUBLIC_CORE_URL` into the page. A web started before the change shows a
+blank page on the tablet (its scripts are refused, 403), and the console's
+actions (revoke, add tablet) fail because they call the old address. `Stop-Process`
+the old web if `npm run dev` reports `EADDRINUSE`.
 
 **1. Repo settings.** These are local, gitignored files, except
 `next.config.mjs`, which is committed.
