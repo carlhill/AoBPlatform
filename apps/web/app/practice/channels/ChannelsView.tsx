@@ -24,13 +24,25 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ArrowRight, CheckCircle2, FileText, Layers, MessageSquare, Monitor, ShieldQuestion, Timer } from 'lucide-react';
+import {
+  ArrowRight,
+  CheckCircle2,
+  Clock,
+  FileText,
+  Layers,
+  MessageSquare,
+  Monitor,
+  ShieldQuestion,
+  Timer,
+} from 'lucide-react';
 import {
   APPROVED_IDENTIFIER_TYPES,
+  DEFAULT_PRACTICE_TIMEZONE,
   DEFAULT_SURFACE_PROFILE,
   IDENTIFIER_COUNT_FLOOR,
   KIOSK_IDLE_TIMEOUT_DEFAULT_SECONDS,
   PRACTICE_SURFACE_KEYS,
+  PRACTICE_TIMEZONE_KEYS,
   SURFACE_PROFILE_KEYS,
   audiencesOf,
   kioskIdleTimeoutOrDefault,
@@ -75,6 +87,11 @@ interface Practice {
    * every surface and is what every practice has until somebody sets it.
    */
   surfaceProfile?: string;
+  /**
+   * THE ZONE THIS PRACTICE'S DAY IS MEASURED IN (D-2026-10-10-03). Absent
+   * from an older core means `Australia/Sydney`, the column default.
+   */
+  timezone?: string;
 }
 
 /**
@@ -158,6 +175,8 @@ export function ChannelsView({
    * practice uses none of AoB", which is the one thing it may never mean.
    */
   const [surfaceProfile, setSurfaceProfile] = useState(DEFAULT_SURFACE_PROFILE);
+  // The column default until the server says otherwise; never an empty select.
+  const [timezone, setTimezone] = useState(DEFAULT_PRACTICE_TIMEZONE);
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -240,6 +259,7 @@ export function ChannelsView({
       // AN OLDER CORE THAT DOES NOT SEND IT MEANS EVERYTHING, which is the
       // column's default and today's behaviour for every practice.
       setSurfaceProfile(data.surfaceProfile ?? DEFAULT_SURFACE_PROFILE);
+      setTimezone(data.timezone ?? DEFAULT_PRACTICE_TIMEZONE);
     } catch (e) {
       setLoadError(e instanceof TypeError ? strings.review.unreachableBody : (e as Error).message);
     }
@@ -352,6 +372,7 @@ export function ChannelsView({
           kioskIdleTimeoutSeconds: minutes * 60,
           enduringByDefault: enduringDefault,
           surfaceProfile,
+          timezone,
         }),
       });
       if (!res.ok) throw new Error(await refusalMessage(res));
@@ -526,6 +547,47 @@ export function ChannelsView({
                   );
                 })}
               </ul>
+            </div>
+          </div>
+
+          {/*
+            --- THE PRACTICE'S TIME ZONE (D-2026-10-10-03) ---
+
+            Practice-wide, saved through the same `PATCH /practices/:id/config`
+            as everything else here. THE OPTIONS ARE THE CONTENT FILE'S, in its
+            order (`PRACTICE_TIMEZONE_KEYS`); the names come from the string
+            table keyed by IANA zone, and an unmapped zone shows its key.
+          */}
+          <div className={styles.card} style={{ marginTop: 'var(--s3)' }} data-testid="channels-timezone-card">
+            <div className={styles.cardHead}>
+              <Clock size={18} aria-hidden="true" className={styles.cardIcon} />
+              <div className={styles.cardMain}>
+                <p className={styles.cardTitle}>{strings.channels.timezoneTitle}</p>
+                <p className={styles.cardNote}>{strings.channels.timezoneLead}</p>
+              </div>
+            </div>
+            <div className={styles.cardBody}>
+              <div className={styles.inlineForm}>
+                <Field label={strings.channels.timezoneLabel} hint={strings.channels.timezoneHint}>
+                  {(props) => (
+                    <SelectInput
+                      {...props}
+                      value={timezone}
+                      onChange={(e) => {
+                        setTimezone(e.target.value);
+                        setSaved(false);
+                      }}
+                      data-testid="channels-timezone"
+                    >
+                      {PRACTICE_TIMEZONE_KEYS.map((zone) => (
+                        <option key={zone} value={zone}>
+                          {strings.channels.timezoneNames[zone] ?? zone}
+                        </option>
+                      ))}
+                    </SelectInput>
+                  )}
+                </Field>
+              </div>
             </div>
           </div>
 
