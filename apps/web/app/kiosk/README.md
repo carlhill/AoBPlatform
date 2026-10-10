@@ -545,6 +545,9 @@ notice becomes more sheets, never a box that scrolls.
     with them.
   - If even that does not fit, the block gets a sheet of its own and the ticks
     follow on the section's last sheet.
+  - "I confirm the details above are correct" never sits under no details
+    where the last row and the tick can share a sheet. Only where they cannot
+    (measured at 1024x600, normal form) does the tick follow on its own.
   - Each sheet's Continue waits for that sheet's ticks (D-2026-09-27-07).
     Sheets without ticks are ungated, as 2A always was.
   - There is no scroll-to-end gating ("keep ticking as is").
@@ -554,8 +557,22 @@ notice becomes more sheets, never a box that scrolls.
   sheet's blocks, ticks, tags and heading. It then asks whether the content
   row has nothing to scroll, which covers both landscape columns. Last, it
   puts every class back, all inside a layout effect.
-  - It re-measures when the window or the content row changes size. The
-    footer gains the tablet's name a moment after the page draws.
+  - It re-measures, once per animation frame, when the window or the
+    content row changes size. The footer gains the tablet's name a moment
+    after the page draws.
+  - **Every sheet is sized for the tallest action row it could carry** (review
+    of d0e4f94). Back is absent on the first sheet, and the "agree each visit"
+    decline and the shortcut to an outstanding tick appear only on the last.
+    When sized, each is kept in the DOM, hidden where it does not apply, and
+    shown while measuring. So the sheet count does not depend on which sheet
+    measuring ran from.
+  - A sheet that was the section's ticks on their own (`section:services`) is
+    remembered as the END of that section. If a re-flow merges it away, the
+    patient lands on the section's last sheet, not its first.
+  - If a re-measure hides the control that has focus, focus moves to the
+    sheet's heading (WCAG 2.4.3). Every page heading is described by the
+    "Page X of Y" line (`aria-describedby`), so a turn announces where the
+    patient is.
   - The patient stays on the sheet holding the first block they were reading
     (`resolveDb4Sheet`), so turning the tablet renumbers the sheets around them.
   - Ticks already given stay given; the ceremony holds them by statement.
@@ -579,29 +596,43 @@ notice becomes more sheets, never a box that scrolls.
 - **At 640px tall and under, space shrinks, never type**: the masthead's air,
   the form's top rule and the document padding tighten by a step.
 
+**The smallest screen that fits every page whole is 1280x800** (Carl, 10
+October 2026: "1280×800 is fine"; D-2026-10-10-10).
+- At 1280 wide by 800 tall and larger, and at every portrait size of the 14"
+  tablet, nothing scrolls on any page.
+- Below 800 tall, or below 1280 wide in landscape, a DB4 sheet may scroll as
+  a whole page, never a box. With Edge's bars at 1024x600, the shell's header
+  and its three-line footer of audit ids leave about 433px. That is not enough
+  for some sheets at this type scale.
+- **The signature step fits strictly at every size**, with two exceptions:
+  - Under 800px tall on its side, the pad gives up height first (down to a
+    120px floor under 680px tall) and the step's gaps tighten.
+  - It still does not fit at **1024x600 (25px short) or 960x600 (52px short)**.
+    What is left to give there is the footer's audit ids or the two-line
+    disabled Sign label. That is a decision, not a layout fix, so those two
+    sizes are recorded in the spec (`SIGNATURE_SHORTFALL`) and reported.
+
 **Sheets per form, measured** (normal form; 12 service rows with 2 providers;
-a 9-paragraph privacy notice):
+a 9-paragraph privacy notice; an ongoing agreement on the normal form):
 
-| Size | Normal | 12 rows | Long notice |
-|---|---|---|---|
-| 924x1478 | 4 | 6 | 6 |
-| 924x1370 | 4 | 7 | 6 |
-| 800x1280 | 4 | 7 | 6 |
-| 1478x924 | 4 | 9 | 7 |
-| 1280x800 | 8 | 19 | 16 |
-| 1024x600 | 11 | 25 | 18 |
+| Size | Normal | 12 rows | Long notice | Ongoing |
+|---|---|---|---|---|
+| 924x1478 | 4 | 6 | 6 | 5 |
+| 924x1370 | 4 | 7 | 6 | |
+| 800x1280 | 5 | 7 | 7 | 6 |
+| 1500x900 | 4 | 8 | 7 | |
+| 1478x924 | 4 | 9 | 7 | |
+| 1478x813 | 7 | 11 | 10 | |
+| 1280x800 | 8 | 19 | 16 | |
+| 1280x720 | 11 | 25 | 18 | |
+| 1478x700 | 8 | 19 | 16 | |
+| 1280x650 | 14 | 28 | 21 | |
+| 1024x600 | 15 | 29 | 22 | |
 
-**1024x600 and 960x600 do not fit every sheet.** With Edge's bars, the
-shell's header and its three-line footer of audit ids leave about 433px. The
-frame every sheet carries (the page line, heading and provenance, Back and
-Continue) takes most of that. At this type scale a single service row, or the
-legal page's tick with its tags, does not fit beside it. Those sheets are the
-taller-than-any-sheet case: the page scrolls as a whole, never a box. The
-spec holds these two sizes to "nothing inside the step scrolls, and every
-control can be scrolled into view", and every other size to "nothing scrolls
-at all".
-
-Tests: `rules/db4-sheets.test.ts` (the filler, from heights), and
+Tests: `rules/db4-sheets.test.ts` (the filler, from heights),
+`db4-sized.test.tsx` (the sized path forced through the screen's
+`sheetMeasurer` seam: per-sheet gating, the page line describing the heading,
+focus kept when a re-measure hides a tick), and
 `e2e/kiosk-tablet-fit.spec.ts`, which needs no database. Every request to
 core is answered by `page.route`. The spec asserts that nothing in the
 ceremony is scrollable at the tablet's sizes. It also checks that each

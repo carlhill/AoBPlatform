@@ -70,21 +70,38 @@ const VIEWPORTS = [
  */
 const STEP_1_FITS = ['924x1478', '924x1370', '800x1280', '1478x924', '1478x813', '1280x800', '1500x900'];
 
-/** Where every page must fit whole, with nothing in the ceremony scrollable. */
-const NO_SCROLL_SIZES = ['924x1478', '924x1370', '800x1280', '1478x924', '1280x800'];
+/**
+ * BELOW 1280x800 A DB4 SHEET MAY SCROLL AS A WHOLE — AND ONLY A DB4 SHEET
+ * (Carl, 10 Oct 2026: "1280×800 is fine"; D-2026-10-10-10). At 1280 wide by
+ * 800 tall and larger, and at every portrait size of the 14" tablet, every
+ * page fits whole with nothing scrolling. Below 800 tall, or below 1280 wide
+ * in landscape, a DB4 sheet may scroll as a whole page — never a box. The
+ * signature step fits strictly at every size. At 1024x600 and 960x600 with
+ * Edge's bars, the shell's header and its three-line footer of audit ids leave
+ * ~433px, and the frame every sheet carries (the page line, the page heading,
+ * the provenance line, Back and Continue) takes most of it: a single service
+ * row, or the legal page's tick with the tags, does not fit beside it at this
+ * type scale. Those sheets are the "taller than any sheet" case — the PAGE
+ * scrolls, never a box. Below this height the spec holds DB4 sheets to
+ * "nothing inside the step scrolls, every control can be scrolled into view".
+ * Every other step, and every other size, is held to "nothing scrolls".
+ */
+const RELAXED_BELOW = { width: 1280, height: 800 };
 
 /**
- * SCREENS TOO SHORT FOR SOME SHEETS (10 Oct 2026, measured). At 1024x600 and
- * 960x600 with Edge's bars, the shell's header and its three-line footer of
- * audit ids leave ~433px; the frame every sheet carries (the page line, the
- * page heading, the provenance line, Back and Continue) takes most of it, and
- * a single service row, or the legal page's tick with the tags, does not fit
- * beside it at this type scale. Those sheets are the "taller than any sheet"
- * case: the PAGE scrolls as a whole, never a box inside it. Here the spec
- * holds the rule that still applies — nothing inside the step scrolls, every
- * control can be scrolled into view — and the sizes above hold the full one.
+ * WHERE THE SIGNATURE STEP DOES NOT YET FIT STRICTLY, MEASURED (review of
+ * d0e4f94). Carl's rule is that step 3 fits at every size. With the pad at its
+ * 120px floor and the step's gaps tightened, it still needs 25px more than a
+ * 1024x600 screen with Edge's bars has, and 52px more at 960x600. The three-
+ * line footer of audit ids (106px) and the two-line disabled Sign label are
+ * what is left to give, and neither is this spec's to cut. Here step 3 stays
+ * under the rule these sizes had at d0e4f94 — nothing inside it scrolls, every
+ * control can be scrolled into view — and is reported for a decision; it is
+ * strict everywhere else, 1478x700 and 1280x650 included.
  */
-const SHORT_SIZES = ['1024x600', '960x600'];
+const SIGNATURE_SHORTFALL = ['1024x600', '960x600'];
+const relaxed = (size: { width: number; height: number }): boolean =>
+  size.height < RELAXED_BELOW.height || (size.width > size.height && size.width < RELAXED_BELOW.width);
 
 /** Where the before/after screenshots are taken. */
 const SHOT_SIZES = ['924x1478', '1478x924'];
@@ -184,6 +201,18 @@ const GIANT_DB4 = {
   ],
 };
 
+/* An ongoing agreement: its two statements, both read on the legal page. */
+const ENDURING_STATEMENTS = [
+  {
+    key: 'enduring_assign_v1',
+    text: 'I assign to Dr Sam Example my right to the Medicare benefit for the bulk-billed services they provide to me from 10 October 2026 until this agreement ends.',
+  },
+  {
+    key: 'enduring_scope_and_ending_v1',
+    text: 'I understand this agreement covers Dr Sam Example only, and that I can end it at any time by telling the practice in writing; it ends two business days after that.',
+  },
+];
+
 const FORMS = { normal: DB4, long: LONG_DB4, longPrivacy: LONG_PRIVACY_DB4, giant: GIANT_DB4 } as const;
 type FormName = keyof typeof FORMS;
 
@@ -239,7 +268,12 @@ const ME: Record<string, unknown> = {
  * The fake core. Anything it does not recognise is refused, never forwarded.
  * `testDevice` turns on the blueprint panels, as a practice's test tablet has.
  */
-async function answerCore(route: Route, testDevice: boolean, form: FormName = 'normal'): Promise<void> {
+async function answerCore(
+  route: Route,
+  testDevice: boolean,
+  form: FormName = 'normal',
+  enduring = false,
+): Promise<void> {
   const request = route.request();
   const cors = {
     'access-control-allow-origin': WEB_ORIGIN,
@@ -262,11 +296,22 @@ async function answerCore(route: Route, testDevice: boolean, form: FormName = 'n
 
   if (path === '/kiosk/me') return json({ ...ME, showsWaitingList: testDevice });
   if (path === '/kiosk/heartbeat') return json({ command: null, pollMs: 60_000, outOfUse: false, reload: false });
-  if (path === '/kiosk/session') return json({ session: SESSION });
+  if (path === '/kiosk/session')
+    return json({ session: enduring ? { ...SESSION, agreementType: 'enduring' } : SESSION });
   if (path === `/kiosk/session/${SESSION_ID}/state`) return json({ id: SESSION_ID, state: 'reading' });
   if (path === `/kiosk/session/${SESSION_ID}/confirm-details`)
     return json({ id: SESSION_ID, state: 'details_confirmed' });
-  if (path === `/agreements/${AGREEMENT_ID}`) return json({ ...AGREEMENT, db4Form: FORMS[form] });
+  if (path === `/agreements/${AGREEMENT_ID}`) {
+    const agreement = enduring
+      ? {
+          ...AGREEMENT,
+          type: 'enduring',
+          templateVersion: 'enduring-generic-1',
+          renderPayload: { template: { statements: ENDURING_STATEMENTS } },
+        }
+      : AGREEMENT;
+    return json({ ...agreement, db4Form: FORMS[form] });
+  }
   if (path === '/practice-users') return json({ users: [] });
   if (path === '/kiosk/waiting-list') {
     return json(
@@ -292,6 +337,8 @@ interface Walk {
   fontScale?: number;
   /** Which DB4 the agreement carries. */
   form?: FormName;
+  /** An ongoing agreement: two statements, and the "agree each visit" decline. */
+  enduring?: boolean;
 }
 
 async function openPairedKiosk(page: Page, walk: Walk): Promise<void> {
@@ -305,7 +352,7 @@ async function openPairedKiosk(page: Page, walk: Walk): Promise<void> {
   }, walk.fontScale ?? 0);
   await page.route(
     (url) => url.origin !== WEB_ORIGIN,
-    (route) => answerCore(route, walk.testDevice === true, walk.form ?? 'normal'),
+    (route) => answerCore(route, walk.testDevice === true, walk.form ?? 'normal', walk.enduring === true),
   );
   await page.goto(`${WEB}/kiosk`);
 }
@@ -477,7 +524,7 @@ async function shot(page: Page, size: { width: number; height: number }, label: 
  */
 async function readEverySheetAndContinue(page: Page): Promise<void> {
   await expect(page.getByTestId('particulars-heading')).toBeAttached();
-  for (let turn = 1; turn <= 40; turn += 1) {
+  for (let turn = 1; turn <= MAX_SHEETS; turn += 1) {
     const last = (await page.getByTestId('continue-to-sign').count()) > 0;
     for (const box of await page.locator('[data-testid^="affirm-"]:visible').all()) await box.check();
     await page.getByTestId(last ? 'continue-to-sign' : 'db4-page-continue').click();
@@ -493,15 +540,29 @@ async function readEverySheetAndContinue(page: Page): Promise<void> {
  */
 async function settled(page: Page): Promise<void> {
   await expect(page.getByTestId('kiosk-device-identity')).toBeVisible();
+  // The re-measure that follows runs on the next animation frame; let it land.
+  await page.evaluate(
+    () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))),
+  );
 }
+
+/**
+ * A SAFETY CAP ON WALKING THE SHEETS, NOT AN EXPECTATION. Each walk stops at
+ * the sheet that offers Continue to sign; the cap only stops a broken page
+ * line looping forever. The longest form at 1024x600 takes 25 sheets today.
+ */
+const MAX_SHEETS = 100;
 
 async function walkTheCeremony(page: Page, size: { width: number; height: number }, walk: Walk = {}): Promise<void> {
   const shots = !walk.testDevice && !walk.fontScale;
-  const short = SHORT_SIZES.includes(`${size.width}x${size.height}`);
-  const reach = walk.testDevice || short ? expectReachableByPageScroll : expectReachableWithoutScrolling;
-  const whole = !walk.testDevice && !walk.fontScale && NO_SCROLL_SIZES.includes(`${size.width}x${size.height}`);
+  // DB4 sheets: page scroll allowed on a test device and below the pending
+  // minimum height. Everything else — step 1 where it fits, and step 3
+  // everywhere — is held to "nothing scrolls".
+  const reach = walk.testDevice || relaxed(size) ? expectReachableByPageScroll : expectReachableWithoutScrolling;
+  const strict = !walk.fontScale;
+  const sheetsWhole = strict && !walk.testDevice && !relaxed(size);
   const fitsWhole = async (step: string) => {
-    if (whole) await expectNothingScrolls(page, step);
+    if (sheetsWhole) await expectNothingScrolls(page, step);
   };
   await page.setViewportSize(size);
   await openPairedKiosk(page, walk);
@@ -509,23 +570,26 @@ async function walkTheCeremony(page: Page, size: { width: number; height: number
   // K-P1, step 1 — every row's two answers and Continue, all on screen.
   await expect(page.getByTestId('check-details-heading')).toBeVisible();
   await expectNoHorizontalOverflow(page, 'K-P1');
-  if (STEP_1_FITS.includes(`${size.width}x${size.height}`)) await fitsWhole('K-P1');
+  if (STEP_1_FITS.includes(`${size.width}x${size.height}`) && strict && !walk.testDevice) {
+    await expectNothingScrolls(page, 'K-P1');
+  }
   if (shots) await shot(page, size, 'step1');
   const ticks = await page.locator('[data-testid^="detail-tick-"]').all();
   const step1Fits = STEP_1_FITS.includes(`${size.width}x${size.height}`);
+  const reach1 = walk.testDevice ? expectReachableByPageScroll : expectReachableWithoutScrolling;
   for (const [index, tick] of step1Fits ? ticks.entries() : []) {
-    await reach(page, tick, `K-P1 "that's right" ${index + 1}`);
+    await reach1(page, tick, `K-P1 "that's right" ${index + 1}`);
   }
   const crosses = step1Fits ? await page.locator('[data-testid^="detail-cross-"]').all() : [];
   for (const [index, cross] of crosses.entries()) {
-    await reach(page, cross, `K-P1 "that's wrong" ${index + 1}`);
+    await reach1(page, cross, `K-P1 "that's wrong" ${index + 1}`);
   }
   if (step1Fits) {
-    await reach(page, page.getByTestId('check-details-continue'), 'K-P1 Continue');
+    await reach1(page, page.getByTestId('check-details-continue'), 'K-P1 Continue');
   }
   for (const tick of ticks) await tick.click();
   if (step1Fits) {
-    await reach(page, page.getByTestId('check-details-continue'), 'K-P1 Continue, ticked');
+    await reach1(page, page.getByTestId('check-details-continue'), 'K-P1 Continue, ticked');
   }
   await page.getByTestId('check-details-continue').click();
 
@@ -533,7 +597,7 @@ async function walkTheCeremony(page: Page, size: { width: number; height: number
   // with nothing scrollable. How many sheets depends on the screen.
   await expect(page.getByTestId('particulars-heading')).toBeAttached();
   await settled(page);
-  for (let turn = 1; turn <= 30; turn += 1) {
+  for (let turn = 1; turn <= MAX_SHEETS; turn += 1) {
     const pageOf = (await page.getByTestId('db4-page-of').textContent()) ?? `sheet ${turn}`;
     await expectNoHorizontalOverflow(page, pageOf);
     await fitsWhole(pageOf);
@@ -551,15 +615,18 @@ async function walkTheCeremony(page: Page, size: { width: number; height: number
     if (last) break;
   }
 
-  // Step 3 — the pad, Back, Clear and Sign.
+  // Step 3 — the pad, Back, Clear and Sign: STRICT at every size (review of
+  // d0e4f94). The relaxation above is for DB4 sheets only.
   await expect(page.getByTestId('signature-pad')).toBeVisible();
   await expectNoHorizontalOverflow(page, 'Step 3');
-  await fitsWhole('Step 3');
+  const shortfall = SIGNATURE_SHORTFALL.includes(`${size.width}x${size.height}`);
+  if (strict && !shortfall) await expectNothingScrolls(page, 'Step 3');
   if (shots) await shot(page, size, 'step3');
-  await reach(page, page.getByTestId('signature-pad'), 'signature pad');
-  await reach(page, page.getByTestId('signature-back'), 'Back');
-  await reach(page, page.getByTestId('signature-clear'), 'Clear');
-  await reach(page, page.getByTestId('sign-control'), 'Sign');
+  const reach3 = shortfall ? expectReachableByPageScroll : expectReachableWithoutScrolling;
+  await reach3(page, page.getByTestId('signature-pad'), 'signature pad');
+  await reach3(page, page.getByTestId('signature-back'), 'Back');
+  await reach3(page, page.getByTestId('signature-clear'), 'Clear');
+  await reach3(page, page.getByTestId('sign-control'), 'Sign');
 }
 
 for (const size of VIEWPORTS) {
@@ -830,9 +897,14 @@ test('kiosk_a_signed_pad_turned_on_its_side_shows_all_of_its_ink', async ({ page
  * ticks are on it, and its Continue waits for them (D-2026-09-27-07). The
  * number of sheets is recorded on each test.
  */
-async function walkTheSheets(page: Page, size: { width: number; height: number }, form: FormName): Promise<number> {
+async function walkTheSheets(
+  page: Page,
+  size: { width: number; height: number },
+  form: FormName,
+  enduring = false,
+): Promise<number> {
   await page.setViewportSize(size);
-  await openPairedKiosk(page, { form });
+  await openPairedKiosk(page, { form, enduring });
   await expect(page.getByTestId('check-details-heading')).toBeVisible();
   for (const tick of await page.locator('[data-testid^="detail-tick-"]').all()) await tick.click();
   await page.getByTestId('check-details-continue').click();
@@ -840,14 +912,13 @@ async function walkTheSheets(page: Page, size: { width: number; height: number }
   await settled(page);
 
   let total = 0;
-  for (let turn = 1; turn <= 30; turn += 1) {
+  for (let turn = 1; turn <= MAX_SHEETS; turn += 1) {
     const pageOf = (await page.getByTestId('db4-page-of').textContent()) ?? '';
     const [position, of] = (pageOf.match(/\d+/g) ?? []).map(Number);
     expect(position, `sheet ${turn} says which sheet it is`).toBe(turn);
     total = of;
-    const short = SHORT_SIZES.includes(`${size.width}x${size.height}`);
-    const check = short ? expectReachableByPageScroll : expectReachableWithoutScrolling;
-    if (form !== 'giant' && !short) await expectNothingScrolls(page, `${form}, ${pageOf}`);
+    const check = relaxed(size) ? expectReachableByPageScroll : expectReachableWithoutScrolling;
+    if (form !== 'giant' && !relaxed(size)) await expectNothingScrolls(page, `${form}, ${pageOf}`);
     await expectNoHorizontalOverflow(page, `${form}, ${pageOf}`);
     const boxes = await page.locator('[data-testid^="affirm-"]:visible').all();
     const last = (await page.getByTestId('continue-to-sign').count()) > 0;
@@ -858,6 +929,8 @@ async function walkTheSheets(page: Page, size: { width: number; height: number }
       await box.check();
     }
     if (form !== 'giant') await check(page, forward, `${form}, ${pageOf}, Continue`);
+    // The ongoing agreement's decline, on the last sheet: in view as well.
+    if (last && enduring) await check(page, page.getByTestId('decline-enduring'), `${form}, ${pageOf}, decline`);
     await expect(forward).toBeEnabled();
     await forward.click();
     if (last) break;
@@ -871,7 +944,12 @@ const SHEET_SIZES = [
   { width: 924, height: 1370 },
   { width: 800, height: 1280 },
   { width: 1478, height: 924 },
+  { width: 1500, height: 900 },
+  { width: 1478, height: 813 },
   { width: 1280, height: 800 },
+  { width: 1280, height: 720 },
+  { width: 1478, height: 700 },
+  { width: 1280, height: 650 },
   { width: 1024, height: 600 },
 ];
 
@@ -883,6 +961,21 @@ for (const form of ['normal', 'long', 'longPrivacy'] as const) {
       test.info().annotations.push({ type: 'sheets', description: `${form} ${size.width}x${size.height}: ${total}` });
     });
   }
+}
+
+/*
+ * AN ONGOING AGREEMENT: two statements on the legal page and the "I'd rather
+ * agree each visit" decline beside Continue to sign on the last sheet. Every
+ * sheet is sized for the tallest action row, so the decline fits too.
+ */
+for (const size of [
+  { width: 800, height: 1280 },
+  { width: 924, height: 1478 },
+]) {
+  test(`kiosk_ongoing_agreement_sheets_fit_whole_at_${size.width}x${size.height}`, async ({ page }) => {
+    const total = await walkTheSheets(page, size, 'normal', true);
+    test.info().annotations.push({ type: 'sheets', description: `enduring ${size.width}x${size.height}: ${total}` });
+  });
 }
 
 /*
@@ -900,7 +993,7 @@ test('kiosk_a_paragraph_taller_than_the_screen_gets_a_sheet_of_its_own_and_the_p
   await expect(page.getByTestId('particulars-heading')).toBeVisible();
   await settled(page);
   let sawTheGiant = false;
-  for (let turn = 1; turn <= 30; turn += 1) {
+  for (let turn = 1; turn <= MAX_SHEETS; turn += 1) {
     const pageOf = (await page.getByTestId('db4-page-of').textContent()) ?? '';
     const giantShown = await page
       .locator('[data-db4-block="privacy-1"]')

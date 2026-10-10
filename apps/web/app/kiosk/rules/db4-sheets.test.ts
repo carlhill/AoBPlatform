@@ -97,6 +97,19 @@ describe('fillDb4Sheets', () => {
     for (const sheet of services) expect(fits(sheet)).toBe(true);
   });
 
+  it('the_details_tick_never_sits_alone_when_the_last_row_and_it_fit_together', () => {
+    // "I confirm the details above are correct" must have details above it:
+    // wherever the last row and the tick fit on one sheet, they share it.
+    for (const available of [400, 500, 650, 900, 1200]) {
+      const rows = Array.from({ length: 12 }, (_, index) => block(`service-${index}`));
+      const fits = fitsByHeight({ available, frame: 250, heights, ticks: { services: 120 } });
+      const services = fillDb4Sheets(rows, fits).filter((sheet) => sheet.section === 'services');
+      const last = services[services.length - 1];
+      const together = fits({ section: 'services', blocks: ['service-11'], lastOfSection: true, lastOfAll: false });
+      if (together) expect(last.blocks).toContain('service-11');
+    }
+  });
+
   it('a_block_taller_than_any_sheet_gets_a_sheet_of_its_own_and_nothing_is_dropped', () => {
     // One privacy paragraph is taller than the whole screen. It is put on its
     // own sheet — where the page scrolls as a whole, never a box — and the
@@ -139,6 +152,18 @@ describe('resolveDb4Sheet', () => {
     const after = resolveDb4Sheet(landscape, 'services', reading);
     expect(landscape[after].blocks).toContain(reading);
     expect(landscape.length).toBeGreaterThan(portrait.length);
+  });
+
+  it('a_ticks_only_sheet_remembered_by_its_section_stays_at_the_end_of_that_section', () => {
+    // Upright the services ticks had a sheet of their own (anchor
+    // `section:services`). Turned, they share a sheet with the last rows: the
+    // patient lands there — the section's LAST sheet — not back at its first.
+    const rows = Array.from({ length: 12 }, (_, index) => block(`service-${index}`));
+    const wide = fillDb4Sheets(rows, fitsByHeight({ available: 800, frame: 250, heights, ticks: { services: 120 } }));
+    const index = resolveDb4Sheet(wide, 'services', 'section:services');
+    const services = wide.filter((sheet) => sheet.section === 'services');
+    expect(wide[index]).toBe(services[services.length - 1]);
+    expect(services.length).toBeGreaterThan(1);
   });
 
   it('arrives_at_the_first_sheet_of_a_section_and_back_from_the_signature_at_the_last', () => {

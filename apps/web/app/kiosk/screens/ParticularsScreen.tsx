@@ -188,6 +188,7 @@ import {
   resolveDb4Sheet,
   sheetAnchor,
   statementPage,
+  type Db4Block,
   type Db4Page,
   type Db4Sheet,
 } from '../rules/db4-pages';
@@ -271,6 +272,7 @@ export function ParticularsScreen({
   sessionId,
   patientId,
   onSeeReception,
+  sheetMeasurer,
 }: {
   practiceName: string;
   locationLine: string | null;
@@ -352,6 +354,13 @@ export function ParticularsScreen({
    */
   page?: Db4Page;
   onPage?: (next: Db4Page) => void;
+  /**
+   * TESTS ONLY: decide the sheets from the blocks instead of measuring the
+   * live layout. jsdom has no layout, so without this the sized path is never
+   * taken in a unit test; with it, the screen draws, gates and focuses exactly
+   * as it does on a tablet. Production passes nothing.
+   */
+  sheetMeasurer?: (blocks: readonly Db4Block[]) => readonly Db4Sheet[];
   /** The pushed session's own id — an audit/testing aid in the footer. See `Chrome.tsx`'s `Screen`. */
   sessionId?: string | null;
   /**
@@ -595,7 +604,15 @@ export function ParticularsScreen({
    */
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const remeasure = (): void => setMeasureTick((tick) => tick + 1);
+    // One re-measure per frame, however many resize events a turn produces.
+    let frame = 0;
+    const remeasure = (): void => {
+      if (frame) return;
+      frame = window.requestAnimationFrame(() => {
+        frame = 0;
+        setMeasureTick((tick) => tick + 1);
+      });
+    };
     window.addEventListener('resize', remeasure);
     /*
      * AND WHEN THE CONTENT ROW ITSELF CHANGES HEIGHT without the window doing
@@ -610,6 +627,7 @@ export function ParticularsScreen({
     return () => {
       window.removeEventListener('resize', remeasure);
       observer?.disconnect();
+      if (frame) window.cancelAnimationFrame(frame);
     };
   }, []);
 
@@ -619,24 +637,48 @@ export function ParticularsScreen({
     setMeasurable(
       isPaged &&
         !blueprintPanels &&
-        !!main &&
-        main.clientHeight > 0 &&
-        typeof window !== 'undefined' &&
-        window.innerHeight >= 480,
+        (sheetMeasurer !== undefined ||
+          (!!main && main.clientHeight > 0 && typeof window !== 'undefined' && window.innerHeight >= 480)),
     );
-  }, [isPaged, blueprintPanels, measureTick]);
+  }, [isPaged, blueprintPanels, measureTick, sheetMeasurer]);
 
   useLayoutEffect(() => {
     const root = fitRef.current;
     const main = root?.closest('main');
-    if (!sized || !root || !main) return;
+    if (!sized || !root) return;
+    if (sheetMeasurer) {
+      const blocks = Array.from(root.querySelectorAll<HTMLElement>('[data-db4-block]')).map((element) => {
+        const id = element.dataset.db4Block ?? '';
+        return { id, section: db4BlockSection(id) };
+      });
+      const measured = [...sheetMeasurer(blocks)];
+      setSheets((previous) =>
+        previous && JSON.stringify(previous) === JSON.stringify(measured) ? previous : measured,
+      );
+      return;
+    }
+    if (!main) return;
     const next = measureDb4Sheets(root, main, {
       hidden: styles.db4Hidden,
       readOnly: styles.visuallyHidden,
       inFlow: styles.db4Block,
     });
     setSheets((previous) => (previous && JSON.stringify(previous) === JSON.stringify(next) ? previous : next));
-  }, [sized, measureTick, db4, statements.length]);
+  }, [sized, measureTick, db4, statements.length, sheetMeasurer]);
+
+  /*
+   * A RE-MEASURE MUST NOT DROP FOCUS ON THE FLOOR (WCAG 2.4.3). If the control
+   * the patient was on is no longer on this sheet — the tablet turned and the
+   * tick moved to the next one — focus goes to the sheet's heading, which says
+   * where they now are, rather than to the document body.
+   */
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const active = document.activeElement as HTMLElement | null;
+    if (!active || !fitRef.current?.contains(active)) return;
+    if (active.closest(`.${styles.db4Hidden}`) === null) return;
+    pageHeadingRef.current?.focus();
+  }, [sheets]);
 
   /**
    * WHO SIGNS, AND THE ONE LINE UNDER IT. Composed once because it is drawn in
@@ -684,6 +726,24 @@ export function ParticularsScreen({
     />
   );
 
+  /**
+   * A CONTROL THAT IS ONLY ON SOME SHEETS, KEPT FOR MEASURING (review of
+   * d0e4f94). The decline and the shortcut to an outstanding tick appear on
+   * the last sheet only, and Back not at all on the first. Sized, each is
+   * always in the DOM and hidden where it does not apply, and the measurer
+   * shows them all, so every sheet is sized for the TALLEST action row and
+   * the sheet count does not depend on which sheet measuring ran from. On the
+   * fixed pages it is drawn only where it applies, exactly as before.
+   */
+  const reserve = (shown: boolean, control: (shown: boolean) => ReactNode): ReactNode =>
+    sized ? (
+      <div className={`${styles.db4Block}${hide(shown)}`} data-db4-reserve="">
+        {control(shown)}
+      </div>
+    ) : shown ? (
+      control(true)
+    ) : null;
+
   const actions = (
     <div className={styles.actions}>
       {/*
@@ -703,6 +763,8 @@ export function ParticularsScreen({
         />
       ) : onBack ? (
         <SecondaryButton label={strings.chrome.backAction} onPress={onBack} testId="particulars-back" />
+      ) : sized ? (
+        reserve(false, () => <SecondaryButton label={strings.chrome.backAction} onPress={noop} />)
       ) : null}
       <div className={`${styles.grow} ${styles.primaryStack}`}>
         {nextPage && paged ? (
@@ -759,20 +821,24 @@ export function ParticularsScreen({
           a child of the same box as the control it explains and cannot wrap
           away from it at any width.
         */}
-        {!nextPage && strandedTick && validation.state === 'valid' ? (
-          <SecondaryButton
-            label={strings.particulars.db4.goToOutstanding}
-            onPress={() => {
-              // To the sheet that carries it: the LAST sheet of its section.
-              const section = statementPage(strandedTick.key);
-              const target = measuredSheets
-                ? ([...measuredSheets].reverse().find((each) => each.section === section) ?? null)
-                : null;
-              turnTo(section, target);
-            }}
-            testId="go-to-outstanding-tick"
-          />
-        ) : null}
+        {reserve(
+          !nextPage && strandedTick !== null && validation.state === 'valid',
+          (shown) => (
+            <SecondaryButton
+              label={strings.particulars.db4.goToOutstanding}
+              onPress={() => {
+                if (!strandedTick) return;
+                // To the sheet that carries it: the LAST sheet of its section.
+                const section = statementPage(strandedTick.key);
+                const target = measuredSheets
+                  ? ([...measuredSheets].reverse().find((each) => each.section === section) ?? null)
+                  : null;
+                turnTo(section, target);
+              }}
+              testId={shown ? 'go-to-outstanding-tick' : undefined}
+            />
+          ),
+        )}
       </div>
       {/*
         AFTER THE PRIMARY, NEVER BEFORE IT. Signing is what this screen is for;
@@ -783,13 +849,15 @@ export function ParticularsScreen({
         declining is an answer to the whole agreement, and it belongs beside
         the control that accepts it rather than on a page of the form.
       */}
-      {!nextPage && isEnduring && onDeclineEnduring ? (
-        <SecondaryButton
-          label={strings.particulars.enduringDeclineAction}
-          onPress={onDeclineEnduring}
-          testId="decline-enduring"
-        />
-      ) : null}
+      {isEnduring && onDeclineEnduring
+        ? reserve(!nextPage, (shown) => (
+            <SecondaryButton
+              label={strings.particulars.enduringDeclineAction}
+              onPress={onDeclineEnduring}
+              testId={shown ? 'decline-enduring' : undefined}
+            />
+          ))
+        : null}
     </div>
   );
   return (
@@ -875,7 +943,7 @@ export function ParticularsScreen({
                 sits by the screen's own heading where the document is.
               */}
               {pagePosition ? (
-                <p className={styles.versions} data-testid="db4-page-of">
+                <p id={PAGE_LINE_ID} className={styles.versions} data-testid="db4-page-of">
                   {strings.particulars.db4.pageOf(pagePosition.position, pagePosition.total)}
                 </p>
               ) : null}
@@ -938,6 +1006,7 @@ export function ParticularsScreen({
                     form={db4}
                     showParserTemplate={blueprintPanels}
                     page={paged?.page}
+                    pageLineId={pagePosition ? PAGE_LINE_ID : undefined}
                     sheet={
                       sized && paged
                         ? { section: sheet?.section ?? paged.page, blocks: sheet ? new Set(sheet.blocks) : null }
@@ -1228,6 +1297,7 @@ function Db4Document({
   pageHeadingRef,
   agreementFacts,
   sheet,
+  pageLineId,
 }: {
   form: Db4FormView;
   /** The TEST-device flag. A parser version is a developer's note (Carl, 4 Sep 2026). */
@@ -1260,6 +1330,11 @@ function Db4Document({
    * measure). Absent, the screen is the three fixed pages exactly as before.
    */
   sheet?: { section: Db4Page; blocks: ReadonlySet<string> | null };
+  /**
+   * The "Page X of Y" line's id. Every page heading is described by it, so a
+   * screen reader landing on the heading after a turn hears where it is.
+   */
+  pageLineId?: string;
 }): ReactNode {
   const copy = strings.particulars.db4;
   const headingLines = form.headingLines ?? [];
@@ -1380,6 +1455,7 @@ function Db4Document({
                 className={`${styles.db4Title}${hide(shown)}`}
                 ref={shown ? pageHeadingRef : undefined}
                 tabIndex={-1}
+                aria-describedby={pageLineId}
                 data-testid={shown ? 'db4-page-heading' : undefined}
                 data-db4-page-heading={section}
               >
@@ -1396,6 +1472,7 @@ function Db4Document({
                     className={`${styles.db4Title}${hide(shows(`masthead-${index}`))}`}
                     ref={titleShown ? pageHeadingRef : undefined}
                     tabIndex={-1}
+                    aria-describedby={pageLineId}
                     data-testid={titleShown ? 'db4-page-heading' : undefined}
                     data-db4-block={`masthead-${index}`}
                     data-db4-title=""
@@ -1421,7 +1498,13 @@ function Db4Document({
       ) : (
         <div className={styles.db4Heading}>
           {pageHeading ? (
-            <h2 className={styles.db4Title} ref={pageHeadingRef} tabIndex={-1} data-testid="db4-page-heading">
+            <h2
+              className={styles.db4Title}
+              ref={pageHeadingRef}
+              tabIndex={-1}
+              aria-describedby={pageLineId}
+              data-testid="db4-page-heading"
+            >
               {pageHeading}
             </h2>
           ) : null}
@@ -1432,6 +1515,7 @@ function Db4Document({
                     key={`db4-heading-${index}`}
                     className={styles.db4Title}
                     ref={page === undefined ? undefined : pageHeadingRef}
+                  aria-describedby={page === undefined ? undefined : pageLineId}
                     tabIndex={page === undefined ? undefined : -1}
                     data-testid={page === undefined ? undefined : 'db4-page-heading'}
                   >
@@ -1760,6 +1844,12 @@ function Db4Document({
  * landscape view included, then puts every class back as React drew it.
  * Synchronous, inside a layout effect: nothing in between is ever painted.
  */
+/** The page line's id, which every sheet's heading is described by. */
+const PAGE_LINE_ID = 'db4-page-of-line';
+
+/** Back, reserved on a sheet that has none: never pressable, never shown. */
+const noop = (): void => undefined;
+
 function measureDb4Sheets(
   root: HTMLElement,
   main: HTMLElement,
@@ -1773,7 +1863,8 @@ function measureDb4Sheets(
   const tags = all('[data-db4-tags]');
   const headings = all('[data-db4-page-heading]');
   const leads = all('[data-db4-lead]');
-  const touched = [...blocks, ...wraps, ...ticks, ...tags, ...headings, ...leads];
+  const reserves = all('[data-db4-reserve]');
+  const touched = [...blocks, ...wraps, ...ticks, ...tags, ...headings, ...leads, ...reserves];
   const drawn = touched.map((element) => element.className);
   const firstId = blocks[0]?.dataset.db4Block ?? null;
   const titleId = root.querySelector<HTMLElement>('[data-db4-title]')?.dataset.db4Block ?? null;
@@ -1798,6 +1889,8 @@ function measureDb4Sheets(
     // The ceremony's heading is drawn on the first sheet of the form only.
     const first = trial.section === DB4_PAGES[0] && (trial.blocks[0] ?? null) === firstId;
     for (const element of leads) element.className = first ? classes.inFlow : classes.readOnly;
+    // Every sheet is sized for the tallest action row it could carry.
+    for (const element of reserves) element.classList.remove(hidden);
     return main.scrollHeight <= main.clientHeight;
   };
 
