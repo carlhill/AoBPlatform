@@ -4659,6 +4659,10 @@ export const strings = {
     healthyTitle: 'Reporting normally',
     healthy: (ago: string) => `Last reported ${ago} ago, with nothing held and nothing out of step.`,
 
+    /* A retired chain: a quiet line, not a card. Its silence is expected (decision 7). */
+    retired: (chain8: string, at: string) =>
+      `Audit log ${chain8}… was retired on ${at}, when a platform operator accepted another audit log as this practice’s. It has not reported since.`,
+
     /* 10. NEVER REPORTED — neutral, not an outage. */
     neverTitle: 'No AOBPRINTER has reported for this practice',
     never: 'Nothing has reported yet, so there is nothing to be offline. This page fills in after the first report.',

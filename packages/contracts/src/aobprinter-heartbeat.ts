@@ -268,6 +268,12 @@ export interface AobPrinterHostRow {
   readonly rebaselinedAt: string | null;
   /** A principal id, never a name. */
   readonly rebaselinedBy: string | null;
+  /**
+   * When an operator accepted another chain as the practice's, retiring this
+   * one — and only while this chain has not reported since. A retired chain
+   * that reports again is a host still running: null, and shown as one.
+   */
+  readonly retiredAt: string | null;
   /** Decided by the server (decision 2). */
   readonly liveness: AobPrinterHostLiveness;
   readonly chain: AobPrinterHostChainView;

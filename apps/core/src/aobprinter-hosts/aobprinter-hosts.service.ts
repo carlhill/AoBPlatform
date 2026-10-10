@@ -73,6 +73,18 @@ async function lockPracticeHosts(tx: Prisma.TransactionClient, practiceId: strin
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`aobprinter_hosts:${practiceId}`}))`;
 }
 
+/**
+ * RETIRED, AS EVERY READER OF THE ROW MEANS IT (PRINTER-HEARTBEAT.md §3): the
+ * stamp, unless the chain has reported SINCE it was retired — then it is a
+ * host still running beside the accepted one, and counts as live for rule 1,
+ * for the two-hosts notice, for the sweep, for the console and for
+ * re-baselining. Null when not retired. The same predicate as
+ * `core.aobprinter_hosts_overview()` (migration 20261010020000).
+ */
+export function effectiveRetiredAt(r: Pick<AobPrinterHost, 'lastSeenAt' | 'retiredAt'>): Date | null {
+  return r.retiredAt !== null && r.lastSeenAt.getTime() <= r.retiredAt.getTime() ? r.retiredAt : null;
+}
+
 const seenWithinOfflineWindow = (lastSeenAt: Date, now: Date) =>
   now.getTime() - lastSeenAt.getTime() <= AOBPRINTER_OFFLINE_AFTER_MS;
 
@@ -85,7 +97,7 @@ const seenWithinOfflineWindow = (lastSeenAt: Date, now: Date) =>
  * `core.aobprinter_hosts_overview()` (migration 20261010020000).
  */
 const reportingAsAHost = (r: Pick<AobPrinterHost, 'lastSeenAt' | 'retiredAt'>, now: Date) =>
-  seenWithinOfflineWindow(r.lastSeenAt, now) && (r.retiredAt === null || r.lastSeenAt.getTime() > r.retiredAt.getTime());
+  seenWithinOfflineWindow(r.lastSeenAt, now) && effectiveRetiredAt(r) === null;
 
 /**
  * BOTH LIVE AT ONCE, FOR THE TWO-HOSTS ALERT (decision 6). Both inside the
@@ -153,7 +165,8 @@ export class AobPrinterHostsService {
               chainStatus: existing.chainStatus as AobPrinterChainStatus,
             }
           : null,
-        rows.map((r) => ({ chainId: r.chainId, rebaselinedAt: r.rebaselinedAt, retiredAt: r.retiredAt })),
+        // Rule 1 reads the effective retirement: a retired chain that reports again counts.
+        rows.map((r) => ({ chainId: r.chainId, rebaselinedAt: r.rebaselinedAt, retiredAt: effectiveRetiredAt(r) })),
         beat,
       );
 
@@ -416,16 +429,41 @@ export class AobPrinterHostsService {
       if (host.chainStatus !== 'regressed') {
         throw new ConflictException(`This host’s audit chain is ${host.chainStatus}, not regressed: there is nothing to re-baseline.`);
       }
-      const retired =
+      /*
+       * A RETIRED CHAIN IS NOT RE-BASELINED. An operator accepted another
+       * chain as the practice's, and this one has not reported since; accepting
+       * it now would retire the accepted chain in turn and could leave the
+       * practice with no chain at all. A retired chain that reports again is a
+       * host still running, and may be re-baselined (`effectiveRetiredAt`).
+       */
+      const retiredAt = effectiveRetiredAt(host);
+      if (retiredAt) {
+        throw new ConflictException({
+          statusCode: 409,
+          message:
+            `This audit chain was retired on ${retiredAt.toISOString()}, when another chain was accepted as the practice’s, ` +
+            'and it has not reported since. A retired chain is not re-baselined.',
+          reasonCode: 'aobprinter_chain_retired',
+        });
+      }
+      /*
+       * Accepting a replacement retires every other chain still counted —
+       * including a retired one that has reported since (it is stamped
+       * afresh). Two columns compared, so raw SQL, parameterised.
+       */
+      const retiredCount =
         host.regressionKind === 'chain_replaced'
-          ? await tx.aobPrinterHost.updateMany({
-              where: { id: { not: hostId }, retiredAt: null },
-              data: { retiredAt: now, retiredBy: actor.id },
-            })
-          : { count: 0 };
+          ? await tx.$executeRaw`
+              UPDATE core.aobprinter_hosts SET "retiredAt" = ${now}, "retiredBy" = ${actor.id}
+               WHERE "practiceId" = ${practiceId}::uuid AND "id" <> ${hostId}::uuid
+                 AND ("retiredAt" IS NULL OR "lastSeenAt" > "retiredAt")`
+          : 0;
       const updated = await tx.aobPrinterHost.update({
         where: { id: hostId },
         data: {
+          // The accepted chain is the practice's: never left retired.
+          retiredAt: null,
+          retiredBy: null,
           chainStatus: 'unverified',
           regressionKind: null,
           regressionAt: null,
@@ -449,7 +487,7 @@ export class AobPrinterHostsService {
           previousKind: host.regressionKind ?? '',
           anchorSeq: host.headSeq,
           anchorHash: host.headHash ?? '',
-          retiredChains: retired.count,
+          retiredChains: retiredCount,
         },
       });
       return updated;
@@ -492,6 +530,7 @@ export class AobPrinterHostsService {
       vaultAnchoredAt: iso(r.vaultAnchoredAt),
       rebaselinedAt: iso(r.rebaselinedAt),
       rebaselinedBy: r.rebaselinedBy,
+      retiredAt: iso(effectiveRetiredAt(r)),
       liveness: aobPrinterHostLiveness(r.lastSeenAt, r.intervalMs, now),
       chain: {
         status: r.chainStatus as AobPrinterChainStatus,

@@ -64,6 +64,7 @@ function host(over: Partial<AobPrinterHostRow> = {}): AobPrinterHostRow {
     vaultAnchoredAt: null,
     rebaselinedAt: null,
     rebaselinedBy: null,
+    retiredAt: null,
     liveness: 'live',
     chain: { status: 'consistent', regression: null, anchorSeq: 10, anchorVerifiedAt: null },
     clockSkewMs: 0,
@@ -153,6 +154,16 @@ describe('the AOBPRINTER host twin', () => {
     stubFetch({ hosts: [host()], secondHostReporting: false });
     render(<AobPrinterHostTwin practiceId={PRACTICE} />);
 
+    await screen.findByTestId('aobprinter-state-healthy');
+    expect(document.querySelector('[data-testid^="aobprinter-rebaseline"]')).toBeNull();
+  });
+
+  it('offers_no_rebaseline_for_a_retired_chain', async () => {
+    const retired = host({ ...REGRESSED, id: 'host-2', chainId: 'deadbeef'.repeat(8), retiredAt: '2026-10-10T01:02:03.000Z' });
+    stubFetch({ hosts: [retired, host()], secondHostReporting: false });
+    render(<AobPrinterHostTwin practiceId={PRACTICE} />);
+
+    await screen.findByTestId('aobprinter-retired-host-2');
     await screen.findByTestId('aobprinter-state-healthy');
     expect(document.querySelector('[data-testid^="aobprinter-rebaseline"]')).toBeNull();
   });

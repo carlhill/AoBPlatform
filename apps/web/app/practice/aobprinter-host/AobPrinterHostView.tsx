@@ -116,9 +116,16 @@ export function AobPrinterHostView({
   }, [load, paused]);
 
   const now = Date.now();
-  const hosts = [...(view?.hosts ?? [])].sort(
-    (a, b) => aobPrinterHostRank(signalOf(a)) - aobPrinterHostRank(signalOf(b)),
-  );
+  /*
+   * A RETIRED CHAIN IS A QUIET LINE, NOT A CARD. An operator accepted another
+   * chain as the practice's, and this one has not reported since (the server
+   * decides; one that reports again arrives with `retiredAt` null). Its
+   * silence is expected, so it never reads as "Not reporting".
+   */
+  const hosts = [...(view?.hosts ?? [])]
+    .filter((host) => host.retiredAt === null)
+    .sort((a, b) => aobPrinterHostRank(signalOf(a)) - aobPrinterHostRank(signalOf(b)));
+  const retired = (view?.hosts ?? []).filter((host) => host.retiredAt !== null);
 
   return (
     <Shell right={<SessionControl audience={t.audience} />} title={t.title} lead={t.lead}>
@@ -129,7 +136,7 @@ export function AobPrinterHostView({
       )}
       {view === null && !loadError && <p className={ui.hint}>{t.loading}</p>}
 
-      {view !== null && hosts.length === 0 && <NeverReported />}
+      {view !== null && hosts.length === 0 && retired.length === 0 && <NeverReported />}
 
       {view?.secondHostReporting && (
         <Notice tone="stop" title={t.secondHostTitle} data-testid="aobprinter-state-second_host">
@@ -139,6 +146,12 @@ export function AobPrinterHostView({
 
       {hosts.map((host) => (
         <HostCard key={host.id} host={host} now={now} />
+      ))}
+
+      {retired.map((host) => (
+        <p key={host.id} className={ui.hint} data-testid={`aobprinter-retired-${host.id}`}>
+          {t.retired(hash8(host.chainId), when(host.retiredAt))}
+        </p>
       ))}
     </Shell>
   );

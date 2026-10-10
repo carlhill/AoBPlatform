@@ -49,7 +49,8 @@ export function RebaselinePanel({
   const [errorCode, setErrorCode] = useState<string | null>(null);
   const [done, setDone] = useState(false);
 
-  const regressed = hosts.filter((host) => host.chain.status === 'regressed');
+  // A retired chain is not re-baselined (core refuses it, `aobprinter_chain_retired`), so it is not offered.
+  const regressed = hosts.filter((host) => host.chain.status === 'regressed' && host.retiredAt === null);
   if (regressed.length === 0) return null;
 
   async function rebaseline(host: AobPrinterHostRow) {

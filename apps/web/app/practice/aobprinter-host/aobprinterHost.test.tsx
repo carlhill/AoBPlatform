@@ -86,6 +86,7 @@ function host(over: Partial<AobPrinterHostRow> = {}): AobPrinterHostRow {
     vaultAnchoredAt: null,
     rebaselinedAt: null,
     rebaselinedBy: null,
+    retiredAt: null,
     liveness: 'live',
     chain: { status: 'consistent', regression: null, anchorSeq: 1234, anchorVerifiedAt: ago(20_000) },
     clockSkewMs: 1_500,
@@ -307,6 +308,29 @@ describe('the AOBPRINTER host page', () => {
     expect(filed.textContent).not.toContain(t.filed.written_back);
     expect(filed.textContent).not.toContain('next report');
     expect(filed.querySelector('a')?.getAttribute('href')).toBe(`/practice/patients/${PATIENT}`);
+  });
+
+  it('a_retired_chain_is_a_quiet_line_not_a_not_reporting_card', async () => {
+    const accepted = host();
+    const retired = host({
+      id: 'host-2',
+      chainId: PREVIOUS_CHAIN,
+      liveness: 'offline',
+      lastSeenAt: ago(3 * 60 * 60_000),
+      retiredAt: '2026-10-10T01:02:03.000Z',
+    });
+    stubHosts({ hosts: [retired, accepted], secondHostReporting: false });
+    render(<AobPrinterHostView practiceId={PRACTICE} />);
+
+    const line = await screen.findByTestId('aobprinter-retired-host-2');
+    expect(line.textContent).toBe(t.retired('deadbeef', new Date('2026-10-10T01:02:03.000Z').toLocaleString('en-AU', { dateStyle: 'medium', timeStyle: 'short' })));
+    // Not a card, and not "Not reporting": its silence is expected.
+    expect(screen.queryByTestId('aobprinter-host-host-2')).toBeNull();
+    expect(screen.queryByTestId('aobprinter-state-offline')).toBeNull();
+    expect(screen.queryByText(t.liveness.offline)).toBeNull();
+    // The accepted chain keeps its card.
+    expect(screen.getByTestId('aobprinter-host-host-1')).toBeTruthy();
+    expect(screen.getByTestId('aobprinter-state-healthy')).toBeTruthy();
   });
 
   it('an_unmapped_reason_code_shows_its_code', async () => {

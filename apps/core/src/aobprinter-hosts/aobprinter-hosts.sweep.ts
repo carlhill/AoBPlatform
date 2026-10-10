@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
 import { aobPrinterHostLiveness } from '@aobplatform/domain';
 import { PrismaService } from '../prisma/prisma.service';
+import { effectiveRetiredAt } from './aobprinter-hosts.service';
 
 /**
  * SILENCE IS THE ALARM THAT MATTERS (D-2026-10-10-02, decision 3).
@@ -45,9 +46,15 @@ export class AobPrinterHostsSweep {
     for (const { practiceId } of practices) {
       try {
         const hosts = await this.prisma.withPractice(practiceId, (tx) =>
-          tx.aobPrinterHost.findMany({ select: { id: true, lastSeenAt: true, intervalMs: true } }),
+          tx.aobPrinterHost.findMany({ select: { id: true, lastSeenAt: true, intervalMs: true, retiredAt: true } }),
         );
         for (const host of hosts) {
+          /*
+           * A RETIRED CHAIN SILENT SINCE IS NOT AN OUTAGE: an operator accepted
+           * its replacement, so its silence is expected and says nothing. (One
+           * that reports again counts again — `effectiveRetiredAt`.)
+           */
+          if (effectiveRetiredAt(host)) continue;
           seen.add(host.id);
           const offline = aobPrinterHostLiveness(host.lastSeenAt, host.intervalMs, now) === 'offline';
           if (offline && !this.saidOffline.has(host.id)) {
