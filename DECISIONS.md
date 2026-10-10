@@ -2930,3 +2930,35 @@ exposure, is a risk with nothing to show for it. Revisit after GA.
 **What would reopen it:** a Node 24 security end-of-life notice, or a
 dependency that needs 26.
 
+
+---
+
+## D-2026-10-10-05 - The kiosk tablet is locked with Android screen pinning, not a lockdown launcher
+
+**Date:** 10 October 2026. **Decided by:** Carl, *"Pinning - do it"*, after
+asking whether screen pinning was the better option than an app-like full
+screen.
+
+**Decision.** The kiosk's "locked-down launcher, no OS escape" requirement is
+met by **Android screen pinning**, a setting built into Android. The setup and
+daily steps are in `apps/web/app/kiosk/README.md` ("Locking the tablet to the
+kiosk") and `PRACTICE-ONBOARDING.md` (§6). No code changes.
+
+**Why.** Pinning installs nothing, so the zero-footprint kiosk rule (Carl,
+3 Sep 2026) still holds. It stops a patient reaching the home screen,
+notifications or another app, and unpinning needs the tablet's PIN. An
+app-like full screen only hides the browser bars, and a swipe brings them back.
+An installed web app (PWA) would need HTTPS in the practice and puts something
+on the device, so it would reopen the zero-footprint decision.
+
+**Known limit, accepted.** Pinning locks the tablet to the browser app, not to
+the kiosk page. A patient can still open a tab or type an address, and the
+kiosk's auto-reset does not run on a page that is not the kiosk.
+
+**Not decided:** full screen on first tap. It is not built. Carl chose pinning;
+full screen can be added later as a cosmetic layer.
+
+**What would reopen it:** patients leaving the kiosk page inside the browser in
+real use, or a practice that needs the tablet locked to one page. The next step
+would be a managed kiosk mode such as Samsung Knox, a device-management product
+that needs its own decision against the zero-footprint rule.

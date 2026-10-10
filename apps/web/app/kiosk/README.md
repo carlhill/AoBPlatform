@@ -655,6 +655,62 @@ skips without `E2E_PRACTICE_USER` / `E2E_PRACTICE_PASSWORD`.
 - **Out-of-use tablets** — reception cannot yet take a tablet out of service
   from `/practice/tablet`. See TODO.md.
 
+## Locking the tablet to the kiosk: Android screen pinning (Carl, 10 Oct 2026)
+
+**Decided by Carl, 10 Oct 2026** (D-2026-10-10-05). The tablet is locked to the
+browser with **Android screen pinning**, a setting built into Android. Nothing
+is installed, so the zero-footprint rule still holds. This replaces "kiosk
+lockdown launcher" on the outstanding list.
+
+**What pinning does.** While the browser is pinned, a patient cannot reach the
+home screen, the app list, notifications or any other app. Unpinning needs the
+tablet's own PIN, which only staff know. The patient sees the kiosk and nothing
+else on the device.
+
+**What it does not do.** Pinning locks the tablet to the **browser app**, not
+to the kiosk page. A patient can still use the browser itself: open a new tab,
+type an address, or go back to an earlier page. The kiosk's own auto-reset
+("Return to the start when nobody is there") only runs on the kiosk page, so it
+does not bring back a tab the patient has left. Full screen would hide the
+address bar, but it is not built (see "Not built here"), and a swipe brings the
+bar back anyway. If this proves to be a real problem, the next step is a
+managed kiosk mode (for example Samsung Knox), which is a device-management
+product and needs a new decision.
+
+**Setting it up, once per tablet** (Samsung Galaxy Tab; other Android tablets
+are similar):
+1. **Give the tablet a screen lock PIN** if it has none: Settings → Lock
+   screen and AOD → Screen lock type → PIN. Unpinning asks for this PIN, so a
+   tablet without one can be unpinned by anybody.
+2. **Turn screen pinning on.** On the Tab S10 it is under Settings → Security
+   and privacy → More security settings → **Pin app**. Menu names change
+   between Android versions; if yours differs, search Settings for **pin**.
+   Switch it on.
+3. **Turn on "Ask for PIN before unpinning"** on the same screen. Without it,
+   unpinning drops straight to the home screen with no PIN.
+4. **Keep the screen on while it is charging,** so the kiosk is never behind
+   a lock screen: Settings → Display → Screen timeout, set to the longest
+   value. (Never-off needs Developer options → Stay awake, which only works
+   while charging.)
+
+**Pinning the kiosk, each time the tablet starts:**
+1. Open the browser at `/kiosk` and check it shows the kiosk (or the pairing
+   screen on a new tablet).
+2. Open **Recent apps**: the square button, or swipe up from the bottom and
+   hold.
+3. Tap the **browser's icon** at the top of its card, then **Pin this app**.
+
+The tablet stays pinned until somebody unpins it. A restart unpins it, so pin
+it again after any restart or update.
+
+**Unpinning** (staff only): with the three-button navigation bar, press and
+hold **Back** and **Recent apps** together; with gesture navigation, swipe up
+from the bottom and hold. Enter the tablet's PIN.
+
+**Revoking a tablet is still done in the console** (`/practice/devices`).
+Pinning keeps a patient inside the kiosk; it does not protect the pairing
+credential if the tablet is lost.
+
 ## Decisions already made
 
 - **Trust is a paired device** (3 Sep 2026; this REVERSES plan Part 6 decision
@@ -738,8 +794,12 @@ of things the patient is being asked to fix.
   representations and neither is uploaded: `SignDto` takes a method, a channel
   and a capture request, not a payload. Changing that is a contract change in
   `apps/core`.
-- **Read-aloud, language switch, read-through gate, RACF batch mode, kiosk
-  lockdown launcher, bot-defence dwell time** — all still outstanding from C2.
+- **Read-aloud, language switch, read-through gate, RACF batch mode,
+  bot-defence dwell time** — all still outstanding from C2. (The lockdown
+  launcher is answered by Android screen pinning, not code: see "Locking the
+  tablet to the kiosk".)
+- **Full screen.** Not built. Pinning keeps the patient in the browser; full
+  screen would only hide its address bar, and a swipe brings it back.
 - **The offline queue** — withdrawn, not deferred. C2.2 was dropped with the
   zero-footprint decision (the push model needs the server anyway; an offline
   kiosk cannot receive a push). Outage posture is "see reception", the patient
@@ -747,8 +807,9 @@ of things the patient is being asked to fix.
 
 ## Still non-negotiable when the rest is built
 
-- Kiosk mode: locked-down launcher, no OS escape,
-  **no residual patient data on device after submission**. (Auto-reset when the
+- Kiosk mode: locked-down launcher, no OS escape (**answered by Android screen
+  pinning**, D-2026-10-10-05; it locks the tablet to the browser, not to the
+  page), **no residual patient data on device after submission**. (Auto-reset when the
   tablet is untouched is BUILT -- see "Return to the start when nobody is
   there".)
 - Accessibility: large text, high contrast, read-aloud, staff-assisted mode
