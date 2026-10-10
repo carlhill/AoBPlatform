@@ -2,7 +2,13 @@ import { Test } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
-import { REASSIGNMENT_TASK_KIND, VISIT_STATES_VERSION, type WaitingList } from '@aobplatform/domain';
+import {
+  DEFAULT_PRACTICE_TIMEZONE,
+  REASSIGNMENT_TASK_KIND,
+  VISIT_STATES_VERSION,
+  practiceDayOf,
+  type WaitingList,
+} from '@aobplatform/domain';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { PractitionerQueueService } from '../src/practitioner-queue/practitioner-queue.service';
@@ -690,7 +696,13 @@ describe('the practitioner queue — who is waiting for me (e2e, real Postgres)'
           pmsInvoiceKey: invoiceKey,
           patientId: signedPatientId,
           affiliationId: gp.affiliationId,
-          serviceDate: new Date(),
+          /*
+           * THE PRACTICE'S DATE OF THE VISIT, not `new Date()`: a `@db.Date`
+           * column keeps the UTC date part, which is yesterday in Sydney until
+           * 11am, and the service-rendered window is the practice's own day
+           * (D-2026-10-10-03). The arrival was seeded minutes ago.
+           */
+          serviceDate: new Date(practiceDayOf(new Date(), DEFAULT_PRACTICE_TIMEZONE)),
           // Obviously fake, and shape-valid: the point is that they came from
           // the PMS and not from this page.
           mbsItemNumbers: ['23'],

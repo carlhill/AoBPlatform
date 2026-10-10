@@ -13,6 +13,7 @@ import { MESSAGING_GATEWAY, type MessagingGateway } from '../src/messaging/gatew
 import { AgreementsService } from '../src/agreements/agreements.service';
 import { ServiceDescriptionsService } from '../src/service-descriptions/service-descriptions.service';
 import { AutoCaptureService } from '../src/auto-capture/auto-capture.service';
+import { PractitionerQueueService } from '../src/practitioner-queue/practitioner-queue.service';
 import { createServicingProvider, deleteSeededAnchors, type SeededAnchor } from './anchor';
 
 /**
@@ -94,6 +95,7 @@ describe('statutory dates are the practice\'s own date (e2e, real Postgres)', ()
   let agreements: AgreementsService;
   let descriptions: ServiceDescriptionsService;
   let autoCapture: AutoCaptureService;
+  let queue: PractitionerQueueService;
   let realClocks: { agreements: () => Date; descriptions: () => Date; autoCapture: () => Date };
 
   const sydney = randomUUID();
@@ -170,6 +172,61 @@ describe('statutory dates are the practice\'s own date (e2e, real Postgres)', ()
     });
   }
 
+  /**
+   * A WALK-IN AT A NAMED INSTANT, WITH THE PRACTICE'S SOFTWARE HAVING ALREADY
+   * INVOICED A SERVICE ON EACH OF `serviceDays` — undecided rows carrying their
+   * own D5 and D6b, which is what `PmsSyncService` writes. Then "Completed" is
+   * pressed. A fresh patient each time, so no two calls share a service record.
+   */
+  async function completedAt(practiceId: string, arrivedAt: Date, serviceDays: string[]) {
+    const { gp } = desks.get(practiceId)!;
+    const recordNumber = `PDP-SR-${randomUUID().slice(0, 8)}`;
+    const { arrivalId, patientId } = await prisma.withPractice(practiceId, async (tx) => {
+      const patient = await tx.patient.create({
+        data: { practiceId, familyName: 'Renderton', givenNames: 'Alex', dateOfBirth: new Date('1966-02-02'), patientRecordNumber: recordNumber },
+      });
+      for (const day of serviceDays) {
+        await tx.serviceRecord.create({
+          data: {
+            practiceId,
+            pmsInvoiceKey: `pdp-sr-${day}-${randomUUID()}`,
+            patientId: patient.id,
+            affiliationId: gp.affiliationId,
+            serviceDate: new Date(day),
+            mbsItemNumbers: ['23'],
+          },
+        });
+      }
+      const row = await tx.arrival.create({
+        data: {
+          practiceId,
+          pmsPatientRecordNumber: recordNumber,
+          source: 'dev',
+          idempotencyKey: `pdp-sr-${randomUUID()}`,
+          outcome: 'received',
+          arrivedAt,
+          patientId: patient.id,
+          affiliationId: gp.affiliationId,
+          seeingAffiliationId: gp.affiliationId,
+        },
+      });
+      return { arrivalId: row.id, patientId: patient.id };
+    });
+
+    const receipt = await queue.setState(undefined, practiceId, arrivalId, 'completed');
+    const records = await prisma.withPractice(practiceId, (tx) =>
+      tx.serviceRecord.findMany({ where: { patientId } }),
+    );
+    const byDay = new Map(records.map((r) => [r.serviceDate.toISOString().slice(0, 10), r]));
+    return { receipt, byDay };
+  }
+
+  /** D5 on the agreement the service-rendered press raised. */
+  async function renderedD5(practiceId: string, agreementId: string | null): Promise<unknown> {
+    expect(agreementId).toBeTruthy();
+    return (await particularsOf(practiceId, agreementId!)).serviceDate;
+  }
+
   async function particularsOf(practiceId: string, agreementId: string): Promise<Record<string, unknown>> {
     const row = await prisma.withPractice(practiceId, (tx) => tx.agreement.findFirst({ where: { id: agreementId } }));
     return row!.particulars as Record<string, unknown>;
@@ -211,6 +268,7 @@ describe('statutory dates are the practice\'s own date (e2e, real Postgres)', ()
     agreements = app.get(AgreementsService);
     descriptions = app.get(ServiceDescriptionsService);
     autoCapture = app.get(AutoCaptureService);
+    queue = app.get(PractitionerQueueService);
     realClocks = { agreements: agreements.clock, descriptions: descriptions.clock, autoCapture: autoCapture.clock };
 
     await seed(sydney, 'Practice Date Practice (Sydney)');
@@ -231,6 +289,8 @@ describe('statutory dates are the practice\'s own date (e2e, real Postgres)', ()
   afterAll(async () => {
     for (const practiceId of [sydney, perth, deskSydney, deskPerth]) {
       await prisma.withPractice(practiceId, async (tx) => {
+        await tx.visitState.deleteMany({});
+        await tx.serviceRecord.deleteMany({});
         await tx.arrival.deleteMany({});
         await tx.outboundItem.deleteMany({});
         await tx.tabletSession.deleteMany({});
@@ -467,5 +527,45 @@ describe('statutory dates are the practice\'s own date (e2e, real Postgres)', ()
     );
     expect(successor).not.toBeNull();
     expect((successor!.particulars as Record<string, unknown>).serviceDate).toBe('2026-10-07');
+  });
+
+  // --- the practitioner queue's "Completed" (service rendered) ---------------
+
+  it('service_rendered_before_11am_sydney_picks_todays_service_not_yesterdays', async () => {
+    /*
+     * At 8:30am AEDT on the 7th the UTC date is still the 6th, so a window
+     * built from the SERVER's calendar on a UTC host (production, CI) picks
+     * YESTERDAY's undecided invoice and raises today's press against it.
+     *
+     * WHAT THIS PINS, AND WHERE. The process zone cannot be switched inside a
+     * Jest sandbox (its `process.env` is a copy, so V8 never re-reads TZ), and
+     * on a host in Sydney the server's day and this practice's agree. So this
+     * test catches the defect on a UTC host — CI, or `TZ=UTC npx jest ...` —
+     * and the Perth test below catches it on either.
+     */
+    at(SYDNEY_MORNING);
+    const { receipt, byDay } = await completedAt(deskSydney, SYDNEY_MORNING, ['2026-10-06', '2026-10-07']);
+
+    expect(receipt.renderedOutcome).toBe('raised');
+    expect(await renderedD5(deskSydney, byDay.get('2026-10-07')!.agreementId)).toBe('2026-10-07');
+    // Yesterday's service is not this visit's, and is left undecided.
+    expect(byDay.get('2026-10-06')!.visitDecision).toBeNull();
+    expect(byDay.get('2026-10-06')!.agreementId).toBeNull();
+  });
+
+  it('a_perth_service_rendered_uses_the_perth_day', async () => {
+    // Not the UTC date: 1am on the 8th in Perth is still the 7th in UTC.
+    at(PERTH_AFTER_MIDNIGHT);
+    const afterMidnight = await completedAt(deskPerth, PERTH_AFTER_MIDNIGHT, ['2026-10-07', '2026-10-08']);
+    expect(afterMidnight.receipt.renderedOutcome).toBe('raised');
+    expect(await renderedD5(deskPerth, afterMidnight.byDay.get('2026-10-08')!.agreementId)).toBe('2026-10-08');
+    expect(afterMidnight.byDay.get('2026-10-07')!.visitDecision).toBeNull();
+
+    // Not Sydney's date: 10pm on the 7th in Perth is already the 8th in Sydney.
+    at(PERTH_LATE_EVENING);
+    const lateEvening = await completedAt(deskPerth, PERTH_LATE_EVENING, ['2026-10-07', '2026-10-08']);
+    expect(lateEvening.receipt.renderedOutcome).toBe('raised');
+    expect(await renderedD5(deskPerth, lateEvening.byDay.get('2026-10-07')!.agreementId)).toBe('2026-10-07');
+    expect(lateEvening.byDay.get('2026-10-08')!.visitDecision).toBeNull();
   });
 });
