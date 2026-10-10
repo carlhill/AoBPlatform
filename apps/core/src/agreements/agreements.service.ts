@@ -11,10 +11,12 @@ import {
 import type { Agreement as DbAgreement, Prisma } from '@prisma/client';
 import {
   answersEnduringRules,
+  db4PrintedNameDifference,
   type Db4FormView,
   type Db4ParticularChange,
   type Db4PrintRecordCheck,
   type Db4PrintRecordIdentity,
+  type Db4PrintedNameDifference,
   type RulesEngineClient,
 } from '@aobplatform/contracts';
 import { RendererRegistry, renderInputOf } from '../render/renderer-registry';
@@ -290,6 +292,18 @@ export interface PreparedLock {
  * the same answer to the push ("send it") and three literals would be three
  * chances for one of them to start refusing.
  */
+/**
+ * ONE ROW'S ANSWER FOR THE DESK LIST: the refusal checks, which page, and the
+ * printed-name WARNING (D-2026-10-10-11) — `null` when the printed name
+ * matches the patient record or the form printed none. The warning carries
+ * names and is for the practice-scoped staff desk row only.
+ */
+export interface Db4PrintRecordDeskAnswer {
+  checks: readonly Db4PrintRecordCheck[];
+  identity: Db4PrintRecordIdentity;
+  nameDiffers: Db4PrintedNameDifference | null;
+}
+
 const NO_PRINT_RECORD_CHECKS: { checks: readonly Db4PrintRecordCheck[]; identity: Db4PrintRecordIdentity | null } =
   Object.freeze({ checks: Object.freeze([]), identity: null });
 
@@ -3126,14 +3140,24 @@ export class AgreementsService {
   async db4PrintRecordChecksForMany(
     practiceId: string,
     agreementIds: readonly string[],
-  ): Promise<Map<string, { checks: readonly Db4PrintRecordCheck[]; identity: Db4PrintRecordIdentity }>> {
-    const answers = new Map<string, { checks: readonly Db4PrintRecordCheck[]; identity: Db4PrintRecordIdentity }>();
+  ): Promise<Map<string, Db4PrintRecordDeskAnswer>> {
+    const answers = new Map<string, Db4PrintRecordDeskAnswer>();
     if (agreementIds.length === 0) return answers;
     try {
       const sourced = await this.prisma.withPractice(practiceId, (tx) =>
         tx.agreement.findMany({
           where: { id: { in: [...agreementIds] }, sourcePrintJobId: { not: null } },
-          select: { id: true, sourcePrintJobId: true },
+          /*
+           * THE RECORD'S NAME, FOR THE PRINTED-NAME WARNING (D-2026-10-10-11).
+           * The same practice-scoped read as before, widened by one relation:
+           * no new query, and RLS scopes the patient row exactly as it scopes
+           * the agreement.
+           */
+          select: {
+            id: true,
+            sourcePrintJobId: true,
+            patient: { select: { givenNames: true, familyName: true } },
+          },
         }),
       );
       if (sourced.length === 0) return answers;
@@ -3144,7 +3168,19 @@ export class AgreementsService {
       for (const row of sourced) {
         const record = records.get(row.sourcePrintJobId as string);
         if (!record) continue;
-        answers.set(row.id, { checks: checkDb4PrintRecord(record.envelope), identity: record.identity });
+        /*
+         * A WARNING, NOT A CHECK (D-2026-10-10-11). The DB4 was matched by
+         * chart number; if the name it PRINTED is not the record's name, the
+         * desk says so and shows both. It never joins `checks`, so it can
+         * never refuse a push (hard rule 8), and nothing here logs or writes
+         * either name (hard rule 9).
+         */
+        const nameDiffers = db4PrintedNameDifference(record.envelope.patient ?? {}, row.patient);
+        answers.set(row.id, {
+          checks: checkDb4PrintRecord(record.envelope),
+          identity: record.identity,
+          nameDiffers,
+        });
       }
       return answers;
     } catch (err) {

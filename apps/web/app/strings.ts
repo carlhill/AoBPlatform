@@ -6742,6 +6742,47 @@ export const strings = {
     printRecordCheckOther: (code: string) => `Another detail we could not read (${code}) — please tell support this code.`,
 
     /**
+     * THE NAME PRINTED ON THE DB4 IS NOT THE PATIENT RECORD'S NAME
+     * (D-2026-10-10-11; Carl, 10 October 2026: *"B and tell the user to
+     * resend to AOBPrinter from PMS"*).
+     *
+     * A WARNING, NOT A REFUSAL: Send to tablet stays live (hard rule 8). A
+     * staff-only band, so it shows both names; never on a tablet.
+     *
+     * THE OBSERVATION FIRST, THEN THE REMEDY, AND THE REMEDY'S LIMIT (wow.md
+     * §13). Reprinting changes only the PRINTED name: the patient record here
+     * is not updated from a DB4 (it comes from the arrival, or a correction
+     * typed in this console). So "this notice clears" is promised only for
+     * the case where it is true — the reprinted name matches the record — and
+     * the other case is stated as what it is, without a guessed remedy.
+     */
+    printedName: {
+      title: 'Name on the DB4 differs from the patient record',
+      observed:
+        'The patient name printed on this DB4 is not the name in the practice’s patient record. '
+        + 'The DB4 was matched to this patient by chart number.',
+      printedLabel: 'Printed on the DB4',
+      recordedLabel: 'In the patient record',
+      notPrinted: '(not printed)',
+      parts: {
+        given_names: 'given names',
+        family_name: 'family name',
+      } as Record<string, string>,
+      differs: (list: string) => `What differs: ${list}`,
+      stillSends:
+        'Send to tablet still works. The patient will see the printed name on their DB4 and the '
+        + 'patient-record name everywhere else.',
+      fix:
+        'Correct the patient’s name in PracSoft, then print the DB4 again from PracSoft. AOBPrinter sends '
+        + 'the reprint, and this notice clears once the newly printed name matches the patient record.',
+      limit:
+        'Printing again changes only the name on the DB4 — the patient record here is not updated from a '
+        + 'DB4. If PracSoft already shows the right name, printing again will not clear this notice.',
+      /** A notice code this build has not met. Shown, never swallowed. */
+      other: (code: string) => `A note about this form (${code}) — please tell support this code.`,
+    },
+
+    /**
      * WHY "WHO IS SIGNING?" IS DEAD ON THIS ROW (Carl, 28 September 2026:
      * *"Who is signing should not be enabled if we have print errors"*).
      *

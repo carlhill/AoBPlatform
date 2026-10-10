@@ -3167,3 +3167,82 @@ describe('/practice/tablet — unsigned from earlier days', () => {
     expect(earlierCalls.every((c) => c.method === 'GET')).toBe(true);
   });
 });
+
+/*
+ * THE PRINTED NAME AGAINST THE PATIENT RECORD (D-2026-10-10-11; Carl, 10
+ * October 2026: "B and tell the user to resend to AOBPrinter from PMS").
+ * A WARNING band on the staff row: both names, the PracSoft reprint, and
+ * Send to tablet left exactly as live as it was (hard rule 8).
+ * Fixture names are obviously fake; no test name carries one.
+ */
+describe('a DB4 whose printed name differs from the patient record', () => {
+  beforeEach(() => {
+    calls.length = 0;
+    session = null;
+  });
+
+  const DIFFERS = {
+    ...READY,
+    printRecord: {
+      checks: [] as string[],
+      print: {
+        printJobId: 'job-fake',
+        sourceSha256: 'd'.repeat(64),
+        formReference: 'AOB4FAKE',
+        receivedAt: '2026-10-10T09:00:00Z',
+      },
+    },
+    printedNameDiffers: {
+      code: 'print_record_name_differs',
+      parts: ['given_names'],
+      printed: { givenNames: 'Jaime', familyName: 'Sampleton' },
+      recorded: { givenNames: 'Jamie', familyName: 'Sampleton' },
+    },
+  };
+
+  it('no band when the row carries no difference', async () => {
+    signedInAtPractice();
+    stubFetch({ rows: [{ ...DIFFERS, printedNameDiffers: null }] });
+    render(<TabletView practiceId={PRACTICE} />);
+    await waitFor(() => expect(screen.getByTestId(`pushable-${READY.agreementId}`)).toBeTruthy());
+    expect(screen.queryByTestId(`printed-name-${READY.agreementId}`)).toBeNull();
+  });
+
+  it('shows both names, what differs and the PracSoft reprint, with Send still live', async () => {
+    signedInAtPractice();
+    stubFetch({ rows: [DIFFERS] });
+    render(<TabletView practiceId={PRACTICE} />);
+
+    await waitFor(() => expect(screen.getByTestId(`printed-name-${READY.agreementId}`)).toBeTruthy());
+    const band = screen.getByTestId(`printed-name-${READY.agreementId}`);
+    expect(band.textContent).toContain(strings.tablet.printedName.title);
+    expect(band.textContent).toContain(strings.tablet.printedName.observed);
+    expect(screen.getByTestId(`printed-name-${READY.agreementId}-printed`).textContent).toBe('Jaime Sampleton');
+    expect(screen.getByTestId(`printed-name-${READY.agreementId}-recorded`).textContent).toBe('Jamie Sampleton');
+    expect(band.textContent).toContain(strings.tablet.printedName.differs('given names'));
+    expect(screen.getByTestId(`printed-name-${READY.agreementId}-fix`).textContent).toBe(
+      strings.tablet.printedName.fix,
+    );
+    expect(strings.tablet.printedName.fix).toContain('PracSoft');
+    expect(strings.tablet.printedName.fix).toContain('AOBPrinter');
+
+    // NOT A REFUSAL: no blocked band, and Send goes live once a tablet is chosen.
+    expect(screen.queryByTestId(`blocked-${READY.agreementId}`)).toBeNull();
+    fireEvent.change(screen.getByTestId(`target-${READY.agreementId}`), { target: { value: TABLET.id } });
+    await waitFor(() =>
+      expect((screen.getByTestId(`send-${READY.agreementId}`) as HTMLButtonElement).disabled).toBe(false),
+    );
+  });
+
+  it('an unmapped notice code shows its code, and no remedy it was not written for', async () => {
+    signedInAtPractice();
+    stubFetch({
+      rows: [{ ...DIFFERS, printedNameDiffers: { ...DIFFERS.printedNameDiffers, code: 'print_record_name_future' } }],
+    });
+    render(<TabletView practiceId={PRACTICE} />);
+    await waitFor(() => expect(screen.getByTestId(`printed-name-${READY.agreementId}`)).toBeTruthy());
+    const band = screen.getByTestId(`printed-name-${READY.agreementId}`);
+    expect(band.textContent).toContain('print_record_name_future');
+    expect(screen.queryByTestId(`printed-name-${READY.agreementId}-fix`)).toBeNull();
+  });
+});

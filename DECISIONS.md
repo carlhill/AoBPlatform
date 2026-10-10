@@ -3028,3 +3028,111 @@ symbol instead), which would need a new template version, not an edit; or
 Carl preferring one uniform presentation for amounts captured under both
 templates, which would mean a display rule and a decision about hard rule 4.
 
+---
+
+## D-2026-10-10-11 - A DB4 whose printed patient name differs from the matched patient record is flagged at the desk; staff correct the PMS and print again
+
+**Date:** 10 October 2026. **Decided by:** Carl, *"B and tell the user to
+resend to AOBPrinter from PMS"*, choosing between four options after a code
+trace. **Built on:** branch `feat/db4-printed-name-mismatch`, based on
+`feat/aobprinter-heartbeat`.
+
+**The trace that raised it.** A DB4 Print Record is matched to a patient by
+chart number only (`db4-assignment.handler.ts`, the `patientRecordNumber`
+lookup). After the match, two different names are in use:
+- the NAME PRINTED ON THE FORM: the tablet's picture of the DB4
+  (`db4-form-view.ts`, `patientOf`) and the Signed-DB4
+  (`signed-db4-document.ts`);
+- the PATIENT RECORD's name: who-is-signing, the details check
+  (`apps/web/app/kiosk/rules/pushed-details.ts`, `tablet-sessions.service.ts`), the step headings and the
+  Assignment Agreement (`agreements.service.ts`).
+
+So when PracSoft printed one name and the record holds another, one signing
+shows two names.
+
+**Decided (option B).** The mismatch is shown to staff and never blocks:
+- **Matching stays by chart number.** A name is not an identifier we match on.
+- **A WARNING band, not a refusal.** It appears on the agreement's staff row
+  wherever `AgreementBands` renders: `/practice/tablet` (the push desk, where
+  Send to tablet is), `/practice/frontdesk` and `/practice/frontdesksmall`.
+  Send to tablet stays enabled and signing is never blocked (hard rule 8).
+  It is not one of `DB4_PRINT_RECORD_CHECKS`, which are the refusals.
+- **It names what was observed and shows both names.** This is a
+  practice-scoped staff surface behind RLS, where the patient's name already
+  appears. The comparison never reaches a tablet payload.
+- **The remedy is Carl's:** correct the name in PracSoft and print the DB4
+  again from PracSoft.
+- **Reason code** `print_record_name_differs`. A code the console has not
+  mapped shows its code and no remedy.
+
+**Refused.**
+- **Option C, a name change supersedes the agreement: refused.** See the
+  reprint rule below.
+- **Option D, the printed name edits the patient record: refused.** A DB4
+  never writes the patient record. The PMS feeds the record through the
+  arrival, and staff can correct it in the console. A printed form overwriting
+  it would let a wrong chart number rename the wrong patient.
+
+**The patient-name reprint rule, written down here for the first time (it
+lived only in a comment at `db4-assignment.handler.ts`, `lockedParticularsOf`).**
+When a corrected DB4 arrives for an existing agreement, `decideDb4Reprint`
+(`db4-reprint.ts`) compares the PATIENT by `patientId`, the identity the chart
+number resolved to, and not by the printed name: *"a name is a rendering of a
+person and two people may share one."* A reprint whose only change is the
+printed name is therefore `repointed` with `changed: []`. The agreement is not
+superseded; its `sourcePrintJobId` moves to the new print. A different chart
+number is a `patient` change and does supersede. A signed agreement is never
+repointed (`refused_signed`).
+
+**The comparison** (`packages/contracts/src/db4-printed-name.ts`). Given names
+and family name are compared separately, printed part against recorded part,
+so a swap flags both parts. Each part is reduced by `comparableNamePart`:
+NFC, case, surrounding and internal whitespace (any Unicode space), typographic
+apostrophes and dashes read as `'` and `-`, and spacing around them ignored.
+Two parts match only when the reductions are equal. It does **not** drop
+punctuation (`OBrien` is not `O'Brien`), does not strip accents, does not
+ignore a missing middle name, and does no fuzzy or phonetic matching. Any of
+those could hide a genuinely different name, and a false warning costs a
+glance, never a patient. A part the form did not print is not compared,
+because there is then no second name on screen.
+
+**Is "this notice clears" true? Only in one of the two cases, and the band says
+so.** The check is recomputed on every desk poll against the agreement's
+CURRENT print (`sourcePrintJobId`) and the CURRENT patient record.
+- **PracSoft held the wrong name.** Correct it in PracSoft and print again.
+  The new bytes are a new print job (`sourceSha256` differs), the unsigned
+  agreement is `repointed` to it (or superseded and relinked, if a particular
+  changed too), and the band clears. **True end to end.**
+- **PracSoft was right and the record here is stale or different.** Printing
+  again prints the same name, so the bytes are identical and the reprint is
+  deduplicated at the door. Even a changed print would not touch the record:
+  `PmsSyncService.ensurePatient` creates a missing mirror row and never updates
+  an existing one, and DB4 ingest selects only the patient's id. The record's
+  name changes only through an arrival (`ArrivalsService.mirrorPatient`) or a
+  staff correction (`PatientsService`). **The band does not clear.**
+- So the staff wording promises clearing only when *"the newly printed name
+  matches the patient record"*. It also says that the record is not updated
+  from a DB4, and that if PracSoft already shows the right name, printing again
+  will not clear the notice. It offers no guessed remedy for that case
+  (wow.md section 13).
+
+**Hard rule 9.** The comparison is computed for a screen and nothing is
+written: no vault event and no outcome JSON. The core never logs either name.
+`parts` (`given_names`, `family_name`) is the only field that would be safe
+outside the staff row.
+
+**Enforced by:** `packages/contracts/src/db4-printed-name.test.ts` (the
+comparison), `apps/core/src/agreements/db4-printed-name.spec.ts` (the desk
+read, no names in logs, the row stays sendable, and a `tsc` check that
+`TabletSessionPayload` has no field for it), and the
+`a DB4 whose printed name differs from the patient record` block in
+`apps/web/app/practice/tablet/tablet.test.tsx`.
+
+**What would reopen it:**
+- Carl wanting a link from the band to the patient's record correction for the
+  "PracSoft is already right" case.
+- A PracSoft template that systematically drops apostrophes or hyphens, which
+  would make the strict punctuation rule noisy.
+- A PMS patient sync that updates existing mirror rows. "Clears" would then be
+  true in both cases, and the band's last sentence would need rewording.
+
