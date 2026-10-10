@@ -17,17 +17,17 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 | | Count |
 |---|---|
-| Exported symbols indexed | 2418 |
+| Exported symbols indexed | 2419 |
 | Files scanned for exports | 571 |
 | Files scanned for imports | 614 |
 | Exports with no comment of their own | 1001 |
-| Exports imported nowhere else | 1004 |
+| Exports imported nowhere else | 1005 |
 
 ## Sections
 
 - [Web components](#web-components) — 239
 - [Web hooks](#web-hooks) — 15
-- [Web helpers and constants](#web-helpers-and-constants) — 308
+- [Web helpers and constants](#web-helpers-and-constants) — 309
 - [Web types](#web-types) — 116
 - [Domain functions](#domain-functions) — 392
 - [Domain constants and content](#domain-constants-and-content) — 254
@@ -308,7 +308,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Web helpers and constants
 
-308 exports.
+309 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -617,6 +617,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `when` | web:practice/aobprinter-host/AobPrinterHostView.tsx |  | 0 |
 | `whenLabel` | web:practice/reconciliation/ServiceDescriptionsNeeded.tsx | "Thu 3 Sep, 09:00" — or nothing, for a walk-in with no booked time. | 0 |
 | `whenLabel` | web:practice/tablet/pushDesk.tsx | "9:00", or the honest absence for a walk-in nobody booked. | 0 |
+| `whoBlockedTitle` | web:practice/tablet/pushDesk.tsx | WHY "WHO IS SIGNING?" IS DEAD, IN WORDS THAT ARE TRUE FOR THIS ROW. | 0 |
 | `whoDraftFromRow` | web:practice/tablet/pushDesk.tsx | WHAT THE PANEL OPENS SHOWING, WHEN NOBODY HAS TYPED IN IT YET (Carl, 10 Sep 2026). | 0 |
 | `whoFault` | web:practice/tablet/pushDesk.tsx | THE GATE ON THE "SOMEONE ELSE" BRANCH — the single source of truth behind what Save refuses to send and the reason shown UNDER THE CONTROL IT IS ABOUT. | 0 |
 | `whoSnapshot` | web:practice/tablet/pushDesk.tsx | THE PANEL'S ANSWER, IN THE SHAPE THE DOMAIN COMPARES (Carl, 11 Sep 2026 — D-2026-09-11-01). | 0 |
