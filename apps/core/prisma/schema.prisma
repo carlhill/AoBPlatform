@@ -3529,6 +3529,12 @@ model AobPrinterHost {
   rebaselinedAt    DateTime?
   /// A principal id from the token, never a name.
   rebaselinedBy    String?
+  /// Set when an operator re-baselined ANOTHER chain's `chain_replaced`
+  /// regression, accepting that chain as the practice's. Rule 1 ignores a
+  /// retired chain; re-baselining alone retires nothing (it accepts a head).
+  retiredAt        DateTime?
+  /// The operator who re-baselined the replacement: a principal id, never a name.
+  retiredBy        String?
 
   createdAt DateTime @default(now())
 

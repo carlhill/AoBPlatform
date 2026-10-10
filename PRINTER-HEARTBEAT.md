@@ -18,7 +18,7 @@ never recorded as confirmed).
 | 4 | Audit log no longer matches | **One vault event on the transition** into `regressed` (`aobprinter.chain_regressed`), plus an `ALERT` log and a console flag. The flag stays until someone re-baselines. | Rare, and it is evidence about evidence. |
 | 5 | External anchor | `aobprinter.chain_anchored` written to the vault **at most hourly** while the chain is consistent and has advanced. | Otherwise the "external anchor" is a Postgres row a DBA can edit. |
 | 6 | New audit log for a practice that already has one | **Always** the regression **`chain_replaced`** (vault event per decision 4) until re-baselined, even if the old chain was reporting minutes earlier. If both chains keep reporting, the **two-hosts** ALERT and console notice appear *as well*. *(Clarified by Carl, 10 Oct: the platform cannot tell a log rewritten on the same host from a second host, so the safe reading wins.)* | A full rewrite changes the hash of event 1. Calling that "a new host" would defeat the anchor. Two hosts breaks the "one AOBPRINTER per practice" rule (D-2026-09-28-04 amendment). |
-| 7 | Who may re-baseline | **Platform operator only**: `PLATFORM_ADMIN`, the existing `@FreshSecondFactor`, a reason code from a fixed list (`reinstalled`, `database_restored`, `investigated`), and an `aobprinter.chain_rebaselined` vault event. | A practice may not verify its own evidence. Reuses existing guards; no auth-flow change. |
+| 7 | Who may re-baseline | **Platform operator only**: `PLATFORM_ADMIN`, the existing `@FreshSecondFactor`, a reason code from a fixed list (`reinstalled`, `database_restored`, `investigated`), and an `aobprinter.chain_rebaselined` vault event. Re-baselining accepts the chain's **current head**; it does not retire the chain. Re-baselining a **`chain_replaced`** row accepts the new chain as the practice's chain, so every other chain for the practice is **retired** (`retiredAt`, `retiredBy`) in the same transaction, and the event carries `retiredChains`. Re-baselining any other regression retires nothing. *(10 Oct, after the build found a rewrite after a re-baseline passed as `unverified`.)* | A practice may not verify its own evidence. Reuses existing guards; no auth-flow change. Only an accepted replacement ends the old chain; otherwise decision 6 would stop applying after the first re-baseline. |
 | 8 | "Processed by AoB" on the host | Stored as **audit events** (`print.processed`, `print.processing_failed`, `print.not_on_platform`), not a new stage or column. **No SQLite schema bump.** | The stage model of D-2026-09-29-01 stays as decided, and rolling the host back to an earlier build still opens its database. |
 | 9 | Which prints the heartbeat asks about | Prints in `sent` with no recorded platform outcome, sent in the **last 14 days**, at most **100 per beat**. Returns in `filed`, at most 100. | Bounded payload; older ones are visible on the platform anyway. |
 | 10 | Console audience | **Practice admin** sees their own host at `/practice/aobprinter-host`. **Platform admin** sees the same page for any practice, plus an overview of every host at `/platform/aobprinter-hosts`, worst first. | "Each practice's host" reads as the overview. |
@@ -170,6 +170,7 @@ loop.
 - JSON fields: `counts`, `openExceptions`, `filedUnconfirmed`, `localCheck`.
 - Chain: `headSeq`, `headHash`, `headAdvancedAt`, `anchorSeq`, `anchorHash`, `anchorVerifiedAt`, `vaultAnchoredAt`, `chainStatus`.
 - Regression and re-baseline: `regressionKind`, `regressionAt`, `regressionDetail`, `rebaselinedAt`, `rebaselinedBy`.
+- Retirement (migration `20261010020000_aobprinter_hosts_retired`): `retiredAt`, `retiredBy`, both or neither. A retired chain is left out of rule 1, of `secondHostReporting` and of the overview, unless it reports again after its retirement (then it is a host still running, and counts).
 
 **Migration `20261010010000_aobprinter_hosts`.** Idempotent; follows the shape
 of `visit_states`. It contains:
@@ -207,8 +208,10 @@ The migration is applied by hand in dev (wow §2 item 7).
 **The chain verdict.** A pure function, `aobPrinterChainVerdict(existing, otherChains, beat)` in
 `packages/domain/src/aobprinter-host.ts`. Rules, in order:
 1. No row for this chain:
-   - if another chain for the practice has not been re-baselined → `chain_replaced`;
+   - if the practice has any other chain that is **not retired**, whether or not it was ever re-baselined → `chain_replaced`;
    - otherwise `unverified`, with the anchor at the head.
+
+   Re-baselining accepts a head; only re-baselining a `chain_replaced` row retires the other chains (decision 7).
 2. The row is already `regressed` → it stays regressed. The head is updated; the anchor is not moved.
 3. `head.seq < headSeq`, or `head.seq < anchorSeq` → `went_backwards`.
 4. The same seq with a different hash → `same_seq_different_hash`.
@@ -222,7 +225,8 @@ The migration is applied by hand in dev (wow §2 item 7).
 
 **Liveness.** `aobPrinterHostLiveness(lastSeenAt, intervalMs, now)` (decision 2).
 `secondHostReporting` is true when two chain ids for the practice have both been
-seen within the offline window (decision 6).
+seen within the offline window (decision 6). A retired chain silent since its
+retirement does not count.
 
 ## 4. The console pages
 

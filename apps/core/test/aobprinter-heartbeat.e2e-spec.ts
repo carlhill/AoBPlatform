@@ -538,6 +538,7 @@ describe('the AOBPRINTER heartbeat, platform side (e2e, real Postgres)', () => {
       'previousKind',
       'anchorSeq',
       'anchorHash',
+      'retiredChains',
     ]);
     for (const event of events) {
       for (const key of Object.keys(event.payload as Record<string, unknown>)) expect(allowed.has(key)).toBe(true);
@@ -687,6 +688,72 @@ describe('the AOBPRINTER heartbeat, platform side (e2e, real Postgres)', () => {
     const rows = overview.hosts.filter((r) => r.practiceId === practiceA);
     expect(rows).toHaveLength(2);
     expect(rows.every((r) => r.secondHostReporting === true)).toBe(true);
+  });
+
+  it('rebaselining_a_replacement_retires_the_old_chain', async () => {
+    expect((await beat(practiceA)).status).toBe(200);
+    const replaced = await beat(practiceA, { chainId: CHAIN_B, head: { seq: 3, hash: at(CHAIN_B, 3) } });
+    expect((replaced.body as AobPrinterHeartbeatReply).chain.status).toBe('regressed');
+    // CHAIN_A also regresses on its own account: its head goes backwards.
+    const backwards = await beat(practiceA, { head: { seq: 9, hash: at(CHAIN_A, 9) } });
+    expect((backwards.body as AobPrinterHeartbeatReply).chain.status).toBe('regressed');
+    const idOf = async (chainId: string) => (await hostsOf(practiceA)).find((r) => r.chainId === chainId)!.id;
+    const hostA = await idOf(CHAIN_A);
+    const hostB = await idOf(CHAIN_B);
+
+    operator();
+    // Re-baselining a regression that is NOT a replacement accepts that head and retires nothing.
+    expect((await http().post(`/aobprinter-hosts/${hostA}/rebaseline`).send({ reasonCode: 'investigated' })).status).toBe(200);
+    let rows = await hostsOf(practiceA);
+    expect(rows.every((r) => r.retiredAt === null && r.retiredBy === null)).toBe(true);
+
+    // Re-baselining the replacement accepts CHAIN_B as the practice's chain: CHAIN_A is retired, in the same act.
+    const res = await http().post(`/aobprinter-hosts/${hostB}/rebaseline`).send({ reasonCode: 'reinstalled' });
+    expect(res.status).toBe(200);
+    rows = await hostsOf(practiceA);
+    const a = rows.find((r) => r.chainId === CHAIN_A)!;
+    const b = rows.find((r) => r.chainId === CHAIN_B)!;
+    expect(a.retiredAt).not.toBeNull();
+    expect(a.retiredBy).toBe(OPERATOR.sub);
+    expect(b.retiredAt).toBeNull();
+    expect(b.chainStatus).toBe('unverified');
+
+    const events = await aobprinterEvents('aobprinter.chain_rebaselined');
+    expect(events.map((e) => (e.payload as Record<string, unknown>).retiredChains).sort()).toEqual([0, 1]);
+    const ofB = events.find((e) => (e.payload as Record<string, unknown>).chainId === CHAIN_B)!;
+    expect(ofB.payload).toMatchObject({ previousKind: 'chain_replaced', retiredChains: 1 });
+
+    // The retired chain, silent since, is no second host, on the practice page or the overview.
+    currentPrincipal = { ...STAFF, practiceId: practiceA };
+    const view = (await http().get('/aobprinter-hosts').set('x-practice-id', practiceA)).body as AobPrinterHostsView;
+    expect(view.secondHostReporting).toBe(false);
+    operator();
+    const overview = (await http().get('/platform/aobprinter-hosts')).body as { hosts: Record<string, unknown>[] };
+    const mine = overview.hosts.filter((r) => r.practiceId === practiceA);
+    expect(mine).toHaveLength(1);
+    expect(mine[0]).toMatchObject({ chainStatus: 'unverified', secondHostReporting: false });
+  });
+
+  it('a_rewrite_after_a_rebaseline_is_caught_as_chain_replaced', async () => {
+    // The practice's only chain regresses and an operator re-baselines it.
+    const hostId = await regressedChain();
+    operator();
+    expect((await http().post(`/aobprinter-hosts/${hostId}/rebaseline`).send({ reasonCode: 'investigated' })).status).toBe(200);
+    const [rebaselined] = await aobprinterEvents('aobprinter.chain_rebaselined');
+    expect(rebaselined.payload).toMatchObject({ chainId: CHAIN_A, retiredChains: 0 });
+
+    // Later the log is rewritten (or the host reinstalled): a chain the platform has never seen.
+    currentPrincipal = null;
+    const rewrite = await beat(practiceA, { chainId: CHAIN_B, head: { seq: 2, hash: at(CHAIN_B, 2) } });
+    expect((rewrite.body as AobPrinterHeartbeatReply).chain.status).toBe('regressed');
+
+    const replaced = (await aobprinterEvents('aobprinter.chain_regressed')).filter(
+      (e) => (e.payload as Record<string, unknown>).kind === 'chain_replaced',
+    );
+    expect(replaced).toHaveLength(1);
+    expect(replaced[0].payload).toMatchObject({ chainId: CHAIN_B, expectedHash: CHAIN_A, receivedHash: CHAIN_B });
+    const b = (await hostsOf(practiceA)).find((r) => r.chainId === CHAIN_B)!;
+    expect(b.regressionKind).toBe('chain_replaced');
   });
 
   it('the_silence_sweep_alerts_once_when_a_host_goes_offline_and_once_when_it_returns', async () => {

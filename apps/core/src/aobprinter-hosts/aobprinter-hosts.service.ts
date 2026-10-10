@@ -52,6 +52,17 @@ const seenWithinOfflineWindow = (lastSeenAt: Date, now: Date) =>
   now.getTime() - lastSeenAt.getTime() <= AOBPRINTER_OFFLINE_AFTER_MS;
 
 /**
+ * STILL REPORTING, FOR THE TWO-HOSTS NOTICE (decision 6). Inside the offline
+ * window, and not a retired chain that has been silent since it was retired:
+ * the old chain of a replacement an operator has accepted is not a second
+ * host. A retired chain that reports AFTER its retirement is a host still
+ * running beside the accepted one, and counts — the same predicate as
+ * `core.aobprinter_hosts_overview()` (migration 20261010020000).
+ */
+const reportingAsAHost = (r: Pick<AobPrinterHost, 'lastSeenAt' | 'retiredAt'>, now: Date) =>
+  seenWithinOfflineWindow(r.lastSeenAt, now) && (r.retiredAt === null || r.lastSeenAt.getTime() > r.retiredAt.getTime());
+
+/**
  * THE AOBPRINTER HOSTS (PRINTER-HEARTBEAT.md §3, D-2026-10-10-02). Owns
  * `aobprinter_hosts` and nothing else; the inbound heartbeat resolves what it
  * needs from print jobs and agreements through the services that own those,
@@ -63,7 +74,7 @@ const seenWithinOfflineWindow = (lastSeenAt: Date, now: Date) =>
  * that says "regressed" with no `aobprinter.chain_regressed` behind it, or the
  * reverse, cannot be committed (hard rule 11). Locking every row of the
  * practice, not only this chain's, is what makes rule 1 ("another chain not
- * re-baselined") safe against two chains beating at once.
+ * retired") safe against two chains beating at once.
  *
  * LOGS SAY CODES, SEQS AND IDS. A practice id, a host id, a regression kind, a
  * seq. Never a hash in full, never a patient (hard rule 9). Lines are emitted
@@ -95,7 +106,7 @@ export class AobPrinterHostsService {
               chainStatus: existing.chainStatus as AobPrinterChainStatus,
             }
           : null,
-        rows.map((r) => ({ chainId: r.chainId, rebaselinedAt: r.rebaselinedAt })),
+        rows.map((r) => ({ chainId: r.chainId, rebaselinedAt: r.rebaselinedAt, retiredAt: r.retiredAt })),
         beat,
       );
 
@@ -207,7 +218,7 @@ export class AobPrinterHostsService {
        * window. Two chains reporting minute after minute is one finding, not
        * one per beat; the console carries it for as long as it lasts.
        */
-      const othersLive = rows.filter((r) => r.chainId !== beat.chainId && seenWithinOfflineWindow(r.lastSeenAt, now));
+      const othersLive = rows.filter((r) => r.chainId !== beat.chainId && reportingAsAHost(r, now));
       const thisWasSilent = !existing || !seenWithinOfflineWindow(existing.lastSeenAt, now);
       if (othersLive.length > 0 && thisWasSilent) {
         after.push(() =>
@@ -244,7 +255,7 @@ export class AobPrinterHostsService {
     );
     return {
       hosts: rows.map((r) => this.toView(r, now)),
-      secondHostReporting: rows.filter((r) => seenWithinOfflineWindow(r.lastSeenAt, now)).length >= 2,
+      secondHostReporting: rows.filter((r) => reportingAsAHost(r, now)).length >= 2,
     };
   }
 
@@ -253,6 +264,8 @@ export class AobPrinterHostsService {
    * `core.aobprinter_hosts_overview()` (SECURITY DEFINER), which returns
    * counts, versions, times and status — and the practice, so a row opens its
    * twin. Ordered here roughly; the console orders exactly, by its own states.
+   * The function leaves out a retired chain silent since its retirement, so
+   * every row here is reporting as a host (`reportingAsAHost`).
    */
   async overview(now: Date = new Date()): Promise<AobPrinterHostsOverview> {
     const rows = await this.prisma.$queryRaw<
@@ -314,6 +327,13 @@ export class AobPrinterHostsService {
    * same transaction as the row. The anchor restarts at the head the platform
    * last saw, so the next beats verify the chain afresh.
    *
+   * RE-BASELINING ACCEPTS A HEAD; IT DOES NOT RETIRE A CHAIN. Only when the
+   * regression being accepted is `chain_replaced` is the operator accepting
+   * THIS chain as the practice's chain, so every other chain of the practice
+   * is retired (`retiredAt`, `retiredBy`) in the same transaction, and the
+   * count goes in the vault event. Any other kind retires nothing, and the
+   * chain stays one a later rewrite would replace (rule 1, decision 6).
+   *
    * NO PRACTICE HEADER. The host is named by its id; its practice is found by
    * `core.aobprinter_host_practice()` (host id → practice id, nothing else)
    * and the work is done inside that practice's scope.
@@ -340,6 +360,13 @@ export class AobPrinterHostsService {
       if (host.chainStatus !== 'regressed') {
         throw new ConflictException(`This host’s audit chain is ${host.chainStatus}, not regressed: there is nothing to re-baseline.`);
       }
+      const retired =
+        host.regressionKind === 'chain_replaced'
+          ? await tx.aobPrinterHost.updateMany({
+              where: { id: { not: hostId }, retiredAt: null },
+              data: { retiredAt: now, retiredBy: actor.id },
+            })
+          : { count: 0 };
       const updated = await tx.aobPrinterHost.update({
         where: { id: hostId },
         data: {
@@ -366,6 +393,7 @@ export class AobPrinterHostsService {
           previousKind: host.regressionKind ?? '',
           anchorSeq: host.headSeq,
           anchorHash: host.headHash ?? '',
+          retiredChains: retired.count,
         },
       });
       return updated;
