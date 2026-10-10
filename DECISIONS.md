@@ -2930,3 +2930,126 @@ exposure, is a risk with nothing to show for it. Revisit after GA.
 **What would reopen it:** a Node 24 security end-of-life notice, or a
 dependency that needs 26.
 
+
+---
+
+## D-2026-10-10-09 - Unsigned drafts: link to the service when the invoice arrives (option 2), then close after N days with no service (option 3), N = 7 and configurable
+
+**Date:** 10 October 2026. **Decided by:** Carl, verbatim: *"do option 2 first,
+N is 7 days - make N a configurable setting"*. This picks up options 2 and 3
+that D-2026-10-10-01 deferred to `TODO.md`.
+
+**What was decided:**
+- **Option 2 first.** When an invoice arrives, pms-sync links an unsigned draft
+  for the same patient, provider and day to the service record, so that the
+  draft reaches `/practice/reconciliation` and is no longer orphaned.
+- **Then option 3.** An unsigned agreement that has no linked service after
+  N days is closed as "not needed: no service recorded". This is a state
+  change with a vault event, never a delete.
+- **N = 7 days by default, and configurable.** The default is versioned content
+  (hard rule 14), and a practice can set its own value, which overrides it.
+
+**The rule for option 2 (the coordinator's choice; Carl to confirm).**
+- Link the draft only when exactly ONE unsigned agreement matches. To match, it
+  must have no service record linked to it, and it must share the practice, the
+  patient, the servicing provider and the practice's local day.
+- If more than one matches, link none. The service then appears on
+  Reconciliation as needing a person to choose, and the candidate drafts are
+  named.
+- A service record is never linked to two agreements.
+- Signed and stored agreements behave exactly as before.
+
+### The measurement: how one visit comes to have more than one unsigned draft
+
+The dev database was not queried (the brief does not allow it). This analysis
+comes from the code paths that create a draft on this branch
+(`feat/aobprinter-heartbeat`, at 4bfc00e).
+
+| Path | What it drafts | Linked to a service record when it is created? |
+|---|---|---|
+| Arrival (`ArrivalsService.receive`) | `episodic_pre` or `enduring`, per the visit-agreement policy | No. It is idempotent on `idempotencyKey` only, so a second arrival for the same visit under another key (the PMS pushes one, reception types one) drafts again |
+| Appointment auto-capture (`AutoCaptureService.captureForAppointment`) | `episodic_pre`, linked to the appointment | No. An arrival for the same visit does not look for this draft, so a booked patient who also arrives can have two |
+| Desk "New agreement" (`POST /agreements`) | any type | No |
+| Moving a visit to another practitioner (`draftForMovedVisit`) | a new draft for the new practitioner | No. The old draft stays unsigned, but it is anchored on the other practitioner, so it does not match on provider |
+| Tablet "episodic instead" after an ongoing agreement is declined (`draftEpisodicInstead`) | `episodic_pre` | No. The enduring draft stays unsigned with its capture cancelled. Same patient, same practitioner, same day: **two unsigned drafts for one visit by design** |
+| Supersession (`createSupersedingDraft`) | the successor | It inherits the predecessor's service links. The predecessor stays unsigned, but it has a successor |
+| Service rendered (`ArrivalsService.serviceRendered`), auto-capture for an orphan invoice (`captureForServiceRecord`), DB4 print record | `episodic_post` | **Yes**: linked at creation (for a DB4 Print Record, through the service record it creates). These are never candidates for option 2 |
+| A retried in-practice capture | a second draft after the first capture request timed out or was cancelled | No. `withoutDeadEnds` in `tablet-sessions.service.ts` documents this case |
+
+So duplicates are ordinary, not rare: a booking plus an arrival, a declined
+ongoing agreement, a retry. Under the literal rule, each of those produces
+"more than one matches", and a person has to choose.
+
+### FINDING - the build stopped here, before any code, for Carl's answer
+
+**Linking an unsigned `episodic_pre` to the service record contradicts how the
+platform already treats a pre-agreement that was not signed before the service,
+and it switches off the post-agreement for that visit.**
+
+1. **What the code already says.** `agreement.ts` defines `episodic_pre` as
+   "s 65C(4) item 5 - basic service description, *before the service*", and
+   `episodic_post` as item 6, "after the service". The rules engine's C5 refuses
+   a pre-agreement whose D5 is before its D2. `preAgreementForTheDay` in
+   `arrivals.service.ts` counts only a SIGNED pre-agreement as covering a
+   service ("an agreement nobody put their name to assigns nothing"). For an
+   unsigned one, `serviceRendered` drafts an `episodic_post` and links that
+   instead. The unsigned pre-agreement is left alone. That is the design, not a
+   gap.
+2. **What option 2 would change.** `service_records.agreementId` is one column.
+   If pms-sync puts the unsigned pre-agreement in it, then:
+   - `AutoCaptureService.syncInvoicesAndCapture` and the print-job processor
+     treat the record as already linked (`captureForServiceRecord` returns
+     `alreadyLinked`).
+   - No post-agreement is drafted for that visit, and no remote request is sent.
+   - Reconciliation's one-click resend then opens a capture for a
+     pre-agreement, for a service that has already been rendered.
+
+   The visits this affects are the commonest orphans: a desk draft, an invoice,
+   and nobody signed.
+3. **Why this is a question and not a fix.** The brief says *"when in doubt on
+   regulation: stop, cite the requirement, and ask"* (CLAUDE.md §1 and §7c).
+   The requirements involved are REQ-REG-01 (D2/D3/D5), rule C5, and
+   REQ-SCOPE-01 (practitioner x patient x day linking).
+
+**Options for Carl:**
+- **(a) Link as decided, for `episodic_post` only.** It is the only type that
+  can still be signed for a service already rendered. Almost no orphans are
+  unsigned `episodic_post` drafts, so option 2 would rarely fire.
+- **(b) Associate, do not link (Claude's recommendation).** Leave
+  `agreementId` free for the post-agreement that auto-capture drafts. Record
+  instead which service the unsigned pre-agreement's visit belongs to, either
+  as a column or as a read. Then:
+  - the tablet's "Unsigned from earlier days" line says what was observed: a
+    service for this visit was recorded, the pre-agreement was not signed
+    before it, and the service is on Reconciliation;
+  - the line links to that Reconciliation item;
+  - more than one candidate is shown on the item, so a person can choose.
+
+  Option 3 then closes the pre-agreement once the visit's service is covered
+  some other way, or after N days with no service. Each closure reason states
+  what was observed (wow.md §13).
+- **(c) Link the pre-agreement, as the brief says, and accept** that the visit
+  gets no post-agreement and that Reconciliation offers to resend a
+  pre-agreement after the service.
+
+**Option 3 also depends on the answer.** "Not needed: no service recorded" is
+true only where no service record matches the visit. Where one does but is
+covered by a post-agreement, the reason must say that instead (wow.md §13).
+Carl's choice of N (7 days, configurable per practice) does not depend on it.
+
+**Notes for the build once answered:**
+- This branch has no per-practice zone. `readPracticeDay` and `practiceDayOf`
+  are on `fix/tablet-day-boundary` and `fix/d2-practice-date`. Here,
+  `packages/domain/src/practice-day.ts` has `practiceToday(at)` and
+  `practiceDayWindow(day)` in the one `PRACTICE_TIMEZONE` (Australia/Sydney).
+  Use those, and switch to `practiceDayOf(at, practice.timezone)` when those
+  branches merge.
+- A terminal state already exists: the lifecycle allows
+  `draft | verification_pending | verification_failed | awaiting_signature ->
+  expired`, and nothing sets it today. Option 3 can use `expired` with a closure
+  reason, rather than adding a status.
+- The scheduler pattern is `@nestjs/schedule`, as in `RetentionSweepService`
+  (`@Cron`) and `PostServiceChaseSweep` (`@Interval`).
+
+**What would reopen it:** Carl's answer to the finding above. Separately,
+anything that lets a pre-agreement signed after the service cover it.

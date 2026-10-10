@@ -172,7 +172,17 @@ plain-English text. `tautala_ai.md` (the TAUTALA entry, further down) is the rel
 notice, and option 4, the post-service chase switched on in development (sandbox
 gateways only; production off until Carl says live).
 
-**Deferred, decided by Carl to be on this list:**
+**Options 2 and 3 are being built (Carl, 10 Oct 2026, D-2026-10-10-09):**
+*"do option 2 first, N is 7 days - make N a configurable setting"*. Strike
+each one through when it lands.
+- **Paused at the measurement step, waiting on Carl.** Linking an unsigned
+  `episodic_pre` into `service_records.agreementId` would stop auto-capture
+  drafting the post-agreement for that visit. Reconciliation would then offer
+  to resend a pre-agreement for a service already rendered. Choices (a), (b)
+  and (c) are in D-2026-10-10-09, with the duplicate-draft analysis. Branch
+  `feat/unsigned-drafts-link-and-close`.
+
+**Originally deferred, decided by Carl to be on this list:**
 
 2. **Link the unsigned draft to the service.** When an invoice arrives for the
    same patient, provider and day, pms-sync should link the unsigned draft to the
@@ -189,8 +199,9 @@ gateways only; production off until Carl says live).
    - *Why deferred:* closing an agreement is a state change with evidence
      consequences. N is a regulatory-adjacent threshold that is not in the
      requirements docs, and §7c says never to invent one.
-   - *Depends on:* Carl choosing N. Option 2 should come first, so that nothing
-     a service could still claim gets closed.
+   - *Depends on:* ~~Carl choosing N~~ (chosen: 7 days by default, settable
+     per practice; D-2026-10-10-09). Option 2 should come first, so that
+     nothing a service could still claim gets closed.
 
 ---
 
