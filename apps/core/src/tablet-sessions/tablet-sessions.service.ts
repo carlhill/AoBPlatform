@@ -1677,12 +1677,23 @@ export class TabletSessionsService {
       const live = await this.withoutDeadEnds(tx, earlier);
       if (live.length === 0) return null;
 
-      const forDateOf = (agreement: (typeof live)[number]): string => {
-        const appointment = appointmentByAgreement.get(agreement.id);
-        return appointment
-          ? appointment.date.toISOString().slice(0, 10)
-          : practiceDayOf(agreement.createdAt, day.timeZone);
-      };
+      /*
+       * EACH ROW'S DAY WORKED OUT ONCE, before the sort rather than inside its
+       * comparator, which would ask it O(n log n) times (Opus review,
+       * 10 October 2026).
+       */
+      const forDateById = new Map(
+        live.map((agreement) => {
+          const appointment = appointmentByAgreement.get(agreement.id);
+          return [
+            agreement.id,
+            appointment
+              ? appointment.date.toISOString().slice(0, 10)
+              : practiceDayOf(agreement.createdAt, day.timeZone),
+          ] as const;
+        }),
+      );
+      const forDateOf = (agreement: (typeof live)[number]): string => forDateById.get(agreement.id) as string;
       /* OLDEST FIRST, with ties broken on fields nothing on this list can move. */
       const sorted = [...live].sort(
         (a, b) =>
