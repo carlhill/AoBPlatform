@@ -557,5 +557,20 @@ export function checkDb4PrintRecord(envelope: PrintJobEnvelope): readonly Db4Pri
     failed.push('print_record_benefit_missing');
   }
 
+  /*
+   * A SERVICE LINE AOBPRINTER SAW AND COULD NOT READ (D-2026-10-11-01). The
+   * check above passes as soon as ONE row has an amount, so a form with a
+   * credit, a whole-dollar amount or an amount-less row among good ones lost
+   * that row silently. The desktop now counts them; any count above zero means
+   * the patient's copy would be missing a service.
+   *
+   * ONLY A NUMBER IS A COUNT. Absent — a desktop that predates the count — is
+   * not refused, because nobody observed a lost row (hard rule 8); any other
+   * shape is a record the DTO would not have let through, and is not read.
+   */
+  if (typeof source.unparsedServiceLines === 'number' && source.unparsedServiceLines > 0) {
+    failed.push('print_record_service_lines_unread');
+  }
+
   return failed;
 }

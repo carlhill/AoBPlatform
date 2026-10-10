@@ -1,6 +1,6 @@
 import { BadRequestException, Body, Controller, Get, Header, Headers, HttpCode, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
 import { Type } from 'class-transformer';
-import { IsArray, IsBoolean, IsIn, IsISO8601, IsOptional, IsString, Matches, MaxLength, ValidateNested } from 'class-validator';
+import { IsArray, IsBoolean, IsIn, IsInt, IsISO8601, IsOptional, IsString, Matches, Max, MaxLength, Min, ValidateNested } from 'class-validator';
 import type { AobPrinterHeartbeat, CollectedConfirmation, PrintJobEnvelope } from '@aobplatform/contracts';
 import { PRINT_DOCUMENT_TYPES } from '@aobplatform/domain';
 import { PracticeScoped } from '../auth/practice-scope.decorator';
@@ -188,6 +188,15 @@ export class PrintJobEnvelopeDto {
   /** Which print queue produced the form. Attribution, never PII (D-2026-09-17-02). */
   @IsOptional() @IsString() @MaxLength(100) queueName?: string;
   @IsOptional() @IsString() @MaxLength(100) queueLabel?: string;
+  /**
+   * How many service lines AOBPRINTER's template did not read (D-2026-10-11-01).
+   * A COUNT, never content — no PII and no amount can ride on it. Without this
+   * line the whitelist would strip it at the door and the Send-to-tablet check
+   * could never see it. Absent from a desktop that predates it. The ceiling is
+   * a sanity bound, not a rule: a one-page form has a few dozen lines, so a
+   * count in the thousands is a broken desktop and is refused at the door.
+   */
+  @IsOptional() @IsInt() @Min(0) @Max(1000) unparsedServiceLines?: number;
   @IsOptional() @ValidateNested() @Type(() => Db4HeadingDto) heading?: Db4HeadingDto;
   @IsOptional() @ValidateNested() @Type(() => Db4FormDto) form?: Db4FormDto;
   @IsOptional() @ValidateNested() @Type(() => Db4ServicingLocationDto) servicingLocation?: Db4ServicingLocationDto;

@@ -346,6 +346,33 @@ describe('the DB4 form view', () => {
       expect(none).toEqual(['print_record_benefit_missing']);
     });
 
+    /* ---------------------------------------------------------------------
+     * A SERVICE LINE AOBPRINTER COULD NOT READ (Opus review, 10 Oct 2026;
+     * D-2026-10-11-01). The amount check above asks whether ANY row has an
+     * amount, so a form with one row lost among several passed it and the
+     * patient was shown a copy missing a service. AOBPRINTER now counts the
+     * date-led lines its row pattern rejected, and a non-zero count is
+     * refused at the desk.
+     * ------------------------------------------------------------------ */
+    it('a_print_record_with_unparsed_service_lines_is_refused', () => {
+      // Every row it DID read is complete — the refusal is about the one it did not.
+      expect(checks({ unparsedServiceLines: 1 })).toEqual(['print_record_service_lines_unread']);
+      expect(checks({ unparsedServiceLines: 3 })).toEqual(['print_record_service_lines_unread']);
+    });
+
+    it('zero_unparsed_service_lines_passes_and_an_absent_count_is_not_refused', () => {
+      expect(checks({ unparsedServiceLines: 0 })).toEqual([]);
+      /*
+       * ABSENT IS A DESKTOP THAT PREDATES THE COUNT, not a page with a lost
+       * row. Refusing it would stop every push from every AOBPRINTER not yet
+       * upgraded over a fault nobody observed (hard rule 8); the DECISIONS
+       * entry says plainly that those records cannot be checked this way.
+       */
+      expect(checks()).toEqual([]);
+      // A count in any shape but a number is not a count, and is not read as one.
+      expect(checks({ unparsedServiceLines: '2' })).toEqual([]);
+    });
+
     it('one_row_with_an_amount_is_enough_for_the_whole_record', () => {
       // A form may legitimately list a row the practice claims no benefit on.
       // Refusing a push over one blank cell would be stricter than the ruling.
@@ -597,14 +624,17 @@ describe('the DB4 form view', () => {
         'print_record_service_date_missing',
         'print_record_benefit_missing',
       ]);
-      // AND WITH A CARD NUMBER READ, ALL SEVEN — the conditional one joins the
-      // list in its declared position rather than being appended to the end.
+      // AND WITH A CARD NUMBER READ AND A SERVICE LINE UNREAD, ALL EIGHT — the
+      // two conditional ones join the list in their declared positions. The
+      // unread-line count is conditional too (D-2026-10-11-01): an empty
+      // record carries no count, so it cannot fire on `ruined` above.
       const alsoHalfRead = checkDb4PrintRecord({
         form: {},
         // eslint-disable-next-line no-restricted-syntax -- the fixture's own field, invalid by construction.
         patient: { medicareCardNumber: FAKE_MEDICARE },
         providers: [],
         services: [],
+        unparsedServiceLines: 2,
       } as unknown as PrintJobEnvelope);
       expect(alsoHalfRead).toEqual([...DB4_PRINT_RECORD_CHECKS]);
       // AND IN THE DECLARED ORDER, always. A list that reshuffles itself
@@ -695,6 +725,9 @@ describe('the DB4 form view', () => {
       // downstream requires it, so this check is the only thing standing
       // there (Carl, 27 September 2026).
       expect(DB4_PRINT_RECORD_CHECK_GATED_AT_INGEST.print_record_irn_missing).toBeNull();
+      // AND THE UNREAD SERVICE LINE (D-2026-10-11-01): ingest places an
+      // agreement from the rows it has and never looks at the count.
+      expect(DB4_PRINT_RECORD_CHECK_GATED_AT_INGEST.print_record_service_lines_unread).toBeNull();
       // The map is exhaustive: a check added without a decision about whether
       // ingest already covers it is a check nobody classified.
       expect(Object.keys(DB4_PRINT_RECORD_CHECK_GATED_AT_INGEST).sort()).toEqual(
