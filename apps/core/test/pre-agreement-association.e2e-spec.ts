@@ -283,11 +283,14 @@ describe('pre-agreement association, option (b) (e2e, real Postgres + fixture ad
     expect([first, second]).not.toContain(record.agreementId);
 
     const res = await choices();
-    const item = (res.body as { serviceRecordId: string }[]).find((c) => c.serviceRecordId === record.id) as {
-      reason: string;
-      serviceDate: string;
-      candidates: { agreementId: string; forDay: string }[];
-    };
+    const item = (
+      res.body as {
+        serviceRecordId: string;
+        reason: string;
+        serviceDate: string;
+        candidates: { agreementId: string; forDay: string }[];
+      }[]
+    ).find((c) => c.serviceRecordId === record.id)!;
     expect(item).toBeDefined();
     expect(item.reason).toBe('unsigned_drafts_match_service');
     expect(item.serviceDate).toBe(day);
