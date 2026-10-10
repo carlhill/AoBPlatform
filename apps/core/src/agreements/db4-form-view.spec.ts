@@ -373,6 +373,52 @@ describe('the DB4 form view', () => {
       expect(checks({ unparsedServiceLines: '2' })).toEqual([]);
     });
 
+    /* ---------------------------------------------------------------------
+     * THE PRINTED NAME AND THE PATIENT ON RECORD DISAGREE (Carl, 11 October
+     * 2026; D-2026-10-11-02). A DB4 is matched to a patient on the PMS
+     * patient ID alone (hard rule 1), so a form printing "Fern2 Dummyfield"
+     * against the ID of Emin Dummyfield placed an agreement for Emin — and
+     * the tablet would have shown the patient a form in another name.
+     * ------------------------------------------------------------------ */
+    it('printed_name_that_differs_from_the_patient_on_record_is_refused', () => {
+      const differs = checkDb4PrintRecord(envelope(), { givenNames: 'Emin', familyName: 'Fakename' });
+      expect(differs).toEqual(['print_record_patient_name_differs']);
+    });
+
+    it('printed_name_is_compared_whole_ignoring_case_and_spacing', () => {
+      // The same name, printed in capitals with a doubled space: not a difference.
+      expect(checkDb4PrintRecord(envelope(), { givenNames: ' testy ', familyName: 'FAKENAME' })).toEqual([]);
+      /*
+       * COMPARED AS ONE NAME, NOT FIELD BY FIELD. The template splits a
+       * printed name at its LAST space, so a two-word family name comes off
+       * the page as given "Mary Anne Smith", family "Jones". The record's
+       * "Mary Anne" / "Smith Jones" is the same person and must not be
+       * refused over where a parser drew a line.
+       */
+      expect(
+        checkDb4PrintRecord(envelope({ patient: { givenNames: 'Mary Anne Smith', familyName: 'Jones', patientRecordNumber: '00001' } }), {
+          givenNames: 'Mary Anne',
+          familyName: 'Smith Jones',
+        }),
+      ).toEqual([]);
+      // A middle name on one side and not the other IS a difference — reception decides.
+      expect(checkDb4PrintRecord(envelope(), { givenNames: 'Testy Middle', familyName: 'Fakename' })).toEqual([
+        'print_record_patient_name_differs',
+      ]);
+    });
+
+    it('printed_name_is_not_compared_when_either_side_has_none', () => {
+      // No patient on record passed in: the check is not asked (a caller that cannot say).
+      expect(checkDb4PrintRecord(envelope())).toEqual([]);
+      // No name printed: `print_record_patient_unidentified` and the view's fallback own that case.
+      expect(
+        checkDb4PrintRecord(envelope({ patient: { patientRecordNumber: '00001' } }), {
+          givenNames: 'Emin',
+          familyName: 'Fakename',
+        }),
+      ).toEqual([]);
+    });
+
     it('one_row_with_an_amount_is_enough_for_the_whole_record', () => {
       // A form may legitimately list a row the practice claims no benefit on.
       // Refusing a push over one blank cell would be stricter than the ruling.
@@ -636,7 +682,12 @@ describe('the DB4 form view', () => {
         services: [],
         unparsedServiceLines: 2,
       } as unknown as PrintJobEnvelope);
-      expect(alsoHalfRead).toEqual([...DB4_PRINT_RECORD_CHECKS]);
+      /*
+       * EVERY CHECK BUT ONE, AND THAT ONE CANNOT JOIN. `print_record_patient_name_differs`
+       * needs a PRINTED name to compare, and `print_record_patient_unidentified` fires only
+       * when there is none — the two exclude each other by construction (D-2026-10-11-02).
+       */
+      expect(alsoHalfRead).toEqual(DB4_PRINT_RECORD_CHECKS.filter((c) => c !== 'print_record_patient_name_differs'));
       // AND IN THE DECLARED ORDER, always. A list that reshuffles itself
       // between two presses of Send is a list nobody trusts.
       for (const list of [ruined, alsoHalfRead]) {
@@ -728,6 +779,8 @@ describe('the DB4 form view', () => {
       // AND THE UNREAD SERVICE LINE (D-2026-10-11-05): ingest places an
       // agreement from the rows it has and never looks at the count.
       expect(DB4_PRINT_RECORD_CHECK_GATED_AT_INGEST.print_record_service_lines_unread).toBeNull();
+      // AND THE NAME: ingest matches on the PMS patient ID alone and never compares names.
+      expect(DB4_PRINT_RECORD_CHECK_GATED_AT_INGEST.print_record_patient_name_differs).toBeNull();
       // The map is exhaustive: a check added without a decision about whether
       // ingest already covers it is a check nobody classified.
       expect(Object.keys(DB4_PRINT_RECORD_CHECK_GATED_AT_INGEST).sort()).toEqual(

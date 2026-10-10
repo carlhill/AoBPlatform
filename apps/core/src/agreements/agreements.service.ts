@@ -3133,7 +3133,8 @@ export class AgreementsService {
       const sourced = await this.prisma.withPractice(practiceId, (tx) =>
         tx.agreement.findMany({
           where: { id: { in: [...agreementIds] }, sourcePrintJobId: { not: null } },
-          select: { id: true, sourcePrintJobId: true },
+          // The patient's name on record, for the printed-name check (D-2026-10-11-02).
+          select: { id: true, sourcePrintJobId: true, patient: { select: { givenNames: true, familyName: true } } },
         }),
       );
       if (sourced.length === 0) return answers;
@@ -3144,7 +3145,7 @@ export class AgreementsService {
       for (const row of sourced) {
         const record = records.get(row.sourcePrintJobId as string);
         if (!record) continue;
-        answers.set(row.id, { checks: checkDb4PrintRecord(record.envelope), identity: record.identity });
+        answers.set(row.id, { checks: checkDb4PrintRecord(record.envelope, row.patient), identity: record.identity });
       }
       return answers;
     } catch (err) {
@@ -3163,7 +3164,7 @@ export class AgreementsService {
 
   async db4PrintRecordChecks(
     practiceId: string,
-    agreement: { id: string; sourcePrintJobId: string | null },
+    agreement: { id: string; sourcePrintJobId: string | null; patientId?: string },
   ): Promise<{ checks: readonly Db4PrintRecordCheck[]; identity: Db4PrintRecordIdentity | null }> {
     if (!agreement.sourcePrintJobId) return NO_PRINT_RECORD_CHECKS;
     try {
@@ -3178,7 +3179,20 @@ export class AgreementsService {
        * practice that prints all morning — and the only place that is known
        * is here, where the record was just read.
        */
-      return { checks: checkDb4PrintRecord(record.envelope), identity: record.identity };
+      /*
+       * THE PATIENT ON RECORD, for the printed-name check (D-2026-10-11-02).
+       * Read here, beside the record, so the push and the desk list ask the
+       * same question of the same two names.
+       */
+      const onRecord = agreement.patientId
+        ? await this.prisma.withPractice(practiceId, (tx) =>
+            tx.patient.findFirst({
+              where: { id: agreement.patientId },
+              select: { givenNames: true, familyName: true },
+            }),
+          )
+        : null;
+      return { checks: checkDb4PrintRecord(record.envelope, onRecord), identity: record.identity };
     } catch (err) {
       /*
        * THE CLASS AND THE AGREEMENT ID, NEVER THE RECORD. Every line of a DB4
