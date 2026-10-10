@@ -1,0 +1,209 @@
+{
+  "$comment": "VERSIONED CONTENT, NOT CODE (hard rule 14; the precedent is content/assignor-relationships.json and CLAUDE.md §7 'option lists are content'). Every field pattern AOBPRINTER uses to turn a printed DB4 into a DB4 Print Record lives here, and `version` travels on every record produced from it as `parserTemplateVersion` — so a record can always be re-read against the template that made it. A practice management system changes its print layout without asking us; when PracSoft does, this file is copied to a new version and the old one keeps explaining the records it produced. NOTHING HERE ASSERTS THE FORM'S VALIDITY OR ITS VERSION: the driver says 'DB4, as printed' and the server decides whether that is the post-1-July form (DB4-AND-AOBL.md §1d, §2). A FIELD THAT DOES NOT MATCH IS ABSENT FROM THE RECORD, never defaulted and never guessed. CALIBRATED AGAINST A PROBE, NOT AGAINST PRACSOFT: the fixture at test-fixtures/pracsoft3-db4-probe.pdf was printed to AOBPRINTER on this machine on 17 September 2026 from a plain-text page laid out like the scanned DB4. It proves the mechanism end to end; it is NOT PracSoft's real output, and the first real print from the practice will need these patterns checked line by line and this file bumped to a new version. SUPERSEDES pracsoft3-db4-2026-09-1 (D-2026-10-10-08): identical to it in every extractor except the service rows, where `benefitAssigned` now keeps the amount exactly as printed, `$` and grouping commas included. The -09-1 file is unchanged and stays built in, so the records it stamped can still be re-read against it.",
+  "version": "pracsoft3-db4-2026-10-1",
+  "pms": "pracsoft3",
+  "documentType": "db4_assignment",
+
+  "$comment_constants": "Facts about the form itself rather than about one printing of it. `formCode` is what the page IS, not a claim that it is current. `currency` is on the form's own amounts. `statementsJoinedBy` is the word printed between the two assignment statements.",
+  "constants": {
+    "form.formCode": "DB4",
+    "form.currency": "AUD",
+    "assignment.statementsJoinedBy": "or"
+  },
+
+  "extractors": [
+    {
+      "$comment": "The four heading lines as printed, in order (Carl, 14 Sep 2026). A heading may WRAP across two printed lines, so each entry is started by its own pattern and absorbs the lines after it until the next start or the stop.",
+      "kind": "paragraphs",
+      "path": "heading.lines",
+      "startPatterns": [
+        "^MEDICARE\\b",
+        "^BULK BILL ASSIGNMENT",
+        "^This form is the approved form",
+        "^Bulk bill claim for assessment"
+      ],
+      "stopPattern": "^Form Reference:"
+    },
+
+    {
+      "$comment": "formReference is the correlation key for every later message about this form, and the filename the Signed-DB4 goes back as (§6a).",
+      "kind": "line",
+      "pattern": "^Form Reference:\\s*(?<formReference>[A-Za-z0-9-]+)(?:\\s+Location ID:\\s*(?<locationId>[A-Za-z0-9-]+))?\\s*$",
+      "paths": { "formReference": "form.formReference", "locationId": "form.locationId" }
+    },
+    {
+      "kind": "line",
+      "pattern": "^Claim Status:\\s*(?<claimStatus>.+?)\\s*$",
+      "paths": { "claimStatus": "form.claimStatus" }
+    },
+    {
+      "$comment": "True only when the printed page already carries a signature the driver can SEE in the text layer. An ink signature is pixels and is invisible here, so this is a marker PracSoft prints, not a detection. A boolean whose pattern is declared and does not match is false — we looked and it was not there — which is a determination, not a guess. THE MARKER TEXT IS UNCONFIRMED against real PracSoft output; check it on the first real print.",
+      "kind": "flag",
+      "path": "form.signedOnPaper",
+      "truePattern": "^\\s*(SIGNED (BY|ON) (PATIENT|PAPER)|PATIENT SIGNATURE ON FILE)\\b"
+    },
+    {
+      "$comment": "The service date printed on the first service row. Read from the page rather than derived from the rows, so the record says what the form says.",
+      "kind": "line",
+      "pattern": "^(?<serviceDate>\\d{2}/\\d{2}/\\d{4})\\s+\\d{1,2}:\\d{2}\\s",
+      "paths": { "serviceDate": "form.serviceDate" },
+      "transforms": { "serviceDate": "date:dmy" }
+    },
+
+    {
+      "kind": "line",
+      "pattern": "^Servicing Location:\\s*(?<name>.+?)\\s*$",
+      "paths": { "name": "servicingLocation.name" }
+    },
+    {
+      "$comment": "The street lines between the practice name and the patient block. The suburb/state/postcode line is excluded here because it is captured as its own three fields below.",
+      "kind": "lines",
+      "path": "servicingLocation.addressLines",
+      "after": "^Servicing Location:",
+      "stopPattern": "^Patient Details\\s*$",
+      "excludePattern": "\\s(NSW|VIC|QLD|SA|WA|TAS|NT|ACT)\\s+\\d{4}\\s*$"
+    },
+    {
+      "kind": "line",
+      "pattern": "^(?<suburb>[A-Za-z][A-Za-z'. -]*?)\\s+(?<state>NSW|VIC|QLD|SA|WA|TAS|NT|ACT)\\s+(?<postcode>\\d{4})\\s*$",
+      "paths": {
+        "suburb": "servicingLocation.suburb",
+        "state": "servicingLocation.state",
+        "postcode": "servicingLocation.postcode"
+      }
+    },
+
+    {
+      "$comment": "The practice's own chart number. It is the join key everywhere — the patient folder the Signed-DB4 goes back into, and the only identifier used to match a patient. The Medicare number below is never used for that (hard rule 1, D-2026-09-14-03).",
+      "kind": "line",
+      "pattern": "^(?:Chart|Patient|Record) (?:Number|No\\.?):\\s*(?<patientRecordNumber>[A-Za-z0-9-]+)\\s*$",
+      "paths": { "patientRecordNumber": "patient.patientRecordNumber" }
+    },
+    {
+      "kind": "derive",
+      "path": "patient.pmsLinkageKey",
+      "from": "patient.patientRecordNumber",
+      "prefix": "chart:"
+    },
+    {
+      "$comment": "CARRIED, NEVER AN IDENTIFIER. D-2026-09-14-03: the Medicare card number and IRN are printed on the form and travel on the record, because the Signed-DB4 reproduces the form and the auditor links the form to the claim by that number. Hard rule 1 is unchanged: the number is never used to verify who somebody is, never used to find or match a patient, never in a log line, an error message, a filename or an event, and never sent to the rules service.",
+      "kind": "line",
+      "pattern": "^Medicare (?:Card )?(?:Number|No\\.?):\\s*(?<medicare>[0-9][0-9 ]{8,13}?)(?:\\s+IRN:?\\s*(?<irn>[0-9]))?\\s*$",
+      "paths": { "medicare": "patient.medicareCardNumber", "irn": "patient.irn" }
+    },
+    {
+      "$comment": "Given names are everything before the last whitespace-separated token, which is how PracSoft prints a patient line. A single-token name yields a family name and no given names rather than a guess at which it is.",
+      "kind": "line",
+      "pattern": "^(?:Patient )?Name:\\s*(?:(?<givenNames>.+)\\s+)?(?<familyName>\\S+)\\s*$",
+      "paths": { "givenNames": "patient.givenNames", "familyName": "patient.familyName" }
+    },
+    {
+      "kind": "line",
+      "pattern": "^(?:Date of Birth|DOB):\\s*(?<dateOfBirth>\\d{2}/\\d{2}/\\d{4})\\s*$",
+      "paths": { "dateOfBirth": "patient.dateOfBirth" },
+      "transforms": { "dateOfBirth": "date:dmy" }
+    },
+    {
+      "kind": "line",
+      "pattern": "^Address:\\s*(?<address>.+?)\\s*$",
+      "paths": { "address": "patient.address" }
+    },
+    {
+      "kind": "line",
+      "pattern": "^(?:Phone|Mobile):\\s*(?<mobile>[0-9][0-9 ]{7,14})\\s*$",
+      "paths": { "mobile": "patient.mobile" },
+      "transforms": { "mobile": "collapseSpaces" }
+    },
+
+    {
+      "$comment": "Two providers, two roles, and we model one of them as the servicing provider (§1e). The provider number is the practice's own key, so `pmsProviderKey` is derived from it.",
+      "kind": "row",
+      "path": "providers",
+      "pattern": "^Servicing Provider:\\s*(?<name>.+?)\\s+Provider (?:Number|No\\.?):\\s*(?<providerNumber>[A-Za-z0-9]+)\\s*$",
+      "constants": { "role": "servicing" },
+      "derive": { "pmsProviderKey": { "from": "providerNumber", "prefix": "provider:" } }
+    },
+    {
+      "kind": "row",
+      "path": "providers",
+      "pattern": "^Payee Provider:\\s*(?<name>.+?)\\s+Provider (?:Number|No\\.?):\\s*(?<providerNumber>[A-Za-z0-9]+)\\s*$",
+      "constants": { "role": "payee" },
+      "derive": { "pmsProviderKey": { "from": "providerNumber", "prefix": "provider:" } }
+    },
+
+    {
+      "$comment": "The service rows, in printed order. `benefitAssigned` is the amount PracSoft printed, AS PRINTED: the `$` and any grouping comma are inside the captured group, and `collapseSpaces` only trims it and folds a run of spaces to one (Carl, 10 Oct 2026, D-2026-10-10-08: a real DB4 prints `$45.05`, and the patient should see `$45.05`). It is a string from here to the Signed-DB4; nothing parses it to a number, and AoB never originates or computes one (hard rule 4 as narrowed by D-2026-09-14-02). The -09-1 template applied `money` here and produced `45.05`.",
+      "kind": "rows",
+      "path": "services",
+      "pattern": "^(?<serviceDate>\\d{2}/\\d{2}/\\d{4})\\s+(?<time>\\d{1,2}:\\d{2})\\s+(?<mbsItemNumber>[0-9A-Z]{1,6})\\s+(?<description>.+?)\\s+(?<benefitAssigned>\\$?\\s*[0-9,]+\\.[0-9]{2})\\s*$",
+      "transforms": { "serviceDate": "date:dmy", "benefitAssigned": "collapseSpaces" }
+    },
+
+    {
+      "$comment": "The privacy notice as printed, one entry per paragraph, so it can become versioned render content later rather than being hardcoded into a template (Carl: 'in case we need to make these dynamic in the future').",
+      "kind": "paragraphs",
+      "path": "assignment.privacyNotice",
+      "startPatterns": [
+        "^Privacy Notice:",
+        "^Your information may be used",
+        "^You can get more information",
+        "^Information about medical/dental expenses",
+        "^To be completed by the person assigning"
+      ],
+      "stopPattern": "^\\[[ Xx]?\\]|^\\(?\\s*[Xx]?\\s*\\)\\s*I (assign|offer)"
+    },
+    {
+      "$comment": "Statement one — the assignment this product is about. `ticked` is what the driver could see on the page.",
+      "kind": "row",
+      "path": "assignment.statements",
+      "pattern": "^(?<tick>\\[[ Xx]?\\])?\\s*(?<text>I assign my right to benefits.*?)\\s*$",
+      "constants": { "key": "assign_to_health_professional", "inScope": true },
+      "flags": { "ticked": "\\[[Xx]\\]" },
+      "flagsFrom": "tick",
+      "continueInto": "text",
+      "continueUntil": "^(or|and)\\s*$|^\\[[ Xx]?\\]|^ACRF:|^Signature:"
+    },
+    {
+      "$comment": "Statement two is a PATHOLOGY assignment — s 65C(4) items 1-4, out of this product's scope (CLAUDE.md §8). It is carried as data and never acted on: never validated, never rendered for a patient to tick, never written back. `inScope: false` is what says so on the record.",
+      "kind": "row",
+      "path": "assignment.statements",
+      "pattern": "^(?<tick>\\[[ Xx]?\\])?\\s*(?<text>I offer to assign my right to benefits.*?)\\s*$",
+      "constants": { "key": "offer_to_assign_to_pathology_practitioner", "inScope": false },
+      "flags": { "ticked": "\\[[Xx]\\]" },
+      "flagsFrom": "tick",
+      "continueInto": "text",
+      "continueUntil": "^(or|and)\\s*$|^\\[[ Xx]?\\]|^ACRF:|^Signature:"
+    },
+
+    {
+      "$comment": "Referral particulars. None of these is on a plain bulk-bill attendance, and all of them are absent from the record when the form does not print them — which is the rule: absent, never guessed.",
+      "kind": "line",
+      "pattern": "^ACRF:?\\s*(?<acrf>[A-Za-z0-9-]+)\\s*$",
+      "paths": { "acrf": "referral.acrf" }
+    },
+    {
+      "kind": "line",
+      "pattern": "^LSPN:?\\s*(?<lspn>[A-Za-z0-9-]+)\\s*$",
+      "paths": { "lspn": "referral.lspn" }
+    },
+    {
+      "kind": "line",
+      "pattern": "^Requesting Provider:\\s*(?<name>.+?)(?:\\s+Provider (?:Number|No\\.?):\\s*(?<number>[A-Za-z0-9]+))?\\s*$",
+      "paths": {
+        "name": "referral.requestingProviderName",
+        "number": "referral.requestingProviderNumber"
+      }
+    },
+    {
+      "kind": "line",
+      "pattern": "^Date of Request:\\s*(?<dateOfRequest>\\d{2}/\\d{2}/\\d{4})\\s*$",
+      "paths": { "dateOfRequest": "referral.dateOfRequest" },
+      "transforms": { "dateOfRequest": "date:dmy" }
+    },
+    {
+      "kind": "line",
+      "pattern": "^Period of Referral:\\s*(?<periodOfReferral>.+?)\\s*$",
+      "paths": { "periodOfReferral": "referral.periodOfReferral" }
+    }
+  ]
+}
