@@ -549,7 +549,7 @@ async function settled(page: Page): Promise<void> {
 /**
  * A SAFETY CAP ON WALKING THE SHEETS, NOT AN EXPECTATION. Each walk stops at
  * the sheet that offers Continue to sign; the cap only stops a broken page
- * line looping forever. The longest form at 1024x600 takes 25 sheets today.
+ * line looping forever. The longest form at 1024x600 takes 29 sheets today.
  */
 const MAX_SHEETS = 100;
 
@@ -1051,4 +1051,44 @@ test('kiosk_turning_the_tablet_keeps_the_patient_on_the_block_they_were_reading'
     )
     .toBe(true);
   await expectNothingScrolls(page, 'after turning');
+});
+
+/*
+ * THE SHEET COUNT DOES NOT DEPEND ON WHICH SHEET MEASURING RAN FROM (final
+ * review of 92f513a). The action row and the primary's label change from
+ * sheet to sheet; every sheet is measured with the tallest of each. Walk the
+ * twelve-row form upright, re-measure on every sheet — before and after its
+ * ticks, which change the primary's label — and the total never moves.
+ */
+test('kiosk_the_sheet_count_is_the_same_whichever_sheet_measuring_starts_from', async ({ page }) => {
+  await page.setViewportSize({ width: 800, height: 1280 });
+  await openPairedKiosk(page, { form: 'long' });
+  await expect(page.getByTestId('check-details-heading')).toBeVisible();
+  for (const tick of await page.locator('[data-testid^="detail-tick-"]').all()) await tick.click();
+  await page.getByTestId('check-details-continue').click();
+  await expect(page.getByTestId('particulars-heading')).toBeVisible();
+  await settled(page);
+
+  const total = async () => Number(/(\d+)\D*$/.exec((await page.getByTestId('db4-page-of').textContent()) ?? '')?.[1]);
+  const remeasureHere = async () => {
+    await page.evaluate(() => window.dispatchEvent(new Event('resize')));
+    await page.evaluate(
+      () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))),
+    );
+  };
+  const expected = await total();
+  expect(expected).toBeGreaterThan(3);
+  for (let turn = 1; turn <= MAX_SHEETS; turn += 1) {
+    await remeasureHere();
+    expect(await total(), `measured from sheet ${turn}, unticked`).toBe(expected);
+    const boxes = await page.locator('[data-testid^="affirm-"]:visible').all();
+    for (const box of boxes) await box.check();
+    if (boxes.length > 0) {
+      await remeasureHere();
+      expect(await total(), `measured from sheet ${turn}, ticked`).toBe(expected);
+    }
+    const last = (await page.getByTestId('continue-to-sign').count()) > 0;
+    if (last) break;
+    await page.getByTestId('db4-page-continue').click();
+  }
 });
