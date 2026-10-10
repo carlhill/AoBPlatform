@@ -133,7 +133,6 @@ export function CeremonyHeading({
   parties,
   subHeading,
   headingTestId,
-  headingId,
   describedById,
 }: {
   /**
@@ -146,18 +145,12 @@ export function CeremonyHeading({
   /** The type's own qualifier, or an empty string to draw no third line. */
   subHeading?: string;
   headingTestId?: string;
-  /**
-   * The heading's own id, for a screen whose scrolling region is NAMED by this
-   * heading (`aria-labelledby`) — K-3's document text (10 Oct 2026). Omitted,
-   * the heading has no id, exactly as before.
-   */
-  headingId?: string;
   /** The id of an element describing this heading, if the screen has one. */
   describedById?: string;
 }): ReactNode {
   return (
     <div className={styles.ceremonyHeading} data-testid="ceremony-heading">
-      <h1 id={headingId} className={styles.h2} data-testid={headingTestId} aria-describedby={describedById}>
+      <h1 className={styles.h2} data-testid={headingTestId} aria-describedby={describedById}>
         {strings.chrome.ceremonyTitle}
       </h1>
       {parties ? (
