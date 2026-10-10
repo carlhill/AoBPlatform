@@ -3128,3 +3128,88 @@ the band's copy may gain a line saying so.
 `apps/aobprinter/src/parser.test.ts` ("a credit with a minus sign", "a credit
 in brackets"). The open template work is in TODO.md, "Read credits and
 whole-dollar amounts as service rows?".
+
+## D-2026-10-11-02 - A printed name that differs from the patient on record stops Send-to-tablet; "PMS patient ID" replaces "Patient ID" and "Chart number"
+
+**Date:** 11 October 2026. **Decided by:** Carl, after a test form printed
+given name "Fern2" against the PMS patient ID of Emin Dummyfield, and the desk
+row showed "Emin Dummyfield": *"STOP and tell Reception that PMS is sending a
+diff name for PMSID xxx. Is this correct?"*, and *"If AOB is storing the
+ChartNumber (is this the PMSPatientID?) If so lets call it that and not the
+ChartNumber"*. **Built on:** branch `feat/db4-printed-name-differs`, based on
+`fix/aobprinter-unparsed-service-lines`.
+
+**What was wrong.** A DB4 is matched to a patient on the PMS patient ID and on
+nothing else (hard rule 1; `db4-assignment.handler.ts` looks the patient up by
+`patientRecordNumber`). Nothing compared the printed name with the name on
+record. The agreement was placed for the patient on record, and the tablet
+would have shown that patient a form printed in another name. The test tool
+made it easy to produce, because its presets carry the typed name over. A real
+PracSoft print would produce it if the form was printed against the wrong
+patient, or if our record's name is wrong.
+
+**What changed.**
+- **A new Send-to-tablet check, `print_record_patient_name_differs`**
+  (`packages/contracts/src/db4-print-record-check.ts`, not gated at ingest).
+  `checkDb4PrintRecord` takes the patient on record as an optional second
+  argument, and both callers in `agreements.service.ts` pass it: the single
+  push and the desk list. The names are compared as ONE whole name: given and
+  family joined, spacing collapsed, case ignored. A whole-name comparison is
+  needed because the template splits a printed name at its last space, and a
+  two-word family name would otherwise be refused over where the parser split
+  it. Any other difference is refused, including a middle name on one side
+  only and a spelling difference. Nothing is compared when either side has no
+  name.
+- **The band asks reception, and names both fixes.** The title is "Is this the
+  right patient?". The line reads *"Your practice software printed a different
+  name for PMS patient ID DESK-EMIN-DUMMYFIELD from the one on record here
+  (Emin Dummyfield). Is this the right patient? If the name on record is wrong,
+  correct it on the patient. If the PMS patient ID on the form is wrong, fix it
+  in your practice software and print the form again."* It links to the
+  patient, where the name is corrected. The PMS patient ID and the name on
+  record come from the desk row, which already shows both. The refusal itself
+  carries a code and no name (hard rule 9). This title and sentence take
+  precedence over the reprint and unread-line sentences, because the name says
+  WHO the form is for.
+- **"PMS patient ID" is the label.** The practice's own number for the patient
+  in their PMS is what PracSoft prints as "Chart Number". AoB stores it as
+  `Patient.patientRecordNumber` and links it as `pmsLinkageKey` `chart:<n>`. In
+  the console, "Patient ID" now reads "PMS patient ID" everywhere it is shown
+  (`strings.ts`: `practiceNumber`, `practiceNumberUnknown`, the day register,
+  and the unidentified check). The AOBPrinter test tool's "Chart number" fields
+  and labels now read "PMS patient ID" too.
+
+**What did NOT change, deliberately.**
+- **The code name stays `patientRecordNumber`.** "Patient record number" is the
+  approved identifier's own name in hard rule 1 and REQ-VER-02. Renaming the
+  field would separate the code from the regulation's term, so only the words
+  on screen change.
+- **The parser template still matches "Chart Number"**, because that is what
+  PracSoft prints.
+- **The patient-facing DB4 on the kiosk still labels the field "Chart number"**
+  (`strings.ts` kiosk `patientRecordNumber`). That screen reproduces the
+  practice's printed form for the patient, and "PMS" means nothing to them.
+  This is open for Carl to overturn.
+- **The patient portal's "Patient ID at <practice>" (`patientIdAt`) is
+  unchanged** for the same reason: it is read by the patient, not by reception.
+- **Ingest codes such as `no_chart_number` keep their names.** They are codes,
+  not words.
+
+**Assumption for Carl to confirm: there is no "yes, it's correct" button.**
+Reception's answer is to fix whichever side is wrong. Letting the push go ahead
+with the names still different would put a form in one name in front of a
+patient whose agreement is in another. If you want an override, it needs a
+reason recorded and a vault event, and that is a decision of its own.
+
+**Tests.** `apps/core/src/agreements/db4-form-view.spec.ts`
+(`printed_name_that_differs_from_the_patient_on_record_is_refused`,
+`printed_name_is_compared_whole_ignoring_case_and_spacing`,
+`printed_name_is_not_compared_when_either_side_has_none`);
+`apps/core/src/agreements/db4-print-record-name.spec.ts` (both service paths);
+`apps/web/app/practice/tablet/tablet.test.tsx`
+(`printed_name_differs_asks_reception_naming_the_pms_patient_id_and_the_record`
+and two more).
+
+**What would reopen it:** Carl wanting a confirm-and-proceed override; a
+middle-name difference proving common enough in real PracSoft output to need a
+looser comparison; or a decision to rename the kiosk label or the code field.
