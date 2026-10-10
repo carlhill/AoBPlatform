@@ -55,7 +55,7 @@ export const SIGNED_DB4_NOT_PRODUCED_REASONS = [
   'print_record_missing',
   /** Already done. Asking twice is how a retry is meant to behave. */
   'already_produced',
-  /** The render itself refused or failed. Retryable; the agreement is untouched. */
+  /** The render itself refused or failed; the agreement is untouched. Whether a retry helps depends on why (see the log). */
   'render_failed',
 ] as const;
 
@@ -195,7 +195,7 @@ export class SignedDb4Service {
        * refusal's rule code is the thing anybody diagnosing this actually
        * needs, with the agreement id to look the rest up under.
        *
-       * A REFUSAL IS NOT A TRANSIENT FAULT. HARD-03 and HARD-12 fire on the
+       * A CONTENT REFUSAL IS NOT A TRANSIENT FAULT. HARD-03 and HARD-12 fire on the
        * form's own content or this practice's configured content, and the
        * same input produces the same refusal every time: retrying changes
        * nothing until the form or the content does. Everything else here —
@@ -204,10 +204,19 @@ export class SignedDb4Service {
        * "retryable" is true.
        */
       const rule = (err as { rule?: string }).rule;
-      const retryNote =
-        err instanceof SignedDb4RenderRefusal
-          ? 'Not retryable — the same form and content refuse the same way until one of them changes.'
-          : 'The agreement remains signed and stored; the render is retryable.';
+      /*
+       * HARD-13 IS NOT CONTENT. The renderer raises it when it is handed
+       * something that is not a Signed-DB4, or when the signature mark could
+       * not be loaded — and the artefact store reads a storage fault and a
+       * missing artefact as the same null. So say what was checked, and stop.
+       */
+      const retryNote = !(err instanceof SignedDb4RenderRefusal)
+        ? 'The agreement remains signed and stored; the render is retryable.'
+        : rule === 'HARD-13'
+          ? 'The renderer was handed something that is not a Signed-DB4, or the signature mark could not be ' +
+            'loaded (a storage fault and a missing artefact read the same here). Whether a retry helps cannot be ' +
+            'told from here.'
+          : 'Not retryable — the same form and content refuse the same way until one of them changes.';
       this.logger.error(
         `Signed-DB4 render failed for agreement ${agreementId} — ${(err as Error).name}` +
           `${rule ? ` (${rule})` : ''}. ${retryNote}`,

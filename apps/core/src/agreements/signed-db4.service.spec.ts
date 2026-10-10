@@ -450,6 +450,27 @@ describe('signed_db4_not_produced_log_never_claims_a_false_remedy', () => {
     expect(written.toLowerCase()).toContain('not retryable');
   });
 
+  /**
+   * HARD-13 IS NOT CONTENT. It fires when the renderer is handed something
+   * that is not a Signed-DB4, or when the signature mark could not be loaded,
+   * and the artefact store reads a storage fault and a missing artefact as the
+   * same null. So the log can say neither "retryable" nor "not retryable".
+   */
+  it('a_hard_13_refusal_says_what_it_checked_and_claims_neither_way', async () => {
+    const errorSpy = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    const render = jest.fn().mockRejectedValue(new SignedDb4RenderRefusal('HARD-13', 'the signature mark could not be produced'));
+    const { service } = serviceWith({ render });
+
+    const outcome = await service.produceAfterSignature(PRACTICE, AGREEMENT);
+
+    expect(outcome).toEqual({ produced: false, reason: 'render_failed' });
+    const written = String(errorSpy.mock.calls[0][0]);
+    expect(written).toContain('HARD-13');
+    expect(written).not.toMatch(CLAIMS_RETRYABLE);
+    expect(written.toLowerCase()).not.toContain('not retryable');
+    expect(written).toContain('cannot be told from here');
+  });
+
   /** A transient failure — the object store, the database — is still retryable. */
   it('still calls a transient render error retryable', async () => {
     const errorSpy = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
