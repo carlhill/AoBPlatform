@@ -10,6 +10,8 @@ import { Db4AssignmentHandler } from './db4-assignment.handler';
 import { InboundLaneWorkerService } from './inbound-lane.worker';
 import { InboundPrintJobsController } from './inbound-print-jobs.controller';
 import { WriteBackCollectionService } from './write-back-collection.service';
+import { AobPrinterHeartbeatService } from './aobprinter-heartbeat.service';
+import { AobPrinterHostsModule } from '../aobprinter-hosts/aobprinter-hosts.module';
 
 /**
  * The print channel's landing point — CONSULTATION-CAPTURE-PLAN.md Part 8
@@ -35,7 +37,11 @@ import { WriteBackCollectionService } from './write-back-collection.service';
    * writes rather than doing them itself — the same posture it already takes
    * with `ArrivalsService` for the placement.
    */
-  imports: [PmsModule, ArrivalsModule, AutoCaptureModule, AgreementsModule, CaptureModule],
+  /*
+   * `AobPrinterHostsModule` FOR THE HEARTBEAT (D-2026-10-10-02): the beat
+   * arrives on this door and the host row is that module's to write.
+   */
+  imports: [PmsModule, ArrivalsModule, AutoCaptureModule, AgreementsModule, CaptureModule, AobPrinterHostsModule],
   controllers: [InboundPrintJobsController],
   providers: [
     InboundPrintJobsService,
@@ -43,6 +49,7 @@ import { WriteBackCollectionService } from './write-back-collection.service';
     Db4AssignmentHandler,
     InboundLaneWorkerService,
     WriteBackCollectionService,
+    AobPrinterHeartbeatService,
   ],
   exports: [InboundPrintJobsService],
 })
