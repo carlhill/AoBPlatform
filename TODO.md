@@ -69,7 +69,7 @@ translator's NAATI credential is something we may state; the form's status
 never is.
 
 **Depends on:** the Services Australia answer, the vendor, and the
-plain-English text. `tautala_ai.md` (above) is the related speech design.
+plain-English text. `tautala_ai.md` (the TAUTALA entry, further down) is the related speech design.
 
 ---
 
