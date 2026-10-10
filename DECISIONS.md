@@ -3038,6 +3038,26 @@ screen on the first tap is the default; Android screen pinning is optional
 (D-2026-10-10-05). Automatic lockdown by an installed app is recorded on the
 TODO, not built.
 
+**Amended the same day: pages are sized to the screen** (Carl: *"go with
+option 1 for page sizing"*). With the scrolling box gone, even a normal
+three-page DB4 overflowed at every target size, because each page repeats its
+heading and form header. So the DB4 is split into blocks (heading lines,
+practice and patient details, each provider, each service row, each privacy
+paragraph, each statement), and the kiosk fills each page by measuring the
+space on the screen:
+- each section's ticks sit on that section's last page, and each page's
+  Continue waits for its own ticks;
+- page counts differ between portrait and landscape, and turning the tablet
+  re-flows the pages, keeping the patient's place and the ticks already given;
+- `rules/db4-pages.ts` still decides which blocks and ticks belong to which
+  section; measuring only decides where pages break;
+- where nothing can be measured, it falls back to the three fixed pages;
+- on a test device, whose developer panels cannot fit, the whole page may
+  scroll, never a box inside it.
+
+Declined: fixed splits sized for the smallest screen (option 2), and freeing
+height as a separate choice (option 3).
+
 **Built on:** `fix/kiosk-tablet-fit` (items 1 and 2).
 
 **What would reopen it:** evidence that patients tick without reading in a
