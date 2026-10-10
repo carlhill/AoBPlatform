@@ -12,7 +12,10 @@
  * boxes and its Continue, and step 3 shows the signature pad with Back, Clear
  * and Sign, all FULLY inside the viewport and not clipped by any scroller,
  * with every scroller at the top — that is, without the patient scrolling.
- * Long read-only text may scroll inside its own region; the controls never do.
+ * NOTHING SCROLLS (Carl, 10 Oct 2026: "Do not have boxes that scroll"). At the
+ * tablet's sizes no element in the ceremony may be scrollable — not the
+ * form's text, not the content row — and a DB4 too long for one page is split
+ * into more pages rather than put in a box.
  *
  * NO DATABASE, NO CORE. Unlike `kiosk-ceremony.spec.ts` this spec does not
  * need the dev stack's API or Carl's `aobplatform` database: every request
@@ -66,6 +69,22 @@ const VIEWPORTS = [
  * bars; there step 1 scrolls, and steps 2 and 3 are still held to the rule.
  */
 const STEP_1_FITS = ['924x1478', '924x1370', '800x1280', '1478x924', '1478x813', '1280x800', '1500x900'];
+
+/** Where every page must fit whole, with nothing in the ceremony scrollable. */
+const NO_SCROLL_SIZES = ['924x1478', '924x1370', '800x1280', '1478x924', '1280x800'];
+
+/**
+ * SCREENS TOO SHORT FOR SOME SHEETS (10 Oct 2026, measured). At 1024x600 and
+ * 960x600 with Edge's bars, the shell's header and its three-line footer of
+ * audit ids leave ~433px; the frame every sheet carries (the page line, the
+ * page heading, the provenance line, Back and Continue) takes most of it, and
+ * a single service row, or the legal page's tick with the tags, does not fit
+ * beside it at this type scale. Those sheets are the "taller than any sheet"
+ * case: the PAGE scrolls as a whole, never a box inside it. Here the spec
+ * holds the rule that still applies — nothing inside the step scrolls, every
+ * control can be scrolled into view — and the sizes above hold the full one.
+ */
+const SHORT_SIZES = ['1024x600', '960x600'];
 
 /** Where the before/after screenshots are taken. */
 const SHOT_SIZES = ['924x1478', '1478x924'];
@@ -126,6 +145,48 @@ const DB4 = {
   parserTemplateVersion: 'test-template-1',
 };
 
+/* A long form: two providers, twelve service rows, a four-paragraph notice. */
+const LONG_DB4 = {
+  ...DB4,
+  providers: [
+    { role: 'servicing', name: 'Dr Sam Example', providerNumber: '0000000T' },
+    { role: 'payee', name: 'Dr Alex Sampleton', providerNumber: '0000001W' },
+  ],
+  services: Array.from({ length: 12 }, (_, index) => ({
+    serviceDate: '2026-10-10',
+    mbsItemNumber: String(23 + index),
+    description:
+      index % 3 === 0
+        ? 'Stand-in service description that runs long enough to wrap onto a second line in the table at this size'
+        : `Stand-in service ${index + 1}`,
+    benefitAssigned: '45.05',
+  })),
+  privacyNotice: Array.from(
+    { length: 4 },
+    (_, index) =>
+      `Stand-in privacy notice, paragraph ${index + 1}. The details on this form are collected so that the practice can make a claim on your behalf and keep a record of that claim. They are held securely and used only for that purpose unless the law allows or requires otherwise. You can ask to see them and to correct anything that is wrong.`,
+  ),
+};
+
+/* A long notice: the short form's providers and row, nine paragraphs of notice. */
+const LONG_PRIVACY_DB4 = {
+  ...DB4,
+  privacyNotice: Array.from({ length: 9 }, (_, index) => LONG_DB4.privacyNotice[index % 4]),
+};
+
+/* One paragraph longer than any screen: it must not become a box that scrolls. */
+const GIANT_DB4 = {
+  ...DB4,
+  privacyNotice: [
+    DB4.privacyNotice[0],
+    Array.from({ length: 14 }, () => LONG_DB4.privacyNotice[0]).join(' '),
+    DB4.privacyNotice[1],
+  ],
+};
+
+const FORMS = { normal: DB4, long: LONG_DB4, longPrivacy: LONG_PRIVACY_DB4, giant: GIANT_DB4 } as const;
+type FormName = keyof typeof FORMS;
+
 const AGREEMENT = {
   id: AGREEMENT_ID,
   type: 'episodic_pre',
@@ -178,7 +239,7 @@ const ME: Record<string, unknown> = {
  * The fake core. Anything it does not recognise is refused, never forwarded.
  * `testDevice` turns on the blueprint panels, as a practice's test tablet has.
  */
-async function answerCore(route: Route, testDevice: boolean): Promise<void> {
+async function answerCore(route: Route, testDevice: boolean, form: FormName = 'normal'): Promise<void> {
   const request = route.request();
   const cors = {
     'access-control-allow-origin': WEB_ORIGIN,
@@ -205,7 +266,7 @@ async function answerCore(route: Route, testDevice: boolean): Promise<void> {
   if (path === `/kiosk/session/${SESSION_ID}/state`) return json({ id: SESSION_ID, state: 'reading' });
   if (path === `/kiosk/session/${SESSION_ID}/confirm-details`)
     return json({ id: SESSION_ID, state: 'details_confirmed' });
-  if (path === `/agreements/${AGREEMENT_ID}`) return json(AGREEMENT);
+  if (path === `/agreements/${AGREEMENT_ID}`) return json({ ...AGREEMENT, db4Form: FORMS[form] });
   if (path === '/practice-users') return json({ users: [] });
   if (path === '/kiosk/waiting-list') {
     return json(
@@ -229,6 +290,8 @@ interface Walk {
   testDevice?: boolean;
   /** Android's font-size setting, as a percentage of the root size. */
   fontScale?: number;
+  /** Which DB4 the agreement carries. */
+  form?: FormName;
 }
 
 async function openPairedKiosk(page: Page, walk: Walk): Promise<void> {
@@ -242,7 +305,7 @@ async function openPairedKiosk(page: Page, walk: Walk): Promise<void> {
   }, walk.fontScale ?? 0);
   await page.route(
     (url) => url.origin !== WEB_ORIGIN,
-    (route) => answerCore(route, walk.testDevice === true),
+    (route) => answerCore(route, walk.testDevice === true, walk.form ?? 'normal'),
   );
   await page.goto(`${WEB}/kiosk`);
 }
@@ -338,12 +401,65 @@ async function expectNoHorizontalOverflow(page: Page, step: string): Promise<voi
     return found;
   });
   expect.soft(offenders, `${step}: nothing may be wider than the ${page.viewportSize()?.width}px screen`).toEqual([]);
+  // The exit is in the header, outside the scrolling content: always in view.
   await expectReachableWithoutScrolling(page, page.getByTestId('leave-for-reception'), `${step} See reception`);
 }
 
-/** A tick box is the box AND the words it ticks, so the whole row must show. */
-function tickRow(page: Page, key: string): Locator {
-  return page.getByTestId(`affirm-${key}`).locator('xpath=..');
+/**
+ * NOTHING IN THE CEREMONY SCROLLS (Carl, 10 Oct 2026). Every element that
+ * could scroll — `overflow` auto or scroll — must have nothing to scroll, and
+ * neither may the window. The offenders are named with how far they scroll.
+ */
+async function expectNothingScrolls(page: Page, step: string): Promise<void> {
+  const scrollers = await page.evaluate(() => {
+    const found: string[] = [];
+    const root = document.scrollingElement ?? document.documentElement;
+    if (root.scrollHeight > window.innerHeight + 1)
+      found.push(`the window by ${root.scrollHeight - window.innerHeight}px`);
+    for (const el of Array.from(document.querySelectorAll<HTMLElement>('body *'))) {
+      const style = getComputedStyle(el);
+      const scrolls = (value: string) => value === 'auto' || value === 'scroll';
+      const vertical = scrolls(style.overflowY) && el.scrollHeight > el.clientHeight + 1;
+      const sideways = scrolls(style.overflowX) && el.scrollWidth > el.clientWidth + 1;
+      if (vertical || sideways) {
+        const label = el.getAttribute('data-testid') ?? `${el.tagName.toLowerCase()}.${el.className}`;
+        found.push(`${label} by ${vertical ? el.scrollHeight - el.clientHeight : el.scrollWidth - el.clientWidth}px`);
+      }
+    }
+    return found;
+  });
+  expect
+    .soft(scrollers, `${step}: nothing may scroll at ${page.viewportSize()?.width}x${page.viewportSize()?.height}`)
+    .toEqual([]);
+}
+
+/**
+ * A TEST DEVICE'S PAGE MAY SCROLL — ITS DEVELOPER PANELS CANNOT FIT — BUT ONLY
+ * AS A WHOLE (Carl, 10 Oct 2026). Nothing inside the step scrolls on its own,
+ * and the control can be scrolled fully into view by the page.
+ */
+async function expectReachableByPageScroll(page: Page, control: Locator, name: string): Promise<void> {
+  const inner = await page.evaluate(() =>
+    Array.from(document.querySelector('main')?.querySelectorAll<HTMLElement>('*') ?? [])
+      .filter((el) => {
+        const style = getComputedStyle(el);
+        const scrolls = (value: string) => value === 'auto' || value === 'scroll';
+        return (
+          (scrolls(style.overflowY) && el.scrollHeight > el.clientHeight + 1) ||
+          (scrolls(style.overflowX) && el.scrollWidth > el.clientWidth + 1)
+        );
+      })
+      .map((el) => el.getAttribute('data-testid') ?? `${el.tagName.toLowerCase()}.${el.className}`),
+  );
+  expect.soft(inner, `${name}: no box inside the step scrolls`).toEqual([]);
+  await control.scrollIntoViewIfNeeded();
+  const box = await control.boundingBox();
+  const size = page.viewportSize();
+  expect.soft(box, `${name} is laid out`).not.toBeNull();
+  if (!box || !size) return;
+  const inView =
+    box.y >= -0.5 && box.y + box.height <= size.height + 0.5 && box.x >= -0.5 && box.x + box.width <= size.width + 0.5;
+  expect.soft(inView, `${name} can be scrolled fully into view`).toBe(true);
 }
 
 async function shot(page: Page, size: { width: number; height: number }, label: string): Promise<void> {
@@ -355,66 +471,95 @@ async function shot(page: Page, size: { width: number; height: number }, label: 
   await page.screenshot({ path: `${SHOTS}/kiosk-fit-${SHOT_TAG}-${label}-${name}.png` });
 }
 
+/**
+ * Read every sheet of step 2 — as many as this screen takes — ticking what each
+ * one carries, and continue to the signature.
+ */
+async function readEverySheetAndContinue(page: Page): Promise<void> {
+  await expect(page.getByTestId('particulars-heading')).toBeAttached();
+  for (let turn = 1; turn <= 40; turn += 1) {
+    const last = (await page.getByTestId('continue-to-sign').count()) > 0;
+    for (const box of await page.locator('[data-testid^="affirm-"]:visible').all()) await box.check();
+    await page.getByTestId(last ? 'continue-to-sign' : 'db4-page-continue').click();
+    if (last) return;
+  }
+}
+
+/**
+ * THE SHEETS ARE MEASURED AGAINST THE PAGE AS IT WILL STAY. The footer gains
+ * the tablet's name a moment after the page draws, which can take a line off
+ * the content row and re-measure the sheets; wait for the data, not the
+ * element, before asserting what fits.
+ */
+async function settled(page: Page): Promise<void> {
+  await expect(page.getByTestId('kiosk-device-identity')).toBeVisible();
+}
+
 async function walkTheCeremony(page: Page, size: { width: number; height: number }, walk: Walk = {}): Promise<void> {
   const shots = !walk.testDevice && !walk.fontScale;
+  const short = SHORT_SIZES.includes(`${size.width}x${size.height}`);
+  const reach = walk.testDevice || short ? expectReachableByPageScroll : expectReachableWithoutScrolling;
+  const whole = !walk.testDevice && !walk.fontScale && NO_SCROLL_SIZES.includes(`${size.width}x${size.height}`);
+  const fitsWhole = async (step: string) => {
+    if (whole) await expectNothingScrolls(page, step);
+  };
   await page.setViewportSize(size);
   await openPairedKiosk(page, walk);
 
   // K-P1, step 1 — every row's two answers and Continue, all on screen.
   await expect(page.getByTestId('check-details-heading')).toBeVisible();
   await expectNoHorizontalOverflow(page, 'K-P1');
+  if (STEP_1_FITS.includes(`${size.width}x${size.height}`)) await fitsWhole('K-P1');
   if (shots) await shot(page, size, 'step1');
   const ticks = await page.locator('[data-testid^="detail-tick-"]').all();
   const step1Fits = STEP_1_FITS.includes(`${size.width}x${size.height}`);
   for (const [index, tick] of step1Fits ? ticks.entries() : []) {
-    await expectReachableWithoutScrolling(page, tick, `K-P1 "that's right" ${index + 1}`);
+    await reach(page, tick, `K-P1 "that's right" ${index + 1}`);
   }
   const crosses = step1Fits ? await page.locator('[data-testid^="detail-cross-"]').all() : [];
   for (const [index, cross] of crosses.entries()) {
-    await expectReachableWithoutScrolling(page, cross, `K-P1 "that's wrong" ${index + 1}`);
+    await reach(page, cross, `K-P1 "that's wrong" ${index + 1}`);
   }
   if (step1Fits) {
-    await expectReachableWithoutScrolling(page, page.getByTestId('check-details-continue'), 'K-P1 Continue');
+    await reach(page, page.getByTestId('check-details-continue'), 'K-P1 Continue');
   }
   for (const tick of ticks) await tick.click();
   if (step1Fits) {
-    await expectReachableWithoutScrolling(page, page.getByTestId('check-details-continue'), 'K-P1 Continue, ticked');
+    await reach(page, page.getByTestId('check-details-continue'), 'K-P1 Continue, ticked');
   }
   await page.getByTestId('check-details-continue').click();
 
-  // 2A — no tick boxes by construction; its Continue must show.
-  await expect(page.getByTestId('particulars-heading')).toBeVisible();
-  await expect(page.getByTestId('db4-page-of')).toHaveText(/1/);
-  await expectNoHorizontalOverflow(page, '2A');
-  await expectReachableWithoutScrolling(page, page.getByTestId('db4-page-continue'), '2A Continue');
-  await page.getByTestId('db4-page-continue').click();
-
-  // 2B — the services page and its one tick.
-  await expect(page.getByTestId('affirm-episodic_details_correct_v1')).toBeVisible();
-  await expectNoHorizontalOverflow(page, '2B');
-  await expectReachableWithoutScrolling(page, tickRow(page, 'episodic_details_correct_v1'), '2B tick box');
-  await expectReachableWithoutScrolling(page, page.getByTestId('db4-page-continue'), '2B Continue');
-  await page.getByTestId('affirm-episodic_details_correct_v1').check();
-  await page.getByTestId('db4-page-continue').click();
-
-  // 2C — the legal page Carl photographed, its tick and Continue to sign.
-  await expect(page.getByTestId('affirm-episodic_assign_v1')).toBeVisible();
-  await expectNoHorizontalOverflow(page, '2C');
-  if (shots) await shot(page, size, 'step2');
-  await expectReachableWithoutScrolling(page, tickRow(page, 'episodic_assign_v1'), '2C tick box');
-  await expectReachableWithoutScrolling(page, page.getByTestId('continue-to-sign'), '2C Continue to sign');
-  await page.getByTestId('affirm-episodic_assign_v1').check();
-  await expect(page.getByTestId('continue-to-sign')).toBeEnabled();
-  await page.getByTestId('continue-to-sign').click();
+  // Step 2 — every sheet of the form: its ticks and its Continue, on screen,
+  // with nothing scrollable. How many sheets depends on the screen.
+  await expect(page.getByTestId('particulars-heading')).toBeAttached();
+  await settled(page);
+  for (let turn = 1; turn <= 30; turn += 1) {
+    const pageOf = (await page.getByTestId('db4-page-of').textContent()) ?? `sheet ${turn}`;
+    await expectNoHorizontalOverflow(page, pageOf);
+    await fitsWhole(pageOf);
+    const last = (await page.getByTestId('continue-to-sign').count()) > 0;
+    if (last && shots) await shot(page, size, 'step2');
+    const forward = page.getByTestId(last ? 'continue-to-sign' : 'db4-page-continue');
+    const boxes = await page.locator('[data-testid^="affirm-"]:visible').all();
+    for (const [index, box] of boxes.entries()) {
+      await reach(page, box.locator('xpath=..'), `${pageOf} tick box ${index + 1}`);
+    }
+    await reach(page, forward, `${pageOf} ${last ? 'Continue to sign' : 'Continue'}`);
+    for (const box of boxes) await box.check();
+    await expect(forward).toBeEnabled();
+    await forward.click();
+    if (last) break;
+  }
 
   // Step 3 — the pad, Back, Clear and Sign.
   await expect(page.getByTestId('signature-pad')).toBeVisible();
   await expectNoHorizontalOverflow(page, 'Step 3');
+  await fitsWhole('Step 3');
   if (shots) await shot(page, size, 'step3');
-  await expectReachableWithoutScrolling(page, page.getByTestId('signature-pad'), 'signature pad');
-  await expectReachableWithoutScrolling(page, page.getByTestId('signature-back'), 'Back');
-  await expectReachableWithoutScrolling(page, page.getByTestId('signature-clear'), 'Clear');
-  await expectReachableWithoutScrolling(page, page.getByTestId('sign-control'), 'Sign');
+  await reach(page, page.getByTestId('signature-pad'), 'signature pad');
+  await reach(page, page.getByTestId('signature-back'), 'Back');
+  await reach(page, page.getByTestId('signature-clear'), 'Clear');
+  await reach(page, page.getByTestId('sign-control'), 'Sign');
 }
 
 for (const size of VIEWPORTS) {
@@ -457,16 +602,26 @@ test.describe('on a test device', () => {
     });
   }
 
-  test('kiosk_test_device_stacked_never_squeezes_the_document_text', async ({ page }) => {
+  test('kiosk_test_device_stacked_has_no_box_that_scrolls', async ({ page }) => {
     await page.setViewportSize({ width: 960, height: 600 });
     await openPairedKiosk(page, { testDevice: true });
     await expect(page.getByTestId('check-details-heading')).toBeVisible();
     for (const tick of await page.locator('[data-testid^="detail-tick-"]').all()) await tick.click();
     await page.getByTestId('check-details-continue').click();
-    const region = page.getByTestId('particulars-scroll');
-    await expect(region).toBeVisible();
-    const trapped = await region.evaluate((el) => el.scrollHeight > el.clientHeight + 1);
-    expect(trapped, 'stacked, the document text scrolls with the step, not in a box of its own').toBe(false);
+    await expect(page.getByTestId('particulars-text')).toBeVisible();
+    // Stacked, the step is longer than the screen and the content row scrolls
+    // it whole; nothing INSIDE the step may scroll on its own.
+    const inner = await page.evaluate(() => {
+      const main = document.querySelector('main');
+      return Array.from(main?.querySelectorAll<HTMLElement>('*') ?? [])
+        .filter((el) => {
+          const style = getComputedStyle(el);
+          const scrolls = (value: string) => value === 'auto' || value === 'scroll';
+          return scrolls(style.overflowY) || scrolls(style.overflowX);
+        })
+        .map((el) => el.getAttribute('data-testid') ?? `${el.tagName.toLowerCase()}.${el.className}`);
+    });
+    expect(inner, 'no box inside the step can scroll').toEqual([]);
     await expectNoHorizontalOverflow(page, '2A stacked');
   });
 });
@@ -551,11 +706,7 @@ test.describe('the signature raster at device ratio 3', () => {
       await expect(page.getByTestId('check-details-heading')).toBeVisible();
       for (const tick of await page.locator('[data-testid^="detail-tick-"]').all()) await tick.click();
       await page.getByTestId('check-details-continue').click();
-      await page.getByTestId('db4-page-continue').click();
-      await page.getByTestId('affirm-episodic_details_correct_v1').check();
-      await page.getByTestId('db4-page-continue').click();
-      await page.getByTestId('affirm-episodic_assign_v1').check();
-      await page.getByTestId('continue-to-sign').click();
+      await readEverySheetAndContinue(page);
       const pad = page.getByTestId('signature-pad');
       await expect(pad).toBeVisible();
       const box = await pad.boundingBox();
@@ -638,11 +789,7 @@ test('kiosk_a_signed_pad_turned_on_its_side_shows_all_of_its_ink', async ({ page
   await expect(page.getByTestId('check-details-heading')).toBeVisible();
   for (const tick of await page.locator('[data-testid^="detail-tick-"]').all()) await tick.click();
   await page.getByTestId('check-details-continue').click();
-  await page.getByTestId('db4-page-continue').click();
-  await page.getByTestId('affirm-episodic_details_correct_v1').check();
-  await page.getByTestId('db4-page-continue').click();
-  await page.getByTestId('affirm-episodic_assign_v1').check();
-  await page.getByTestId('continue-to-sign').click();
+  await readEverySheetAndContinue(page);
   const pad = page.getByTestId('signature-pad');
   await expect(pad).toBeVisible();
   const before = await pad.boundingBox();
@@ -673,4 +820,142 @@ test('kiosk_a_signed_pad_turned_on_its_side_shows_all_of_its_ink', async ({ page
   expect(fit.shape).toBeCloseTo(before.width / before.height, 1);
   const errors = await page.evaluate(() => (window as unknown as { kioskErrors: string[] }).kioskErrors);
   expect(errors.filter((message) => /ResizeObserver/.test(message))).toEqual([]);
+});
+
+/*
+ * EVERY DB4 PAGE FITS THE SCREEN, AND A LONG ONE IS MORE PAGES (Carl, 10 Oct
+ * 2026: "Do not have boxes that scroll"; "go with option 1 for page sizing").
+ * The normal form, twelve service rows, and a nine-paragraph privacy notice,
+ * at every tablet size: every sheet fits whole with nothing scrollable, its
+ * ticks are on it, and its Continue waits for them (D-2026-09-27-07). The
+ * number of sheets is recorded on each test.
+ */
+async function walkTheSheets(page: Page, size: { width: number; height: number }, form: FormName): Promise<number> {
+  await page.setViewportSize(size);
+  await openPairedKiosk(page, { form });
+  await expect(page.getByTestId('check-details-heading')).toBeVisible();
+  for (const tick of await page.locator('[data-testid^="detail-tick-"]').all()) await tick.click();
+  await page.getByTestId('check-details-continue').click();
+  await expect(page.getByTestId('particulars-heading')).toBeVisible();
+  await settled(page);
+
+  let total = 0;
+  for (let turn = 1; turn <= 30; turn += 1) {
+    const pageOf = (await page.getByTestId('db4-page-of').textContent()) ?? '';
+    const [position, of] = (pageOf.match(/\d+/g) ?? []).map(Number);
+    expect(position, `sheet ${turn} says which sheet it is`).toBe(turn);
+    total = of;
+    const short = SHORT_SIZES.includes(`${size.width}x${size.height}`);
+    const check = short ? expectReachableByPageScroll : expectReachableWithoutScrolling;
+    if (form !== 'giant' && !short) await expectNothingScrolls(page, `${form}, ${pageOf}`);
+    await expectNoHorizontalOverflow(page, `${form}, ${pageOf}`);
+    const boxes = await page.locator('[data-testid^="affirm-"]:visible').all();
+    const last = (await page.getByTestId('continue-to-sign').count()) > 0;
+    const forward = page.getByTestId(last ? 'continue-to-sign' : 'db4-page-continue');
+    if (boxes.length > 0) await expect(forward, `${pageOf}: Continue waits for this sheet's ticks`).toBeDisabled();
+    for (const box of boxes) {
+      if (form !== 'giant') await check(page, box.locator('xpath=..'), `${form}, ${pageOf}, tick`);
+      await box.check();
+    }
+    if (form !== 'giant') await check(page, forward, `${form}, ${pageOf}, Continue`);
+    await expect(forward).toBeEnabled();
+    await forward.click();
+    if (last) break;
+  }
+  await expect(page.getByTestId('signature-pad')).toBeVisible();
+  return total;
+}
+
+const SHEET_SIZES = [
+  { width: 924, height: 1478 },
+  { width: 924, height: 1370 },
+  { width: 800, height: 1280 },
+  { width: 1478, height: 924 },
+  { width: 1280, height: 800 },
+  { width: 1024, height: 600 },
+];
+
+for (const form of ['normal', 'long', 'longPrivacy'] as const) {
+  for (const size of SHEET_SIZES) {
+    test(`kiosk_${form}_db4_sheets_fit_whole_at_${size.width}x${size.height}`, async ({ page }) => {
+      const total = await walkTheSheets(page, size, form);
+      if (form !== 'normal') expect(total, 'a long form takes more than three sheets').toBeGreaterThan(3);
+      test.info().annotations.push({ type: 'sheets', description: `${form} ${size.width}x${size.height}: ${total}` });
+    });
+  }
+}
+
+/*
+ * ONE PARAGRAPH TALLER THAN THE SCREEN. It is given a sheet of its own and
+ * that one sheet's PAGE scrolls as a whole (the shell's content row) — never a
+ * box inside it, and the paragraph is never cut. Every other sheet still fits.
+ */
+test('kiosk_a_paragraph_taller_than_the_screen_gets_a_sheet_of_its_own_and_the_page_scrolls', async ({ page }) => {
+  const size = { width: 1280, height: 800 };
+  await page.setViewportSize(size);
+  await openPairedKiosk(page, { form: 'giant' });
+  await expect(page.getByTestId('check-details-heading')).toBeVisible();
+  for (const tick of await page.locator('[data-testid^="detail-tick-"]').all()) await tick.click();
+  await page.getByTestId('check-details-continue').click();
+  await expect(page.getByTestId('particulars-heading')).toBeVisible();
+  await settled(page);
+  let sawTheGiant = false;
+  for (let turn = 1; turn <= 30; turn += 1) {
+    const pageOf = (await page.getByTestId('db4-page-of').textContent()) ?? '';
+    const giantShown = await page
+      .locator('[data-db4-block="privacy-1"]')
+      .evaluate((el) => getComputedStyle(el).display !== 'none');
+    if (giantShown) {
+      sawTheGiant = true;
+      const onSheet = await page
+        .locator('[data-db4-block]')
+        .evaluateAll((all) =>
+          all.filter((el) => getComputedStyle(el).display !== 'none').map((el) => el.getAttribute('data-db4-block')),
+        );
+      expect(onSheet, 'the long paragraph is alone on its sheet').toEqual(['privacy-1']);
+    } else {
+      await expectNothingScrolls(page, `giant, ${pageOf}`);
+    }
+    const boxes = await page.locator('[data-testid^="affirm-"]:visible').all();
+    const last = (await page.getByTestId('continue-to-sign').count()) > 0;
+    const forward = page.getByTestId(last ? 'continue-to-sign' : 'db4-page-continue');
+    for (const box of boxes) await box.check();
+    // Reachable on every sheet: by the page scrolling as a whole where it must.
+    await expectReachableByPageScroll(page, forward, `giant, ${pageOf}, Continue`);
+    await forward.click();
+    if (last) break;
+  }
+  expect(sawTheGiant).toBe(true);
+  await expect(page.getByTestId('signature-pad')).toBeVisible();
+});
+
+/*
+ * TURNED MID-READ, THE PATIENT STAYS ON WHAT THEY WERE READING. Twelve rows,
+ * upright, two sheets in; turned on its side the sheets are renumbered and the
+ * first row they were reading is still on screen.
+ */
+test('kiosk_turning_the_tablet_keeps_the_patient_on_the_block_they_were_reading', async ({ page }) => {
+  await page.setViewportSize({ width: 924, height: 1478 });
+  await openPairedKiosk(page, { form: 'long' });
+  await expect(page.getByTestId('check-details-heading')).toBeVisible();
+  for (const tick of await page.locator('[data-testid^="detail-tick-"]').all()) await tick.click();
+  await page.getByTestId('check-details-continue').click();
+  await page.getByTestId('db4-page-continue').click();
+  await page.getByTestId('db4-page-continue').click();
+  const firstShown = async () =>
+    page
+      .locator('[data-db4-block]')
+      .evaluateAll(
+        (all) =>
+          all.filter((el) => getComputedStyle(el).display !== 'none').map((el) => el.getAttribute('data-db4-block'))[0],
+      );
+  const reading = await firstShown();
+  expect(reading).toBeTruthy();
+  await page.setViewportSize({ width: 1478, height: 924 });
+  await expect
+    .poll(async () =>
+      page.locator(`[data-db4-block="${reading}"]`).evaluate((el) => getComputedStyle(el).display !== 'none'),
+    )
+    .toBe(true);
+  await expectNothingScrolls(page, 'after turning');
 });

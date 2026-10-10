@@ -961,107 +961,46 @@
 }
 
 /* --------------------------------------------------------------------------
- * K-3 FITS THE SCREEN: THE TEXT SCROLLS, THE CONTROLS DO NOT (Carl, 10 Oct
- * 2026, a Galaxy Tab S10 Ultra in landscape in Edge — the tick boxes were
- * below the fold).
+ * K-3 FITS THE SCREEN, AND NOTHING IN IT SCROLLS (Carl, 10 Oct 2026: "Do not
+ * have boxes that scroll").
  *
- * THE READ-ONLY PART IS ITS OWN REGION (`.documentScroll`): the ceremony
- * heading, the form's page and the ongoing agreement's explanation. What the
- * patient ACTS on — the tick boxes, the tags that close the document, and the
- * actions under it — follows it in the DOM exactly as before and, with the
- * split on, is never pushed off screen by it. Nothing is `position: sticky`
- * or `fixed`, so nothing is ever drawn over a focused control (WCAG 2.2
- * 2.4.11): the region simply gets the height that is left.
+ * For one afternoon the form's text was a scrolling region of its own with
+ * the ticks and actions pinned under it. Carl ruled it out: a box that
+ * scrolls is text a patient can tick past without seeing. So the page is
+ * made to FIT instead — and where a DB4 page is longer than the screen at
+ * this type scale, the answer is more pages, not a scroller
+ * (`rules/db4-pages.ts` splits long service tables and privacy notices).
  *
- * THE SPLIT NEEDS HEIGHT, SO IT IS BEHIND `min-height: 560px`. Below that —
- * a page zoomed to 200 or 400%, a phone held sideways — a scrolling box inside
- * a scrolling page would trap the text in a few lines, which is what Reflow
- * (WCAG 2.2 1.4.10) forbids. There the step is one column scrolled by
- * `.content` as a whole, exactly as it was before 10 October 2026. 560 is
- * under the smallest landscape tablet viewport we support (1024x600) and over
- * a 1280x800 screen at 150% zoom (533).
- *
- * THE AFFORDANCE IS PAINTED, NOT A SCROLLBAR. Android draws overlay
- * scrollbars that are invisible until the text moves, so the region carries a
- * shadow along whichever edge has more text behind it: the two `local`
- * layers travel with the text and cover the two `scroll` shadows when the
- * region is at that end. Text that fits shows no shadow at all.
+ * `.documentText` is the form's read-only part: the heading, the form's page
+ * and the ongoing agreement's explanation. It is an ordinary block; what the
+ * patient acts on — the ticks, the tags, Back and Continue — follows it in
+ * the DOM. On a screen too small for a page (a page zoomed to 150% or more)
+ * the shell's content row scrolls the step as a whole, as it always has, and
+ * under 480px tall the window does (WCAG 2.2 1.4.10). Nothing inside the step
+ * ever scrolls on its own.
  * ------------------------------------------------------------------------ */
 
-.documentScroll {
+.documentText {
   display: flex;
   flex-direction: column;
   gap: var(--s3);
   min-width: 0;
 }
 
-@media (min-height: 560px) {
-  /*
-   * GRIDS, NOT FLEX, AND THE REASON IS WHAT HAPPENS WHEN IT DOES NOT FIT. A
-   * flex item allowed to shrink to zero lets the tick boxes spill out of the
-   * bottom of the document and over the actions under it.
-   *
-   * THE DOCUMENT IS AS TALL AS ITS TEXT, NO TALLER (10 Oct 2026, portrait
-   * first). Each row's limit is `max-content`, so the ticks and the actions
-   * sit directly under the last line of the form rather than at the foot of a
-   * tall empty box, and `align-content: start` leaves the spare height below
-   * the actions. Where the screen is shorter than that, the text row gives
-   * way first, down to its 5rem floor, and the text region scrolls. On a
-   * screen too short even for the floor plus the ticks, the DOCUMENT scrolls
-   * as a whole inside its frame (`overflow-y: auto`) — every tick still
-   * reachable, nothing drawn over the actions. It can run out of room; it
-   * cannot overlap.
-   *
-   * THE ORDINARY TABLET ONLY. A test device's rail is the two-column case,
-   * further down, and only where the columns sit side by side.
-   */
-  .oneColumn.fitColumns {
-    display: grid;
-    grid-template-rows: minmax(0, max-content) auto;
-    align-content: start;
-    height: 100%;
-  }
-
-  .oneColumn.fitColumns > .documentFit {
-    display: grid;
-    grid-template-rows: minmax(5rem, max-content);
-    grid-auto-rows: auto;
-    align-content: start;
-    min-height: 0;
-    overflow-y: auto;
-  }
-
-  /* The ticks' own block keeps its gap, not the padding it had as a block
-     in the middle of the document. */
-  .fitColumns > .documentFit > .grid {
-    padding: 0;
-  }
-
-  .fitColumns .documentScroll {
-    min-height: 0;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    background:
-      linear-gradient(var(--surface) 30%, transparent) top / 100% 2.5rem no-repeat local,
-      linear-gradient(transparent, var(--surface) 70%) bottom / 100% 2.5rem no-repeat local,
-      radial-gradient(farthest-side at 50% 0, color-mix(in srgb, var(--ink) 28%, transparent), transparent) top / 100%
-        1rem no-repeat scroll,
-      radial-gradient(farthest-side at 50% 100%, color-mix(in srgb, var(--ink) 28%, transparent), transparent) bottom /
-        100% 1rem no-repeat scroll;
-  }
+/*
+ * A BLOCK OF THE FORM THAT IS NOT ON THIS SHEET (`rules/db4-pages.ts`). It
+ * stays in the DOM so the screen can measure every sheet before it paints,
+ * and is not drawn, announced or reachable. `!important` because it sits on
+ * elements that already have their own `display`.
+ */
+.db4Hidden {
+  display: none !important;
 }
 
-/*
- * A TEST DEVICE STACKED (under 1024px) HAS NO HEIGHT TO SPLIT. The rail goes
- * under the document and the step scrolls whole, so the document text must
- * not be a scroller of its own (review, 10 Oct 2026: it was being squeezed to
- * its 5rem floor).
- */
-@media (max-width: 1023px) {
-  .twoColumn.fitColumns .documentScroll {
-    overflow-y: visible;
-    background: none;
-  }
+/* A block's wrapper (the form's heading lines, one row of 2A), laid out as if it were not there. */
+.db4Masthead,
+.db4Block {
+  display: contents;
 }
 
 /*
@@ -1073,41 +1012,46 @@
  *
  * THE DOCUMENT'S BOX STEPS ASIDE SO ITS CHILDREN CAN BE PLACED (`display:
  * contents`; it has no role, so nothing is lost to assistive technology). Its
- * frame moves to the text region and its registration marks are not drawn.
- * Nothing moves in the DOM: the text is first, the ticks next, the actions
- * last — the same reading, tab and announcement order as the one-column
- * layout. The text column scrolls only if the form's page is longer than the
- * screen.
+ * frame moves to the text and its registration marks are not drawn. Nothing
+ * moves in the DOM: the text is first, the ticks next, the actions last —
+ * the same reading, tab and announcement order as the one-column layout.
  */
 @media (orientation: landscape) and (min-width: 1200px) and (min-height: 560px) {
   .oneColumn.fitColumns {
+    display: grid;
     grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
-    grid-template-rows: auto auto auto minmax(0, 1fr);
+    grid-template-rows: auto auto auto 1fr;
+    align-items: start;
     column-gap: var(--s7);
     row-gap: var(--s4);
   }
 
   .oneColumn.fitColumns > .documentFit {
     display: contents;
-    overflow: visible;
   }
 
   .oneColumn.fitColumns > .documentFit > .corner {
     display: none;
   }
 
-  .oneColumn.fitColumns > .documentFit > .documentScroll {
+  .oneColumn.fitColumns > .documentFit > .documentText {
     grid-column: 1;
     grid-row: 1 / -1;
-    padding: var(--s5);
+    padding: var(--s4) var(--s5);
     border: 1px solid var(--line);
     border-radius: var(--radius);
     background-color: var(--surface);
   }
 
-  .oneColumn.fitColumns > .documentFit > :not(.documentScroll),
+  .oneColumn.fitColumns > .documentFit > :not(.documentText),
   .oneColumn.fitColumns > .railBelow {
     grid-column: 2;
+  }
+
+  /* The ticks' own block keeps its gap, not the padding it had as a block
+     in the middle of the document. */
+  .oneColumn.fitColumns > .documentFit > .grid {
+    padding: 0;
   }
 }
 
@@ -1137,13 +1081,31 @@
   }
 
   .content {
-    padding-top: var(--s3);
-    padding-bottom: var(--s3);
+    padding-top: var(--s2);
+    padding-bottom: var(--s2);
   }
 
   .documentFit {
-    padding: var(--s4);
+    padding: var(--s3) var(--s4);
     gap: var(--s2);
+  }
+
+  /* The masthead's air and the form's top rule, a step tighter (10 Oct 2026:
+     a 1024x600 screen with the browser's bars could not hold even the first
+     sheet's heading). Spacing only — every type size is unchanged. */
+  /* Scoped under the document so they outrank the base rules further down. */
+  .documentFit .db4 {
+    padding-top: var(--s2);
+    gap: var(--s2);
+  }
+
+  .documentFit .grid {
+    padding: 0;
+  }
+
+  .documentFit .db4Heading {
+    padding-bottom: var(--s3);
+    margin-bottom: var(--s3);
   }
 
   .fitColumns {
@@ -1157,39 +1119,6 @@
  * inside themselves, so the actions at the foot of the rail stay on screen
  * too. Stacked, the rail goes under the document and the step scrolls whole.
  */
-@media (min-height: 560px) and (min-width: 1024px) {
-  .twoColumn.fitColumns {
-    height: 100%;
-    min-height: 0;
-    align-items: stretch;
-  }
-
-  .twoColumn.fitColumns > .documentFit {
-    display: grid;
-    grid-template-rows: minmax(5rem, 1fr);
-    grid-auto-rows: auto;
-    min-height: 0;
-  }
-
-  .twoColumn.fitColumns .documentScroll {
-    contain: size;
-  }
-
-  .twoColumn.fitColumns > .rail {
-    min-height: 0;
-  }
-
-  .twoColumn.fitColumns > .rail > .blueprint {
-    flex: 0 1 auto;
-    min-height: 0;
-    overflow-y: auto;
-  }
-
-  .twoColumn.fitColumns > .rail > .actions {
-    flex: 0 0 auto;
-  }
-}
-
 /* --------------------------------------------------------------------------
  * THE PRACTICE'S OWN DB4, ON GLASS (K-3, D-2026-09-27-01).
  *
@@ -1380,6 +1309,13 @@
   border-top: 1px solid var(--line);
 }
 
+/* Sized pages: first in its column on this sheet, so nothing to rule it off from. */
+.db4Agreement.db4AgreementLeads {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
 /*
  * A BLOCK LABEL, NOT A HEADING OF THE PAGE. "Patient", "Services", "Privacy
  * notice" sit under `.db4Title`'s 24 and are told apart by weight rather than
@@ -1409,11 +1345,10 @@
  * THE MASKED BLOCK AS THE TABLET RECEIVED IT — a TEST-device rail panel
  * (Carl, 27 Sep 2026), never on a patient's tablet.
  *
- * IT SCROLLS INSIDE ITSELF AND CANNOT PUSH THE RAIL. A JSON dump is arbitrarily
- * wide and arbitrarily long, and the one thing a developer's panel may never do
- * is move the way forward off the screen (hard rule 8 broken by a cosmetic
- * change). `max-height` with `overflow: auto` and `pre-wrap` keeps it in its
- * own box; the actions below it stay where they are.
+ * IT IS NO LONGER A BOX THAT SCROLLS (Carl, 10 Oct 2026: "Do not have boxes
+ * that scroll"). `pre-wrap` keeps it inside the rail's width; on a test device
+ * a long dump makes the step longer and the shell's content row scrolls the
+ * whole step, the way forward included, as it does for any long page.
  *
  * AND IT IS THE ONE RULE IN THIS FILE STILL BELOW THE 18px FLOOR, on purpose
  * (27 Sep 2026). The floor is a rule about PATIENT surfaces; this panel exists
@@ -1426,8 +1361,6 @@
  */
 .db4Payload {
   margin: var(--s2) 0 0;
-  max-height: 18rem;
-  overflow: auto;
   font-family: var(--font-mono);
   font-size: 0.6875rem;
   line-height: 1.5;
@@ -1646,7 +1579,7 @@
    * the height. Never under a usable 160. And if the box changes anyway once
    * there is ink, the pad keeps its size (`SignaturePad.tsx`).
    */
-  height: clamp(160px, 30svh, 460px);
+  height: clamp(160px, 26svh, 460px);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius);
   background: var(--surface);
@@ -1737,7 +1670,7 @@
 
 @media (orientation: landscape) {
   .pad {
-    height: clamp(160px, 40svh, 420px);
+    height: clamp(160px, 30svh, 420px);
   }
 }
 
@@ -2007,6 +1940,10 @@
 
   .detailsMain .answerButton {
     flex-direction: row;
+    gap: var(--s2);
+  }
+
+  .twoColumn > .detailsMain {
     gap: var(--s2);
   }
 }

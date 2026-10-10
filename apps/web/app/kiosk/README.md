@@ -475,23 +475,16 @@ layout - instead of scrolling".
 - **Portrait is one centred column at 70ch**, about 770px of 20px type, so
   lines stay readable on a 924px screen. The services table and the
   signature pad take the whole of that column.
-- **K-3 splits the document in two** (`fitColumns`, `documentScroll`). The
-  read-only part (the heading, the form's page, the ongoing agreement's
-  explanation) is a named, focusable region that scrolls inside the page,
-  with a shadow along whichever edge has more text behind it, because
-  Android's overlay scrollbars are invisible at rest. The region is as tall
-  as its text and no taller, so the tick boxes, the tags and the actions sit
-  directly under the last line and stay on screen. Nothing is reordered and
-  nothing is sticky, so nothing can cover a focused control (WCAG 2.2 2.4.11).
+- **No box scrolls, anywhere in the ceremony** (Carl, 10 October 2026: "Do
+  not have boxes that scroll"). For one afternoon K-3's text was a scrolling
+  region with the ticks pinned under it. A box that scrolls is text a patient
+  can tick past without seeing, so it was removed. Pages are made to fit
+  instead, as below. Nothing is sticky, so nothing can cover a focused control
+  (WCAG 2.2 2.4.11).
 - **Landscape from 1200px wide puts K-3 in two columns**: the form's text
   on the left, and the ticks, tags, Back and Continue on the right, all in
   view at once. The document's box uses `display: contents` so its children
   can be placed; the DOM order, and so the reading order, is unchanged.
-- **Grids, not flex, so it cannot overlap.** The text row gives way first,
-  down to a 5rem floor. On a screen too short even for that, the document
-  scrolls as a whole inside its frame, rather than the ticks spilling over
-  the actions.
-- **Only from 560px tall.** Below that, the step scrolls as one column.
 - **Under 480px tall the shell is an ordinary page** and the window scrolls
   it. At 400% zoom a 1280x800 screen is 320x200; a shell locked to that
   height had left the content row with no height and the controls outside
@@ -509,26 +502,112 @@ layout - instead of scrolling".
   (`SignaturePad.tsx`). A resize used to re-measure it under the ink, so the
   capture paired points measured at the old size with the new pad size and a
   raster cropped to the new box. Rotating, Edge's toolbar, or full screen
-  arriving just after K-4 opens are all resizes. Now the canvas is pinned in
-  pixels, and its frame may clip it or leave room around it until the patient
-  clears. The captured vector, raster and size always agree, and no point is
+  arriving just after K-4 opens are all resizes. Now the canvas is pinned
+  from the first touch, scaled down to fit a frame that has shrunk (never
+  clipped, so the patient sees all of their ink), and touches are mapped back
+  into the pad's own space. The raster is redrawn from the strokes at the
+  pad's size, one pixel per pad pixel, so a dense signature on a DPR-3 screen
+  stays under the 512 KB limit. The captured vector, raster and size always agree, and no point is
   rescaled (REQ-SIG-02). Test: `components/SignaturePad.test.tsx`.
 - **At 640px tall and under, space shrinks, never type**: the header's two
   lines sit on one and the padding tightens by a step.
 - **The shell is `height: 100dvh`**, not `min-height`, and the footer clears
   `env(safe-area-inset-bottom)`.
 
-The patient can now reach the tick boxes without scrolling through the text
-above them. That is what was asked for; it is also the opposite of what 2B's
-pagination was for ("a patient who scrolls past the service rows to reach the
-tick boxes has not read the service rows"), so it is a decision worth
-confirming rather than a detail.
+### The DB4's pages are sized to the screen (Carl, 10 October 2026)
 
-Test: `e2e/kiosk-tablet-fit.spec.ts`, which needs no database. Every request
-to core is answered by `page.route`. It asserts that each control is inside
-the viewport and inside every clipping ancestor on all four sides, with every
-scroller at the top, nothing drawn over it, and nothing wider than the
-screen. Portrait first: 924x1478, 924x1370 and 800x1280. Then landscape:
+> "go with option 1 for page sizing"
+
+The three pages (2A, 2B, 2C) are now SECTIONS. On a tablet that can measure
+itself, each section is drawn as SHEETS, as many as it takes for every one to
+fit the screen whole with nothing scrolling. A long services table or privacy
+notice becomes more sheets, never a box that scrolls.
+
+- **The blocks** (`rules/db4-pages.ts`, `db4BlockSection`) are:
+  - in 2A: each of the form's heading lines (`masthead-N`), each row of the
+    practice column (`practice-reference`, `-date`, `-location`,
+    `-agreement`) and each row of the patient block (`patient-name`, `-dob`,
+    `-address`, `-record`, `-card`, `-irn`);
+  - in 2B: each provider (`provider-N`) and each service row (`service-N`);
+  - in 2C: each privacy paragraph (`privacy-N`), each of the form's
+    statements (`statement-N`), the ongoing agreement's explanation and the
+    pre-template consent sentence.
+
+  That file decides which section a block and an affirmation belong to. The
+  screen only decides where the breaks fall within that order. Presentation,
+  never the instrument.
+- **Filling** (`fillDb4Sheets`): each section starts a new sheet. Blocks are
+  added while the sheet still fits. The sheet that closes a section is
+  measured with its affirmations on it, because they are read there, under
+  the last block they confirm.
+  - If the last block and its ticks cannot share a sheet, the block moves on
+    with them.
+  - If even that does not fit, the block gets a sheet of its own and the ticks
+    follow on the section's last sheet.
+  - Each sheet's Continue waits for that sheet's ticks (D-2026-09-27-07).
+    Sheets without ticks are ungated, as 2A always was.
+  - There is no scroll-to-end gating ("keep ticking as is").
+- **Measuring happens on the live page, before it paints.** Every block is in
+  the DOM, and those not on this sheet carry `.db4Hidden` (`display: none`).
+  For each sheet the filler proposes, `measureDb4Sheets` shows exactly that
+  sheet's blocks, ticks, tags and heading. It then asks whether the content
+  row has nothing to scroll, which covers both landscape columns. Last, it
+  puts every class back, all inside a layout effect.
+  - It re-measures when the window or the content row changes size. The
+    footer gains the tablet's name a moment after the page draws.
+  - The patient stays on the sheet holding the first block they were reading
+    (`resolveDb4Sheet`), so turning the tablet renumbers the sheets around them.
+  - Ticks already given stay given; the ceremony holds them by statement.
+- **A block taller than any sheet** gets a sheet of its own, and there the
+  PAGE scrolls as a whole (the shell's content row), never a box inside it.
+  It is never cut mid-sentence. Tests:
+  `a_block_taller_than_any_sheet_gets_a_sheet_of_its_own_and_nothing_is_dropped`
+  and the Playwright giant-paragraph case.
+- **What every sheet carries:** "Page X of Y", the versions line, the page's
+  own heading (or, where the form's title line is on the sheet, that line),
+  and the provenance line (hard rule 12).
+  - The ceremony's heading ("Agree to bulk billing", by-line, qualifier) is
+    drawn on the FIRST sheet only. On later sheets it is kept for a screen
+    reader but not drawn (`visuallyHidden`).
+  - That is the one reduction. Carl declined trimming the heading as a
+    separate option, so nothing else was cut.
+- **Not measured, so three fixed pages exactly as before:** a server render,
+  jsdom (so every existing unit test is unchanged), a test device (its
+  developer panels cannot fit, so there the page may scroll as a whole), and
+  a screen under 480px tall.
+- **At 640px tall and under, space shrinks, never type**: the masthead's air,
+  the form's top rule and the document padding tighten by a step.
+
+**Sheets per form, measured** (normal form; 12 service rows with 2 providers;
+a 9-paragraph privacy notice):
+
+| Size | Normal | 12 rows | Long notice |
+|---|---|---|---|
+| 924x1478 | 4 | 6 | 6 |
+| 924x1370 | 4 | 7 | 6 |
+| 800x1280 | 4 | 7 | 6 |
+| 1478x924 | 4 | 9 | 7 |
+| 1280x800 | 8 | 19 | 16 |
+| 1024x600 | 11 | 25 | 18 |
+
+**1024x600 and 960x600 do not fit every sheet.** With Edge's bars, the
+shell's header and its three-line footer of audit ids leave about 433px. The
+frame every sheet carries (the page line, heading and provenance, Back and
+Continue) takes most of that. At this type scale a single service row, or the
+legal page's tick with its tags, does not fit beside it. Those sheets are the
+taller-than-any-sheet case: the page scrolls as a whole, never a box. The
+spec holds these two sizes to "nothing inside the step scrolls, and every
+control can be scrolled into view", and every other size to "nothing scrolls
+at all".
+
+Tests: `rules/db4-sheets.test.ts` (the filler, from heights), and
+`e2e/kiosk-tablet-fit.spec.ts`, which needs no database. Every request to
+core is answered by `page.route`. The spec asserts that nothing in the
+ceremony is scrollable at the tablet's sizes. It also checks that each
+control is inside the viewport and inside every clipping ancestor on all four
+sides, with nothing drawn over it, and that nothing is wider than the screen.
+It walks every sheet of the normal, 12-row and long-notice forms at each size
+above. It also covers a giant paragraph, and turning the tablet mid-read. Portrait first: 924x1478, 924x1370 and 800x1280. Then landscape:
 1478x924, 960x600, 1024x600, 1280x650, 1280x720, 1280x800, 1478x700, 1478x813
 and 1500x900, plus three sizes as an emulated Android tablet. It also covers a
 test device with its rail at 1478x924, 1280x800 and stacked at 960x600, Android
