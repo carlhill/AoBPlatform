@@ -184,6 +184,7 @@ not live there.)
 | `NEXT_PUBLIC_CORE_URL` | `apps/core`, default `http://localhost:3001` |
 | `NEXT_PUBLIC_BUILD_ID` | The build this tab is running. Shown in the footer, sent as `x-kiosk-build`, and compared against the practice's floor for the forced reload. `dev` locally |
 | `NEXT_PUBLIC_KIOSK_STAFF_ID` | Dev stand-in for `verifiedByStaffId` |
+| `NEXT_PUBLIC_KIOSK_FULL_SCREEN` | `false` turns off full screen on the first tap. Unset or anything else leaves it on. See "Full screen on the first tap" |
 
 `NEXT_PUBLIC_KIOSK_PRACTICE_ID` **is gone** (3 Sep 2026). It scoped a public
 route from the bundle, so anybody who reached the URL saw that practice's
@@ -508,6 +509,46 @@ Tests: `inactivity_reset_returns_to_idle_and_clears_state`,
 (`inactivity.test.tsx`, fake timers); core
 `kiosk_me_carries_the_practice_idle_timeout`, `idle_timeout_is_bounded`.
 
+## Full screen on the first tap (Carl, 10 Oct 2026)
+
+> "write code to make the app full screen. We cannot have dependency on the
+> tablet"
+
+`useKioskFullScreen`, mounted once in `Ceremony.tsx`, puts the page into
+browser full screen (the Fullscreen API, `navigationUI: 'hide'`). That hides
+the address bar, the tabs and the Android status and navigation bars, so the
+kiosk looks like an app in Chrome or Edge on the Galaxy Tab, with nothing set
+up on the tablet.
+
+- **It needs one tap to start.** Browsers refuse full screen without a user
+  gesture, so it cannot happen on load. The first tap anywhere asks for it, on
+  `pointerup`, so the tap still does what it was for.
+- **The patient can always leave full screen** with a system swipe or the back
+  gesture. Browsers guarantee this, and no web page can prevent it. The next
+  tap goes back into full screen. Nothing prompts, nags or loops: one tap, one
+  request.
+- **It does NOT stop a patient leaving the browser.** Home, recent apps and
+  notifications still work from full screen. Only Android screen pinning or
+  device management (e.g. Samsung Knox) does that. Pinning stays optional,
+  extra lockdown for a practice that wants it.
+- **Never from the signature step.** Entering full screen resizes the page, and
+  the signature pad measures its points against its own size: a resize
+  mid-stroke moves the pad under the finger. So `Ceremony` turns it off on K-4,
+  and a tap on a canvas is ignored on any step. A patient who left full screen
+  on K-4 gets it back on the first tap after K-4.
+- **The in-app reset keeps it.** "Return to the start when nobody is there" is
+  a state change, so full screen survives it. A hard reload (the build floor,
+  or the dev server restarting) drops it, and the next tap re-enters.
+- **Unsupported browsers do nothing.** Where there is no element full screen
+  (iPhone Safari), or the browser refuses, the kiosk works exactly as before.
+  Refusals are swallowed, with nothing logged.
+- **Zero footprint.** Nothing is written to the tablet: no storage, no cookie,
+  no manifest, no service worker. Off with `NEXT_PUBLIC_KIOSK_FULL_SCREEN=false`.
+
+Tests: `fullscreen.test.tsx` — `kiosk_enters_full_screen_on_the_first_tap`,
+`full_screen_never_starts_from_the_signature_pad`,
+`full_screen_is_invisible_when_it_cannot_happen`.
+
 ## Back, on both front doors (Carl, 4 September 2026)
 
 Back is navigation everywhere on this device: one `setStep`, no fetch, and it
@@ -740,6 +781,8 @@ of things the patient is being asked to fix.
   `apps/core`.
 - **Read-aloud, language switch, read-through gate, RACF batch mode, kiosk
   lockdown launcher, bot-defence dwell time** — all still outstanding from C2.
+  Full screen is built (see "Full screen on the first tap"), but it is not a
+  lockdown: a patient can still leave the browser.
 - **The offline queue** — withdrawn, not deferred. C2.2 was dropped with the
   zero-footprint decision (the push model needs the server anyway; an offline
   kiosk cannot receive a push). Outage posture is "see reception", the patient
