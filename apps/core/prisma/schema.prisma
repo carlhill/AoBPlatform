@@ -3464,3 +3464,75 @@ model VisitState {
   @@index([practiceId, setAt])
   @@map("visit_states")
 }
+
+/// THE AOBPRINTER HOST, AS THE PLATFORM LAST HEARD FROM IT (PRINTER-HEARTBEAT.md
+/// §3, D-2026-10-10-02). One row per audit chain a practice's host has
+/// reported — the chain id is the hash of the host's audit event seq 1 — so a
+/// rewritten log or a second host is a second row, never an overwrite of the
+/// first.
+///
+/// COUNTS, HASHES, CODES, VERSIONS AND TIMES. No name, no chart number, no
+/// form reference, no path (hard rule 9). The JSON columns hold the
+/// heartbeat's own whitelisted shapes, with the patient id resolved on the
+/// server for a return's exception or filed-but-unconfirmed row.
+///
+/// TELEMETRY, NOT EVIDENCE — except where it says otherwise. A beat updates
+/// this row in place, and that is deliberate: the evidence about the chain
+/// goes to the vault through the outbox in the same transaction
+/// (`aobprinter.chain_anchored` hourly, `aobprinter.chain_regressed` on the
+/// transition, `aobprinter.chain_rebaselined` on the operator's act), so a
+/// DBA editing this row cannot rewrite what the vault holds.
+model AobPrinterHost {
+  id         String @id @default(uuid()) @db.Uuid
+  practiceId String @db.Uuid
+  /// The hash of the host's audit event seq 1.
+  chainId    String
+
+  /// By the server's clock: when the last beat arrived.
+  lastSeenAt       DateTime
+  /// The host's clock when it sent that beat. Skew is `hostSentAt - lastSeenAt`.
+  hostSentAt       DateTime
+  intervalMs       Int
+  printerVersion   String
+  templateVersion  String
+  schemaVersion    Int
+  runtimeVersion   String
+  startedAt        DateTime
+  collecting       Boolean
+  retentionEnabled Boolean
+  queueCount       Int
+
+  counts           Json
+  openExceptions   Json
+  filedUnconfirmed Json
+  localCheck       Json
+
+  /// 32-bit: 2.1 billion events per host (decision 15).
+  headSeq          Int
+  headHash         String?
+  /// When `headSeq` last moved forward. The hourly vault anchor needs it to have moved.
+  headAdvancedAt   DateTime?
+  anchorSeq        Int
+  anchorHash       String?
+  /// When a beat last answered the anchor correctly.
+  anchorVerifiedAt DateTime?
+  /// When `aobprinter.chain_anchored` last went to the vault (at most hourly).
+  vaultAnchoredAt  DateTime?
+  /// unverified | consistent | regressed — `AOBPRINTER_CHAIN_STATUSES` (domain); the CHECK copies it.
+  chainStatus      String
+
+  /// One of `AOBPRINTER_CHAIN_REGRESSIONS` (domain); set exactly when `chainStatus` is `regressed`.
+  regressionKind   String?
+  regressionAt     DateTime?
+  /// `{ expected: {seq, hash}, received: {seq, hash} }` — seqs and hashes only.
+  regressionDetail Json?
+  rebaselinedAt    DateTime?
+  /// A principal id from the token, never a name.
+  rebaselinedBy    String?
+
+  createdAt DateTime @default(now())
+
+  @@unique([practiceId, chainId])
+  @@index([practiceId, lastSeenAt])
+  @@map("aobprinter_hosts")
+}
