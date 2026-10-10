@@ -6248,6 +6248,10 @@ export const strings = {
       not_awaiting_signature:
         'This agreement is not at the signing step — it may have been declined, superseded or expired. '
         + 'Check the agreement before sending anything again.',
+      /* D-2026-10-10-09 option 3: what was recorded, and no remedy this screen cannot know is true. */
+      agreement_closed_unsigned:
+        'This agreement was closed as not needed: no service was recorded for its visit within the practice’s '
+        + 'set number of days. Nothing was signed.',
       signature_capture_invalid:
         'The signature did not arrive with the tablet’s request. Send it again, and offer '
         + '“approve by tapping” if the pad is not responding.',
