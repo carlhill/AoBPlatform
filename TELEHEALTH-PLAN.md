@@ -232,6 +232,18 @@ up any DB4 that was not signed at the practice.
 
 ## 9. Open questions
 
+- **Does the step before the call make the agreement a pre-agreement?** The
+  research (`TELEHEALTH-RULES-RESEARCH.md`) found that a post-agreement is one
+  that neither party offers until after the service. If the patient's
+  agreement to a telehealth consultation reads as an offer to assign, the DB4
+  afterwards could count as a pre-agreement, which needs different
+  particulars. **Until the Department answers (GOVERNMENT-QUESTIONS.md G10),
+  the consent statement must not mention bulk billing, Medicare, the
+  assignment or the DB4.** It is about the consultation only.
+- **Scenario B and the practitioner's address.** A post-agreement carries the
+  provider's name and either the address they practise from at the time or
+  their provider number. A doctor consulting from home would carry the
+  provider number. Confirm which number (G31).
 - **The 5c scenarios:** Carl to rule.
 - **Do the session states need an expiry?** For example, a session waiting for
   its DB4 longer than N days becomes C7. N is not decided.
