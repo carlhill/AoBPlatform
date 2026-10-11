@@ -1,7 +1,7 @@
 # CLAUDE.md — AoBPlatform build brief
 ### v1.0 · 20 August 2026 · Drop this file in the repo root. It is the orientation document for Claude Code sessions building AoBPlatform.
 
-You are building **AoBPlatform**: a consent-and-compliance-record product for Australia's Medicare Assignment of Benefit (bulk-billing consent) regime. It captures, verifies, validates, stores and proves patient consent to bulk billing — and writes the evidence back into the practice's clinical system. The first customer is a general practice on **Medtech Evolution**. GA must land by **April 2027**; the statutory verbal-consent fallback ends **30 June 2027**.
+You are building **AoBPlatform**: a consent-and-compliance-record product for Australia's Medicare Assignment of Benefit (bulk-billing consent) regime. It captures, verifies, validates, stores and proves patient consent to bulk billing — and writes the evidence back into the practice's clinical system. The first customer is **Powell Street**, a general practice on **Medical Director** (clinical records) and **PracSoft** (billing), whose DB4s reach us through **AOBPRINTER** (D-2026-09-14-04). Medtech Evolution remains a target PMS for later practices. GA must land by **April 2027**; the statutory verbal-consent fallback ends **30 June 2027**.
 
 This is a real product with statutory exposure, not a demo. When this brief and your own judgement conflict on a regulatory point, this brief wins; if something here seems wrong, stop and ask Carl rather than silently "fixing" it.
 
@@ -51,7 +51,7 @@ These are legal/regulatory invariants. Each MUST be enforced **in code** (valida
 
 ## 4. Stack summary (full detail: aob-tech-stack.md)
 
-TypeScript everywhere. NestJS modular monolith (M1–M8, M12–M14 as enforced modules — no cross-module table access) + two satellite services: **Rules & Conformance** (zero PII, hosts the public tester) and **Evidence Vault** (immudb, hash chain, RFC 3161 anchoring, S3 Object Lock). Next.js + Radix (console, portal, tester; WCAG 2.2 AA). The kiosk is a **cloud-served web app with zero device footprint** — no native build, no installer, nothing persisted on the tablet beyond one revocable pairing credential (Carl, 3 Sep 2026; supersedes the Expo offline-first native shell — see §7 and TODO.md). There is **no patient mobile app**. Postgres with RLS (practice scoping at the DB layer), Redis, SQS. Keycloak (OIDC, passkeys). Site-installed Windows connector for Medtech Evolution, outbound-only mTLS. AWS Sydney, ECS Fargate, Terraform, account-per-environment, GitHub Actions. Tests: Vitest, Playwright, Maestro, k6.
+TypeScript everywhere. NestJS modular monolith (M1–M8, M12–M14 as enforced modules — no cross-module table access) + two satellite services: **Rules & Conformance** (zero PII, hosts the public tester) and **Evidence Vault** (immudb, hash chain, RFC 3161 anchoring, S3 Object Lock). Next.js + Radix (console, portal, tester; WCAG 2.2 AA). The kiosk is a **cloud-served web app with zero device footprint** — no native build, no installer, nothing persisted on the tablet beyond one revocable pairing credential (Carl, 3 Sep 2026; supersedes the Expo offline-first native shell — see §7 and TODO.md). There is **no patient mobile app**. Postgres with RLS (practice scoping at the DB layer), Redis, SQS. Keycloak (OIDC, passkeys). Site-installed Windows connectors, outbound-only mTLS: **AOBPRINTER** (`apps/aobprinter`: DB4 print capture in, Signed-DB4 folder write-back out, for PracSoft) and the Medtech Evolution connector. AWS Sydney, ECS Fargate, Terraform, account-per-environment, GitHub Actions. Tests: Vitest, Playwright, Maestro, k6.
 
 Repo shape (suggested, adjust with a recorded decision): monorepo — `apps/core`, `apps/rules`, `apps/vault`, `apps/web` (console, portal, tester and — from 3 Sep 2026 — the kiosk at `/kiosk`; `apps/kiosk` is retired once the port lands), `apps/connector`, `packages/domain`, `packages/contracts` (OpenAPI + shared types), `infra/` (Terraform).
 
@@ -60,7 +60,7 @@ Repo shape (suggested, adjust with a recorded decision): monorepo — `apps/core
 Follow `aob-build-plan.md`. Phase 1 internal order: **vault first** (everything writes events from its first commit) → rules engine → domain core + Medtech adapter + write-back → verification → kiosk app → console → onboarding.
 
 **Do not build against unpublished specs.** Two open blockers gate real integration work:
-- **D-01 (Medtech write-back mechanism)** — until resolved, code the adapter behind the FR-9.1 interface with a mock adapter; do not guess Medtech's API.
+- **D-01 (Medtech write-back mechanism)** — Medtech practices only; Powell Street's write-back is AOBPRINTER's import-folder drop (D-2026-09-28-02). Until resolved, code the adapter behind the FR-9.1 interface with a mock adapter; do not guess Medtech's API.
 - **D-11 (Services Australia enduring registration)** — no portal/API is published anywhere. Keep the data registrable-shaped, keep the integration behind a feature flag, build nothing speculative.
 
 Regulatory whipsaw is the top project risk (the rules changed twice and reversed once, eight days before go-live, costing a competitor ~$1m). Versioning (rule 14) is the defence — respect it everywhere.
