@@ -652,6 +652,9 @@ looks like.
 0a. **Telehealth** (§11): confirm the remote link to the contact on record is
    the flow, and whether a pre-agreement is to be offered before the
    consultation at all, given the practice is post-only (§11a).
+   **RULED 11 Oct 2026, D-2026-10-11-07:** the link to the contact on record is
+   the flow; before the call the patient agrees to a telehealth consultation
+   (a consent record, not a pre-agreement). Plan: `TELEHEALTH-PLAN.md`.
 0b. **The tablet rulings, 27 September 2026 — RULED, D-2026-09-27-01.** The
    patient reads their own DB4 on the tablet, laid out as the form, **with the
    cost on it**, reproduced verbatim from PracSoft. This restores the intent of
