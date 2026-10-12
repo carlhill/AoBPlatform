@@ -14,9 +14,9 @@
  * Fake identities throughout (CLAUDE.md §7c).
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import { AobPrinterTool } from './AobPrinterTool';
-import { DEV_PRACTICE } from './presets';
+import { DEV_PRACTICE, PRESETS } from './presets';
 
 const CHARTS = ['09911', 'DEV-RILEY-EXAMPLE', 'DEV-ALEX-FICTIONAL', 'DEV-KIM-SPECIMEN', 'DEV-NOOR-ILLUSTRATIVE'];
 
@@ -250,5 +250,31 @@ describe('Load test agreements: says only what it observed (review, wow.md 13)',
     expect(screen.queryByText(/did not create them/)).toBeNull();
     expect(screen.queryByText(/No affiliation/)).toBeNull();
     expect(printsOf(calls)).toHaveLength(0);
+  });
+});
+
+describe('Load test agreements: the check cases are ready to print, never sent (Carl, 12 Oct 2026)', () => {
+  it('lists every other preset after a press, and choosing one fills the form without sending it', async () => {
+    const { calls } = stubCore({ onFile: CHARTS });
+    render(<AobPrinterTool />);
+    fireEvent.click(screen.getByRole('button', { name: 'Load test agreements' }));
+    await waitFor(() => expect(screen.getByText(/Sent 5 of 5 to core; 5 placed/)).toBeTruthy());
+
+    const list = screen.getByTestId('check-cases');
+    const sent = ['clean', 'ragged-amounts', 'long-form', 'no-amount', 'no-irn'];
+    const checks = PRESETS.filter((p) => !sent.includes(p.key));
+    expect(checks.length).toBeGreaterThan(0);
+    for (const p of checks) expect(within(list).getByText(p.label)).toBeTruthy();
+    // Only the five agreements went to core.
+    expect(printsOf(calls)).toHaveLength(5);
+
+    const pick = checks.find((p) => p.key === 'no-provider-name') ?? checks[0]!;
+    fireEvent.click(within(list).getByText(pick.label));
+    await waitFor(() =>
+      expect((screen.getByLabelText('Form reference') as HTMLInputElement).value).toMatch(/^CHECK-/),
+    );
+    expect((screen.getByLabelText('PMS patient ID') as HTMLInputElement).value).toBe('09911');
+    // Still nothing more sent: the tester presses Print to AoB.
+    expect(printsOf(calls)).toHaveLength(5);
   });
 });
