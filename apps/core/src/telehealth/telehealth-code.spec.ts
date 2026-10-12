@@ -1,5 +1,6 @@
 import { generateTelehealthCode, hashTelehealthCode, telehealthCodeMatches } from './telehealth-code';
-import { PROPOSED_TELEHEALTH_EVENT_TYPES, TELEHEALTH_VAULT_EVENTS_APPROVED, assertNoValues } from './telehealth-evidence';
+import type { Prisma } from '@prisma/client';
+import { TELEHEALTH_EVENT_TYPES, TELEHEALTH_VAULT_EVENTS_APPROVED, TelehealthEvidence, assertNoValues } from './telehealth-evidence';
 import { VAULT_EVENT_TYPES } from '@aobplatform/contracts';
 
 describe('the telehealth code', () => {
@@ -23,7 +24,7 @@ describe('the telehealth code', () => {
   });
 });
 
-describe('the proposed telehealth vault events', () => {
+describe('the telehealth vault events', () => {
   it('telehealth_vault_payloads_refuse_value_keys', () => {
     // A payload key that could carry a value is refused before it reaches any sink.
     for (const key of ['code', 'note', 'mobile', 'email', 'name', 'dateOfBirth', 'medicareNumber', 'pageKey']) {
@@ -32,9 +33,35 @@ describe('the proposed telehealth vault events', () => {
     expect(() => assertNoValues({ identifierTypeCount: 3, reason: 'emergency', hasNote: true })).not.toThrow();
   });
 
-  it('are_not_in_the_vault_list_until_carl_approves_them', () => {
-    // When this fails, approval has landed: flip TELEHEALTH_VAULT_EVENTS_APPROVED and wire the sink to the outbox.
+  it('are_in_the_vault_list_as_carl_approved_them', () => {
+    // Approved by Carl, 12 Oct 2026 (D-2026-10-12-02): all seven are listed, and the approval constant says so.
     const listed: readonly string[] = VAULT_EVENT_TYPES;
-    expect(PROPOSED_TELEHEALTH_EVENT_TYPES.some((t) => listed.includes(t))).toBe(TELEHEALTH_VAULT_EVENTS_APPROVED);
+    expect(TELEHEALTH_VAULT_EVENTS_APPROVED).toBe(true);
+    for (const type of TELEHEALTH_EVENT_TYPES) expect(listed).toContain(type);
+    // Exactly the seven approved: no other telehealth type has crept into the vault list.
+    expect(listed.filter((t) => t.startsWith('telehealth.')).sort()).toEqual([...TELEHEALTH_EVENT_TYPES].sort());
+  });
+
+  it('go_to_the_outbox_on_the_callers_tx_with_scalar_payloads', async () => {
+    const created: Array<{ data: Record<string, unknown> }> = [];
+    const tx = { vaultOutbox: { create: async (args: { data: Record<string, unknown> }) => created.push(args) } };
+    const evidence = new TelehealthEvidence();
+    await evidence.record(tx as unknown as Prisma.TransactionClient, {
+      event: {
+        type: 'telehealth.did_not_proceed',
+        payload: { fromState: 'opened', consultationAt: null, recordedAt: '2026-10-12T00:00:00.000Z' },
+      },
+      actor: { principalType: 'practitioner', id: 'p-1' },
+      subject: { type: 'TelehealthSession', id: 's-1' },
+    });
+    expect(created).toHaveLength(1);
+    expect(created[0]!.data).toMatchObject({
+      type: 'telehealth.did_not_proceed',
+      subjectType: 'TelehealthSession',
+      subjectId: 's-1',
+      // A time not given is left out, not stored as null: a vault payload holds scalars.
+      payload: { fromState: 'opened', recordedAt: '2026-10-12T00:00:00.000Z' },
+    });
+    expect(Object.keys(created[0]!.data.payload as object)).not.toContain('consultationAt');
   });
 });

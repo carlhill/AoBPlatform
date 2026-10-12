@@ -17,11 +17,11 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 | | Count |
 |---|---|
-| Exported symbols indexed | 2580 |
+| Exported symbols indexed | 2581 |
 | Files scanned for exports | 596 |
 | Files scanned for imports | 639 |
 | Exports with no comment of their own | 1043 |
-| Exports imported nowhere else | 1065 |
+| Exports imported nowhere else | 1066 |
 
 ## Sections
 
@@ -35,7 +35,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 - [Contracts types](#contracts-types) — 130
 - [Contracts functions and constants](#contracts-functions-and-constants) — 38
 - [Core services, controllers and modules](#core-services-controllers-and-modules) — 302
-- [Core helpers, constants and types](#core-helpers-constants-and-types) — 243
+- [Core helpers, constants and types](#core-helpers-constants-and-types) — 244
 - [AOBPRINTER (the desktop print channel)](#aobprinter-the-desktop-print-channel-) — 163
 
 ## Web components
@@ -1826,6 +1826,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `ValidationResponse` | contracts:rules-engine.ts |  | **3** · core:rules-client/rules-client.module.ts, rules:rules/rules.controller.ts, rules:rules/rules.service.ts |
 | `ValidationStage` | contracts:rules-engine.ts | REQ-65C-01 runs the validator twice: BEFORE the signature control enables (blocking) and again AT STORAGE (assert). | **3** · rules:rules/rule-set-2026-08.draft.ts, rules:rules/rule-set.ts, rules:rules/rules.service.ts |
 | `VaultClient` | contracts:vault.ts | Append and read. | **3** · core:vault/vault-relay.service.ts, vault-client:client.ts, vault-client:relay.ts |
+| `VaultEventType` | contracts:vault.ts |  | **3** · core:telehealth/telehealth-evidence.ts, vault:events/create-event.dto.ts, vault-client:relay.ts |
 | `AobPrinterFiledUnconfirmedRow` | contracts:aobprinter-heartbeat.ts | A filed return with the platform's verdict and its patient. | **2** · core:aobprinter-hosts/aobprinter-hosts.service.ts, core:inbound/aobprinter-heartbeat.service.ts |
 | `AobPrinterHostOverviewRow` | contracts:aobprinter-heartbeat.ts | ONE ROW OF `GET /platform/aobprinter-hosts` — one host, as the platform's overview lists it, worst first (§4, decision 10). | **2** · core:aobprinter-hosts/aobprinter-hosts.service.ts, web:platform/aobprinter-hosts/AobPrinterHostsOverviewView.tsx |
 | `AobPrinterJobOutcome` | contracts:aobprinter-heartbeat.ts | The platform's answer for one print in `awaitingOutcome`. | **2** · aobprinter:store.ts, core:inbound/inbound-print-jobs.service.ts |
@@ -1844,7 +1845,6 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `TelehealthPageView` | contracts:telehealth.ts | The one page, after the code. | **2** · core:telehealth/telehealth.service.ts, web:patient/telehealth/[token]/TelehealthPatientView.tsx |
 | `TelehealthSendResult` | contracts:telehealth.ts | What Send (and Send again) returns. | **2** · core:telehealth/telehealth.service.ts, web:practice/practitioner/telehealth/TelehealthPanel.tsx |
 | `TelehealthSessionView` | contracts:telehealth.ts | One session as the provider's panel sees it. | **2** · core:telehealth/telehealth.service.ts, web:practice/practitioner/telehealth/TelehealthPanel.tsx |
-| `VaultEventType` | contracts:vault.ts |  | **2** · vault:events/create-event.dto.ts, vault-client:relay.ts |
 | `AobPrinterChainRegressionView` | contracts:aobprinter-heartbeat.ts | A regression as stored on the row: the finding, and when it was made. | **1** · core:aobprinter-hosts/aobprinter-hosts.service.ts |
 | `AobPrinterExceptionStage` | contracts:aobprinter-heartbeat.ts | One of `AOBPRINTER_EXCEPTION_STAGES`. | **1** · aobprinter:store.ts |
 | `AobPrinterFiledUnconfirmedVerdict` | contracts:aobprinter-heartbeat.ts | WHAT THE PLATFORM SAYS ABOUT A RETURN FILED BUT NOT RECORDED AS CONFIRMED (§4 state 6): - `written_back` — recorded, and the file the host filed is the one the platform wrote back; reconciles on the next report; - `written_back_different_file` — recorded, but the platform's file has a different hash from the one the host filed. | **1** · core:inbound/aobprinter-heartbeat.service.ts |
@@ -2284,7 +2284,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Core helpers, constants and types
 
-243 exports.
+244 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -2369,7 +2369,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `PreparedLock` | core:agreements/agreements.service.ts |  | **1** · core:tablet-sessions/tablet-sessions.service.ts |
 | `REQUIRED_ROLES` | core:auth/roles.decorator.ts |  | **1** · core:auth/auth.guard.ts |
 | `ResolvedChange` | core:identity/practitioner-email.service.ts | The subject of a change, as resolved from a token before any scope exists. | **1** · core:organisations/pending-email.service.ts |
-| `TELEHEALTH_VAULT_EVENTS_APPROVED` | core:telehealth/telehealth-evidence.ts | THE VAULT EVENTS A TELEHEALTH SESSION WILL EMIT — PROPOSED, NOT YET APPROVED (TELEHEALTH-PLAN.md §6 item 8; DECISIONS.md D-2026-10-12-02, PROPOSED). | **1** · core:telehealth/telehealth.service.ts |
+| `TELEHEALTH_VAULT_EVENTS_APPROVED` | core:telehealth/telehealth-evidence.ts | THE VAULT EVENTS A TELEHEALTH SESSION EMITS — APPROVED BY CARL, 12 OCT 2026 (TELEHEALTH-PLAN.md §6 item 8; DECISIONS.md D-2026-10-12-02, "Carl's ruling" item 1). | **1** · core:telehealth/telehealth.service.ts |
 | `TelehealthVaultEvent` | core:telehealth/telehealth-evidence.ts |  | **1** · core:telehealth/telehealth.service.ts |
 | `anchorsForAffiliations` | core:affiliations/agreement-anchor.ts | The batch form. | **1** · core:arrivals/arrivals.service.ts |
 | `assertRenderable` | core:render/agreement-document.ts |  | **1** · core:render/agreement-pdf-renderer.ts |
@@ -2462,7 +2462,6 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `PAIRING_ATTEMPT_LIMIT` | core:devices/pairing-rate-limit.ts | Ten wrong codes in ten minutes from one address. | 0 |
 | `PAIRING_ATTEMPT_WINDOW_MS` | core:devices/pairing-rate-limit.ts |  | 0 |
 | `PORTAL_PASSKEY_ATTEMPT_WINDOW_MS` | core:portal/portal-passkey-rate-limit.ts |  | 0 |
-| `PROPOSED_TELEHEALTH_EVENT_TYPES` | core:telehealth/telehealth-evidence.ts |  | 0 |
 | `PatientNameOnRecord` | core:agreements/db4-form-view.ts | The name of the patient the agreement is FOR, as our record holds it. | 0 |
 | `PendingServiceDescriptionRow` | core:service-descriptions/service-descriptions.service.ts |  | 0 |
 | `PortalAuthenticationContext` | core:portal/portal-authenticator.ts |  | 0 |
@@ -2487,10 +2486,11 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `SignedDb4PrintRecord` | core:render/signed-db4-document.ts | The DB4 Print Record as it is reproduced — the driver's capture, narrowed to what is drawn. | 0 |
 | `SignedDb4Signature` | core:render/signed-db4-document.ts | THE MARK, AS A REFERENCE. | 0 |
 | `StagedArtefact` | core:artefacts/artefacts.service.ts | Bytes already written and hashed; the metadata row has not been made yet. | 0 |
+| `TELEHEALTH_EVENT_TYPES` | core:telehealth/telehealth-evidence.ts |  | 0 |
 | `TELEHEALTH_LINK_TEMPLATE_KEY` | core:telehealth/telehealth-link.dispatcher.ts | The template the link message is rendered from (versioned content). | 0 |
 | `TELEHEALTH_VERIFICATION_CHANNEL` | core:telehealth/telehealth.service.ts | The verification channel the provider's check on the call is recorded under. | 0 |
 | `TelehealthEvidenceEntry` | core:telehealth/telehealth-evidence.ts |  | 0 |
-| `TelehealthEvidenceSink` | core:telehealth/telehealth-evidence.ts | Where an entry goes until the types are approved. | 0 |
+| `TelehealthEvidenceSink` | core:telehealth/telehealth-evidence.ts | Where an entry goes: the vault outbox, on the caller's `tx` (`outboxSink`). | 0 |
 | `UNPAIRED_MESSAGE` | core:devices/device.guard.ts | ONE SENTENCE FOR "this tablet is not paired", and the kiosk shows its own copy regardless. | 0 |
 | `UploadInput` | core:artefacts/artefacts.service.ts |  | 0 |
 | `VerifiableAgreement` | core:render/verified-artefact.ts | THE ONE WAY A STORED AGREEMENT BECOMES BYTES SOMEBODY IS GIVEN — hard rule 13. | 0 |
@@ -2526,6 +2526,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `normalisedHeldValue` | core:verification/identifier-matching.ts | Normalises a held or stated value for one identifier type. | 0 |
 | `openPreDrafts` | core:agreements/pre-agreement-association.ts | EVERY OPEN PRE-DRAFT, optionally for some patients only, with the day each one is for. | 0 |
 | `ourStringsOf` | core:render/signed-db4-document.ts | THE STRINGS THIS CODEBASE AUTHORED — the ones hard rule 12 is about. | 0 |
+| `outboxSink` | core:telehealth/telehealth-evidence.ts | The outbox, on the SAME `tx` as the domain write (hard rule 11, FR-11.2). | 0 |
 | `renderedStringsOf` | core:render/agreement-document.ts | Every string that will be drawn on the page, in one list — including the particulars' own values, because a service description or a provider name is as much a line on the contract as a template paragraph is. | 0 |
 | `reproducedStringsOf` | core:render/signed-db4-document.ts | THE STRINGS REPRODUCED FROM THE FORM. | 0 |
 | `storedLocalCheck` | core:aobprinter-hosts/aobprinter-hosts.service.ts | THE HOST'S OWN CHECK AS STORED: rebuilt from only the fields its `ok` value declares (the contract's `AobPrinterLocalCheck` union), never the object the request carried. | 0 |

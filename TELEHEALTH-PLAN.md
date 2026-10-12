@@ -219,8 +219,8 @@ up any DB4 that was not signed at the practice.
 2. **The telehealth session, the code, the consent page, the doctor's panel with
    live status, and the "not done" reasons.** *Built 12 Oct 2026 on
    `feat/telehealth-session`, behind `TELEHEALTH_ENABLED` (default off). Its
-   vault event types are PROPOSED in D-2026-10-12-02 and need Carl's approval
-   before the flag can go on anywhere but development and test.*
+   vault event types were approved by Carl on 12 Oct 2026 (D-2026-10-12-02)
+   and are wired to the outbox (PR #33), so the flag alone gates it.*
 3. **The DB4 into the waiting page.** Scenario A complete.
 4. **Next-day matching, and reception's phone follow-up.** Scenario B complete.
 5. **The language layer.** This can start alongside step 1, and every string
@@ -231,7 +231,8 @@ up any DB4 that was not signed at the practice.
 **Before production:**
 - ACMA sender ID registration (REQ-VER-05);
 - Carl's go-ahead for any real SMS or email (development uses the test gateway);
-- approval of the vault event types;
+- ~~approval of the vault event types~~ (approved and wired, 12 Oct 2026,
+  D-2026-10-12-02);
 - **ask Powell St what share of their bulk-billed services are telehealth**
   (VERSION-2 item 1).
 

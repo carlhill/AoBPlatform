@@ -1,26 +1,23 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
+import type { VaultEventType } from '@aobplatform/contracts';
+import { enqueueVaultEvent } from '@aobplatform/vault-client';
 
 /**
- * THE VAULT EVENTS A TELEHEALTH SESSION WILL EMIT — PROPOSED, NOT YET APPROVED
- * (TELEHEALTH-PLAN.md §6 item 8; DECISIONS.md D-2026-10-12-02, PROPOSED).
+ * THE VAULT EVENTS A TELEHEALTH SESSION EMITS — APPROVED BY CARL, 12 OCT 2026
+ * (TELEHEALTH-PLAN.md §6 item 8; DECISIONS.md D-2026-10-12-02, "Carl's ruling"
+ * item 1).
  *
- * Additions to `VAULT_EVENT_TYPES` need Carl's approval: the vault is a
- * human-authored zone (CLAUDE.md §7c). So this file holds the exact shapes, and
- * every domain write in `TelehealthService` hands its event to `record` INSIDE
- * THE SAME TRANSACTION as the write — the outbox pattern's shape, with the one
- * line that enqueues it left for the approval.
+ * The seven types below are in `VAULT_EVENT_TYPES` (packages/contracts), so
+ * the vault's whitelist accepts them. Every domain write in `TelehealthService`
+ * hands its event to `record` INSIDE THE SAME TRANSACTION as the write, and
+ * `record` enqueues it on the vault outbox with that same `tx`: the domain
+ * write and its vault event commit together or not at all (hard rule 11,
+ * FR-11.2). That is why `TelehealthService.enabled()` no longer looks at
+ * `NODE_ENV`: that restriction existed only while these events had nowhere to
+ * go. `TELEHEALTH_ENABLED` (default off) alone gates the feature now.
  *
- * WHY THIS IS NOT SHIPPABLE AS IT STANDS, AND WHAT STOPS IT SHIPPING. Hard rule
- * 11 says a domain write without its vault event must be structurally
- * impossible. Until approval these writes have no vault event, so the feature
- * MUST NOT run anywhere real. `TelehealthService.enabled()` refuses every
- * telehealth route unless `TELEHEALTH_ENABLED=true`, and even then FAILS CLOSED
- * unless `NODE_ENV` is `development` or `test` while
- * `TELEHEALTH_VAULT_EVENTS_APPROVED` below is false. Turning that constant to true is the same commit that adds the types
- * to `VAULT_EVENT_TYPES` and replaces the sink with `enqueueVaultEvent`.
- *
- * WHAT IS ALREADY VAULTED TODAY. The provider's identity check goes through
+ * WHAT ELSE IS VAULTED. The provider's identity check goes through
  * `VerificationService.recordStaffVerified`, which emits the approved
  * `verification.staff_verified` event (types only, never values) in the same
  * transaction. The outbound messages are recorded by the outbound queue.
@@ -30,7 +27,7 @@ import type { Prisma } from '@prisma/client';
  * whether there was one. `assertNoValues` refuses a payload key that could
  * carry one, so a later edit cannot slip a value in.
  */
-export const TELEHEALTH_VAULT_EVENTS_APPROVED = false;
+export const TELEHEALTH_VAULT_EVENTS_APPROVED = true;
 
 export type TelehealthVaultEvent =
   | {
@@ -63,7 +60,7 @@ export type TelehealthVaultEvent =
     }
   | { type: 'telehealth.did_not_proceed'; payload: { fromState: string; consultationAt: string | null; recordedAt: string } };
 
-export const PROPOSED_TELEHEALTH_EVENT_TYPES = [
+export const TELEHEALTH_EVENT_TYPES = [
   'telehealth.session_opened',
   'telehealth.link_sent',
   'telehealth.code_checked',
@@ -71,7 +68,7 @@ export const PROPOSED_TELEHEALTH_EVENT_TYPES = [
   'telehealth.consent_recorded',
   'telehealth.not_done',
   'telehealth.did_not_proceed',
-] as const satisfies readonly TelehealthVaultEvent['type'][];
+] as const satisfies readonly (TelehealthVaultEvent['type'] & VaultEventType)[];
 
 export interface TelehealthEvidenceEntry {
   readonly event: TelehealthVaultEvent;
@@ -91,27 +88,37 @@ export function assertNoValues(payload: Record<string, unknown>): void {
 }
 
 /**
- * Where an entry goes until the types are approved. The default sink discards
- * it; tests install a capturing sink to prove every write hands one over in
- * its own transaction.
+ * Where an entry goes: the vault outbox, on the caller's `tx` (`outboxSink`).
+ * Tests may wrap it in a capturing sink to see every entry a write hands
+ * over, calling through to `outboxSink` so the outbox still gets the row.
  */
 export type TelehealthEvidenceSink = (tx: Prisma.TransactionClient, entry: TelehealthEvidenceEntry) => Promise<void>;
 
+/**
+ * A vault payload holds scalars (`VaultEventInput.payload`). A time the
+ * provider did not give (`consultationAt: null`) is left out rather than
+ * stored as null, as other events leave out what they do not know.
+ */
+function scalarPayload(payload: TelehealthVaultEvent['payload']): Record<string, string | number | boolean> {
+  const out: Record<string, string | number | boolean> = {};
+  for (const [key, value] of Object.entries(payload)) {
+    if (value !== null) out[key] = value;
+  }
+  return out;
+}
+
+/** The outbox, on the SAME `tx` as the domain write (hard rule 11, FR-11.2). */
+export const outboxSink: TelehealthEvidenceSink = (tx, entry) =>
+  enqueueVaultEvent(tx, {
+    type: entry.event.type,
+    actor: entry.actor,
+    subject: entry.subject,
+    payload: scalarPayload(entry.event.payload),
+  });
+
 @Injectable()
 export class TelehealthEvidence {
-  private readonly logger = new Logger(TelehealthEvidence.name);
-  private warned = false;
-
-  /** Replaced by `enqueueVaultEvent` on approval (see the file comment). */
-  sink: TelehealthEvidenceSink = async () => {
-    if (!this.warned) {
-      this.warned = true;
-      this.logger.warn(
-        'Telehealth vault event types are PROPOSED and not yet in VAULT_EVENT_TYPES; events are not reaching the ' +
-          'vault. This build must not run anywhere real (DECISIONS.md D-2026-10-12-02).',
-      );
-    }
-  };
+  sink: TelehealthEvidenceSink = outboxSink;
 
   async record(tx: Prisma.TransactionClient, entry: TelehealthEvidenceEntry): Promise<void> {
     assertNoValues(entry.event.payload as Record<string, unknown>);

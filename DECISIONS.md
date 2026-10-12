@@ -4128,5 +4128,7 @@ approved as proposed:
 7. the carer path records no name; the staff-list block runs at the DB4 in
    step 3.
 
+**Wiring landed (PR #33, 12 Oct 2026):** the seven types are in `VAULT_EVENT_TYPES`, `TelehealthEvidence` enqueues each event with `enqueueVaultEvent` on the write's own `tx`, and `TELEHEALTH_VAULT_EVENTS_APPROVED` is true, so `TELEHEALTH_ENABLED` alone gates the feature and the `NODE_ENV` restriction above no longer applies.
+
 **What would reopen it:** Carl choosing different event names or payloads, or
 the Department's answer to G10 changing what the step before the call records.
