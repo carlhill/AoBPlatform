@@ -22,7 +22,8 @@ import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import type { Actor } from '../auth/actor.decorator';
 import { PrismaService } from '../prisma/prisma.service';
 import { CaptureService } from '../capture/capture.service';
-import { anchorsForAgreements } from '../affiliations/agreement-anchor';
+import { CaptureLinkDispatcher } from '../auto-capture/capture-link.dispatcher';
+import { anchorForAgreement, anchorsForAgreements } from '../affiliations/agreement-anchor';
 import {
   associationChoices,
   calendarDayOf,
@@ -107,6 +108,7 @@ export class ReconciliationService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly capture: CaptureService,
+    private readonly links: CaptureLinkDispatcher,
   ) {}
 
   async outstanding(practiceId: string): Promise<OutstandingItem[]> {
@@ -188,22 +190,62 @@ export class ReconciliationService {
           'Record it as revenue forgone; a further contact is cost with no possible return.',
       );
     }
-    if (record.patientId) {
-      const patient = await this.prisma.withPractice(practiceId, (tx) =>
-        tx.patient.findFirst({ where: { id: record.patientId! } }),
+    const patient = record.patientId
+      ? await this.prisma.withPractice(practiceId, (tx) => tx.patient.findFirst({ where: { id: record.patientId! } }))
+      : null;
+    if (patient?.confidentialityFlag) {
+      throw new BadRequestException(
+        'REQ-CHASE-03: confidentiality-flagged patients are excluded from all outbound chase.',
       );
-      if (patient?.confidentialityFlag) {
-        throw new BadRequestException(
-          'REQ-CHASE-03: confidentiality-flagged patients are excluded from all outbound chase.',
-        );
-      }
     }
     if (!record.agreementId) {
       throw new BadRequestException(
         'No agreement exists for this service yet — create one (choosing the assignor) before sending a capture link.',
       );
     }
-    return this.capture.open(practiceId, { agreementId: record.agreementId, channel });
+    const opened = await this.capture.open(practiceId, { agreementId: record.agreementId, channel });
+
+    /*
+     * AND THE MESSAGE GOES (TELEHEALTH-PLAN §8 step 1, 12 Oct 2026).
+     *
+     * Until today this opened a capture request and returned its token to the
+     * console, which did nothing with it: the row said "sent" and nobody was
+     * sent anything. The message is the one the post-service chase sends —
+     * the same dispatcher, the same words, the same outbound queue (which in
+     * development is the sandbox gateway and Mailhog) — so a link from
+     * reception and a link from the sweep are one link.
+     *
+     * THE CONTACT ON FILE, AND ONLY THAT ONE (D-2026-09-11-03; D-2026-10-11-07
+     * decision 3). The dispatcher reads the email or mobile the practice's
+     * system already holds; nothing in this request can redirect it. A row
+     * with no contact for the channel is refused on the queue before it gets
+     * here (`resendBlockedReason`), and if one arrives anyway the capture
+     * request is opened as before and no message is queued.
+     */
+    const destination =
+      channel === 'sms_link' ? patient?.mobile?.trim() : channel === 'email_link' ? patient?.email?.trim() : null;
+    if (opened.token && patient && destination && (channel === 'sms_link' || channel === 'email_link')) {
+      const token = opened.token;
+      const agreementId = record.agreementId;
+      await this.prisma.withPractice(practiceId, async (tx) => {
+        const practice = await tx.practice.findFirst({ select: { name: true } });
+        const agreement = await tx.agreement.findFirst({ where: { id: agreementId } });
+        const anchor = agreement ? await anchorForAgreement(tx, agreement) : null;
+        await this.links.sendPostAgreementLink(tx, {
+          practiceId,
+          practiceName: practice?.name ?? '',
+          patient,
+          providerName: anchor?.name ?? 'your practitioner',
+          serviceDate: record.serviceDate,
+          mbsItemNumbers: record.mbsItemNumbers,
+          captureRequestId: opened.captureRequestId,
+          channel,
+          token,
+          expiresAt: opened.expiresAt,
+        });
+      });
+    }
+    return opened;
   }
 
   /**

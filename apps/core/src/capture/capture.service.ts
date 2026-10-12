@@ -1,6 +1,7 @@
 import { BadRequestException, GoneException, Injectable, NotFoundException } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
 import type { Prisma } from '@prisma/client';
+import { canTransition, type AgreementStatus } from '@aobplatform/domain';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import { PrismaService } from '../prisma/prisma.service';
 import { VerificationService } from '../verification/verification.service';
@@ -239,27 +240,66 @@ export class CaptureService {
 
     const result = await this.verification.attempt(parsed.practiceId, context.challengeId, { stated });
 
+    /*
+     * THE STATUS IS READ, NOT ASSUMED (TELEHEALTH-PLAN §8 step 1, 12 Oct 2026).
+     *
+     * Until a DB4 could be sent by link, every agreement that reached here was
+     * `verification_pending`, and the events below said so as a literal. A DB4
+     * agreement is not: the inbound handler locks it and leaves it at
+     * `awaiting_signature` before any device sees it, and so does the
+     * post-service push. Writing `from: verification_pending` for one of those
+     * would put a transition in the vault that never happened.
+     *
+     * PASSED, ALREADY AT THE SIGNING STEP: the status does not move, and the
+     * link's own verification is BOUND to the agreement, so the signature
+     * binds the check the person holding the link just passed rather than one
+     * made at the desk earlier (REQ-SIG-02). The event shape is the re-push's
+     * (`from` equals `to`, with the verification id) — one idiom for "the
+     * verification behind this agreement changed and the status did not".
+     *
+     * LOCKED OUT, ALREADY AT THE SIGNING STEP: nothing on the agreement moves.
+     * `awaiting_signature → verification_failed` is not a transition the
+     * lifecycle allows, and the challenge row is what is locked (the link
+     * page reads it and says so). Five wrong guesses by whoever holds a
+     * forwarded link must not take a signable DB4 away from the tablet at the
+     * desk (hard rule 8). Named test: `a_locked_link_leaves_a_signable_db4_signable`.
+     */
     if (result.outcome === 'passed' && result.verificationEventId) {
       await this.prisma.withPractice(parsed.practiceId, async (tx) => {
+        const agreement = await tx.agreement.findFirst({
+          where: { id: context.agreementId },
+          select: { status: true },
+        });
+        const from = agreement?.status ?? 'verification_pending';
+        const to = 'awaiting_signature';
         await tx.agreement.update({
           where: { id: context.agreementId },
-          data: { status: 'awaiting_signature', verificationEventId: result.verificationEventId },
+          data: { status: to, verificationEventId: result.verificationEventId },
         });
         await enqueueVaultEvent(tx, {
           type: 'agreement.status_changed',
           actor: SYSTEM_ACTOR,
           subject: { type: 'Agreement', id: context.agreementId },
-          payload: { from: 'verification_pending', to: 'awaiting_signature' },
+          payload:
+            from === to
+              ? { from, to, verificationEventId: result.verificationEventId as string, channel: 'link' }
+              : { from, to },
         });
       });
     } else if (result.outcome === 'locked_out') {
       await this.prisma.withPractice(parsed.practiceId, async (tx) => {
+        const agreement = await tx.agreement.findFirst({
+          where: { id: context.agreementId },
+          select: { status: true },
+        });
+        const from = (agreement?.status ?? 'verification_pending') as AgreementStatus;
+        if (!canTransition(from, 'verification_failed')) return;
         await tx.agreement.update({ where: { id: context.agreementId }, data: { status: 'verification_failed' } });
         await enqueueVaultEvent(tx, {
           type: 'agreement.status_changed',
           actor: SYSTEM_ACTOR,
           subject: { type: 'Agreement', id: context.agreementId },
-          payload: { from: 'verification_pending', to: 'verification_failed' },
+          payload: { from, to: 'verification_failed' },
         });
       });
     }
