@@ -248,6 +248,57 @@ export const DB4_PRINT_RECORD_CHECKS = [
    * knowing; neither is suppressed to make a tidier list.
    */
   'print_record_benefit_missing',
+  /**
+   * AOBPRINTER SAW SERVICE LINES IT COULD NOT READ (Opus review, 10 October
+   * 2026; D-2026-10-11-05).
+   *
+   * LIVE, AND IT CLOSES THE HOLE THE AMOUNT CHECK LEAVES. That check asks
+   * whether ANY row carries an amount, so a form with one row lost among
+   * several passed it: a credit (`-$10.00`, `($10.00)`), a whole-dollar amount
+   * (`$45`) or a row printed with no amount did not match either shipped
+   * template's row pattern and simply vanished from `services`. The patient
+   * would then read, and sign, a copy of their form missing a service.
+   *
+   * READ FROM `unparsedServiceLines`, A COUNT THE DESKTOP SENDS — never the
+   * lines themselves. The count is not a patient's (hard rule 9): it rides on
+   * `Db4PrintRecordIdentity` so the band can say HOW MANY and on WHICH FORM.
+   *
+   * CONDITIONAL ON THE COUNT BEING THERE. A record from an AOBPRINTER that
+   * predates the count carries none, and is not refused: nobody observed a
+   * lost row, and refusing every push from every desktop not yet upgraded
+   * would stop working practices over nothing (hard rule 8).
+   *
+   * REPRINTING DOES NOT FIX IT. The same layout prints the same lines, so the
+   * console's copy for this one must not promise that it does (wow.md §13).
+   */
+  'print_record_service_lines_unread',
+  /**
+   * THE PRINTED NAME IS NOT THE NAME ON RECORD FOR THAT PMS PATIENT ID (Carl,
+   * 11 October 2026; D-2026-10-11-06): *"STOP and tell Reception that PMS is
+   * sending a diff name for PMSID xxx. Is this correct?"*
+   *
+   * LIVE. A DB4 is matched to a patient on the PMS patient ID and on nothing
+   * else (hard rule 1), so ingest never compares names. A form printing one
+   * name against another patient's ID placed an agreement for the patient on
+   * record, and the tablet would have shown them a form in somebody else's
+   * name.
+   *
+   * ONE COMPARISON, SHARED WITH THE DESK'S WARNING BAND (D-2026-10-10-11):
+   * `db4PrintedNamePartsDiffering` in `db4-printed-name.ts`, so the band and
+   * this refusal can never disagree (Carl, 11 October 2026). Given and family
+   * names are compared separately, only where printed; case, spacing, NFC and
+   * typographic apostrophes and dashes are ignored, and nothing else is. A
+   * middle name, a spelling, or a two-word family name split differently by
+   * the template is refused, and reception decides which side is right.
+   *
+   * A CODE, NEVER EITHER NAME (hard rule 9). The console already shows the
+   * name on record and the PMS patient ID on the row; it composes the
+   * question from those, and the printed name stays on the print record.
+   *
+   * NEVER BESIDE `print_record_patient_unidentified`: that one needs no name
+   * printed and this one needs a name to compare.
+   */
+  'print_record_patient_name_differs',
 ] as const;
 
 /** One failed check. Never a value, never a sentence — see the header. */
@@ -287,6 +338,10 @@ export const DB4_PRINT_RECORD_CHECK_GATED_AT_INGEST: Readonly<
   print_record_service_date_missing: 'no_service_date',
   // THE GAP. Nothing upstream reads an amount, and nothing should compute one.
   print_record_benefit_missing: null,
+  // Ingest places an agreement from the rows it has and never reads the count.
+  print_record_service_lines_unread: null,
+  // Ingest matches on the PMS patient ID alone and never compares names.
+  print_record_patient_name_differs: null,
 };
 
 /**
@@ -392,4 +447,12 @@ export interface Db4PrintRecordIdentity {
    * template is the ordinary cause of everything these checks detect.
    */
   readonly parserTemplateVersion?: string;
+  /**
+   * HOW MANY SERVICE LINES THAT TEMPLATE COULD NOT READ (D-2026-10-11-05).
+   * A count about the machinery, never a line's content, so it sits with the
+   * rest of the identity: `print_record_service_lines_unread` names the fault
+   * and this says how many, so the band can say "2 service lines on form …".
+   * Absent on a record from a desktop that predates the count.
+   */
+  readonly unparsedServiceLines?: number;
 }

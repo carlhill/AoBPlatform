@@ -241,6 +241,95 @@ describe('the DB4 parser, over a page actually printed to AOBPRINTER', () => {
   });
 });
 
+/*
+ * A SERVICE LINE THE ROW PATTERN DOES NOT READ IS COUNTED, NEVER DROPPED
+ * SILENTLY (Opus review, 10 Oct 2026; D-2026-10-11-05).
+ *
+ * `runRows` skips a line its pattern does not match. For most of the page
+ * that is right — a line that is not a service is not a service — but a line
+ * inside the services block that LOOKS like a service and is not read is a row
+ * missing from the patient's copy of their form. Core's amount check only asks
+ * whether ANY row has an amount, so one lost row among several reached the
+ * tablet and the Signed-DB4 without anybody noticing.
+ *
+ * Each shape below vanishes under BOTH shipped templates. The tests assert
+ * that it still vanishes from `services` (widening the pattern is a new
+ * template version, proposed to Carl rather than done here) AND that the
+ * record now says one line was not read. Hand-written lines, deliberately: the
+ * printed fixture has no such row, and these are about the counting, not
+ * about a print driver.
+ */
+describe('unparsed_service_lines_are_counted_not_silently_dropped', () => {
+  const READ_ROW = '12/09/2026 12:03   23      Level B Surgery      $45.05';
+  const SHAPES: readonly (readonly [string, string])[] = [
+    ['a credit with a minus sign', '12/09/2026 12:03   23      Reversal             -$10.00'],
+    ['a credit in brackets', '12/09/2026 12:03   23      Reversal             ($10.00)'],
+    ['a whole-dollar amount with no cents', '12/09/2026 12:03   23      Level B Surgery      $45'],
+    ['a date-led service line with no amount', '12/09/2026 12:03   23      Level B Surgery'],
+  ];
+
+  function parseWith(version: string, lines: readonly string[]) {
+    return parseDb4(templateFor(version)!, {
+      lines: [
+        'Form Reference: HSS0610099099099099099',
+        'Date       Time    Item    Description                      Benefit Assigned',
+        ...lines,
+        '[X] I assign my right to benefits to the health professional who rendered the services.',
+      ],
+      sourceSha256: 'd'.repeat(64),
+      capturedAt: CAPTURED_AT,
+    })!;
+  }
+
+  for (const version of [SEPTEMBER_TEMPLATE_VERSION, 'pracsoft3-db4-2026-10-1']) {
+    for (const [shape, line] of SHAPES) {
+      it(`${version}: ${shape} is not read as a row, and is counted`, () => {
+        const record = parseWith(version, [READ_ROW, line]);
+        // Still dropped from the rows: the pattern is template content (hard rule 14).
+        expect(record.services).toHaveLength(1);
+        expect(record.services?.[0]?.mbsItemNumber).toBe('23');
+        // And no longer silently: the record says a service line went unread.
+        expect(record.unparsedServiceLines).toBe(1);
+      });
+    }
+
+    it(`${version}: every unread line is counted, not just the first`, () => {
+      const record = parseWith(version, [READ_ROW, ...SHAPES.map(([, line]) => line)]);
+      expect(record.services).toHaveLength(1);
+      expect(record.unparsedServiceLines).toBe(SHAPES.length);
+    });
+
+    it(`${version}: a page whose service lines were all read says so with a zero`, () => {
+      // A determination, like a flag: we looked and there was nothing unread.
+      expect(parseWith(version, [READ_ROW]).unparsedServiceLines).toBe(0);
+    });
+  }
+
+  it('lines that are not date-led are not service lines and are not counted', () => {
+    const record = parseWith(DEFAULT_TEMPLATE_VERSION, [
+      READ_ROW,
+      'Date of Birth: 02/02/1972',
+      'Signature: ______________________   Date: ____/____/________',
+      'Level B Surgery continued',
+    ]);
+    expect(record.unparsedServiceLines).toBe(0);
+  });
+
+  it('the printed probe reads every service line it prints', () => {
+    expect(parseFixture()!.unparsedServiceLines).toBe(0);
+    expect(parseFixture(SEPTEMBER_TEMPLATE_VERSION)!.unparsedServiceLines).toBe(0);
+  });
+
+  it('carries a count and never the content of the line it could not read', () => {
+    // No PII and no amount leaves the parser through this field: it is a
+    // number, so neither the description nor the figure can ride on it.
+    const record = parseWith(DEFAULT_TEMPLATE_VERSION, [READ_ROW, SHAPES[0]![1]]);
+    expect(typeof record.unparsedServiceLines).toBe('number');
+    expect(JSON.stringify(record)).not.toContain('Reversal');
+    expect(JSON.stringify(record)).not.toContain('10.00');
+  });
+});
+
 describe('the template is content, and a bad edit fails loudly', () => {
   it('refuses a pattern it cannot compile', () => {
     expect(() =>

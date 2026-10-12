@@ -26,7 +26,10 @@ import { fileURLToPath } from 'node:url';
 const here = dirname(fileURLToPath(import.meta.url));
 const FILE = join(here, 'app', 'strings.ts');
 
-const lines = readFileSync(FILE, 'utf8').split('\n');
+// CRLF OR LF. A Windows checkout (autocrlf) leaves a `\r` on every line, so a
+// test for the exact line `  },` never matched and the front-desk block ran on
+// to the end of the file, reporting banned words that are not on the front desk.
+const lines = readFileSync(FILE, 'utf8').split(/\r?\n/);
 
 /** Nesting path, so `review.audience` and `setup.audience` do not collide. */
 const path = [];
