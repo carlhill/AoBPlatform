@@ -506,6 +506,12 @@ faster than we merged, so the gap compounded.
   without a conflict. Union keeps both sides of an edited line too, so after a
   merge that touched an EXISTING entry, read it. `TODO.md` is edited in place
   and is not union-merged.
+  Two limits found the same day: **git applies the rule only on a branch
+  whose own tree already has the `.gitattributes` line** (a branch cut before
+  it still conflicts, so resolve that once by hand), and **GitHub ignores it**,
+  so a PR can show CONFLICTING on `DECISIONS.md` while a local merge is clean.
+  The merging session merges `main` into the branch locally, pushes, and
+  merges once CI is green.
 - **`INVENTORY.md` conflicts are never hand-merged:** take either side and run
   `npm run inventory`, then `npm run validate:inventory`.
 - **Read `wow.md` before writing an agent's brief,** not only at the start of
