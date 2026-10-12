@@ -105,14 +105,52 @@ describe('a_platform_operator_still_requires_a_passkey', () => {
     await expect(guard.canActivate(context)).resolves.toBe(true);
   });
 
-  it('does not refuse a session that simply never said', async () => {
+  it('a_platform_operator_session_that_never_said_how_is_refused', async () => {
     /*
-     * `unknown` means the realm issued no amr claim, which is true of the MAIN
-     * realm today. Refusing it would lock every platform operator out of the
-     * console the moment this shipped — a check that takes the product down is
-     * not a security control, it is an outage.
+     * D-2026-10-11-02. `unknown` used to pass, because the main realm emitted
+     * no amr claim and refusing it would have locked every operator out. Both
+     * realms emit it now (D-2026-10-10-06), so a session that says nothing
+     * is one the realm did not vouch for, and "we cannot tell" is never "yes".
+     *
+     * Its own code, and a message that states only what was observed: the
+     * server cannot know whether the session used a password, so it must not
+     * say so (wow.md §13), and it cannot know whether signing in again would
+     * help, so it does not offer that either.
      */
+    const spy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
     const { guard, context } = guardFor(operator(undefined));
+    let thrown: unknown;
+    try {
+      await guard.canActivate(context);
+    } catch (err) {
+      thrown = err;
+    } finally {
+      spy.mockRestore();
+    }
+    expect(thrown).toBeInstanceOf(ForbiddenException);
+    const body = (thrown as ForbiddenException).getResponse() as { reasonCode: string; message: string };
+    expect(body.reasonCode).toBe('operator_sign_in_method_unrecorded');
+    expect(body.message.toLowerCase()).not.toContain('password');
+    expect(body.message).not.toMatch(/sign in again/i);
+  });
+
+  it('refuses an operator whose amr names nothing this product reads', async () => {
+    const spy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const { guard, context } = guardFor(operator(['xyz']));
+    await expect(guard.canActivate(context)).rejects.toMatchObject({
+      response: { reasonCode: 'operator_sign_in_method_unrecorded' },
+    });
+    spy.mockRestore();
+  });
+
+  it('leaves a practice session that never said alone; high-stakes acts judge that themselves', async () => {
+    const { guard, context } = guardFor({
+      sub: 'kc-front-desk',
+      principalType: 'staff',
+      roles: ['front_desk'],
+      authTime: Math.floor(Date.now() / 1000),
+      raw: {},
+    });
     await expect(guard.canActivate(context)).resolves.toBe(true);
   });
 

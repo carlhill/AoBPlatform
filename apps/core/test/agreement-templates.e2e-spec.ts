@@ -76,6 +76,8 @@ const REVIEWER = {
   sub: '00000000-0000-4000-8000-00000000rev1'.replace(/[^0-9a-f-]/g, '0'),
   principalType: 'platform',
   roles: ['platform_admin'],
+  // A passkey session: core refuses an operator whose token names no method (D-2026-10-11-02).
+  amr: ['hwk'],
   preferredUsername: 'sam.reviewer',
   raw: {},
 };
