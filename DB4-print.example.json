@@ -5,6 +5,7 @@
   "parserTemplateVersion": "pracsoft3-db4-2026-09-1",
   "pms": "pracsoft3",
   "capturedAt": "2026-09-12T02:03:41.000Z",
+  "unparsedServiceLines": 0,
   "heading": {
     "$comment": "The four heading lines as printed, in order. Carl: 'We need to print this on the page.' See section 2a of the plan before rendering line 3 on OUR artefact — it is the government saying its form is approved, and hard rule 12 forbids us saying it of ours.",
     "lines": [

@@ -45,6 +45,7 @@ import {
   blockedByAnUnreadableForm,
   describePrintRecordCheck,
   describeRefusal,
+  whoBlockedTitle,
 } from './pushDesk';
 import { strings } from '../../strings';
 
@@ -2697,6 +2698,89 @@ describe('the refusal words', () => {
     expect(identity.textContent).toContain(strings.tablet.printRecordId.noFileNote);
     // NO MILLISECONDS — they read as a dollar amount (hard rule 4).
     expect(identity.textContent).not.toMatch(/\d+\.\d{2}/);
+  });
+
+  /*
+   * UNREAD SERVICE LINES (Opus review, 10 Oct 2026; D-2026-10-11-05). The
+   * line names how many and on which form, links to support, and nothing on
+   * the band tells reception to reprint — the same layout prints the same
+   * lines, so that advice would be false for every record that reaches it
+   * (wow.md §13).
+   */
+  const UNREAD_PRINT = {
+    printJobId: '11111111-2222-3333-4444-555555555555',
+    sourceSha256: 'c'.repeat(64),
+    formReference: 'AOB3UNREAD',
+    receivedAt: '2026-10-11T11:04:00Z',
+    parserTemplateVersion: 'pracsoft3-db4-2026-10-1',
+    unparsedServiceLines: 2,
+  };
+
+  it('unparsed_service_lines_refusal_names_the_count_and_the_form_and_links_the_fix', () => {
+    const info = describeRefusal('print_record_incomplete', {
+      checks: ['print_record_service_lines_unread'],
+      print: UNREAD_PRINT,
+    });
+    const [line] = info.checks ?? [];
+    expect(line?.code).toBe('print_record_service_lines_unread');
+    expect(line?.text).toBe(
+      strings.tablet.printRecordServiceLinesUnread(2, 'AOB3UNREAD', 'pracsoft3-db4-2026-10-1'),
+    );
+    expect(line?.text).toContain('2 service lines');
+    expect(line?.text).toContain('AOB3UNREAD');
+    expect(line?.text).toContain('pracsoft3-db4-2026-10-1');
+    expect(line?.link).toEqual({ href: '/help', label: strings.tablet.printRecordServiceLinesUnreadLink });
+    // The sentence and title are the ones that do not promise a reprint.
+    expect(info.title).toBe(strings.tablet.blocked.print_record_service_lines_unreadTitle);
+    expect(info.text).toBe(strings.tablet.blocked.print_record_service_lines_unread);
+    expect(info.text).toMatch(/paper|after the service/i);
+    expect(`${info.title} ${info.text} ${line?.text}`).not.toMatch(/reprint it|needs reprinting|reprint the form/i);
+    // One line reads in the singular.
+    expect(strings.tablet.printRecordServiceLinesUnread(1, 'X1')).toContain('1 service line on form X1');
+  });
+
+  it('unparsed_service_lines_band_renders_the_link_and_drops_the_reprint_note', () => {
+    render(
+      <RefusalOutcomeBody
+        info={describeRefusal('print_record_incomplete', {
+          checks: ['print_record_service_lines_unread'],
+          print: UNREAD_PRINT,
+        })}
+        canSend
+        busy={false}
+        onRecall={() => {}}
+        linkTestId="v-link"
+        recallTestId="v-recall"
+        checksTestId="v-checks"
+      />,
+    );
+    expect(screen.getByTestId('v-checks').textContent).toContain('AOB3UNREAD');
+    const link = screen.getByTestId('print-check-link-print_record_service_lines_unread');
+    expect(link.getAttribute('href')).toBe('/help');
+    const identity = screen.getByTestId('print-record-identity');
+    expect(identity.textContent).toContain(strings.tablet.printRecordId.noFileNoteNoReprint);
+    expect(identity.textContent).not.toContain(strings.tablet.printRecordId.noFileNote);
+  });
+
+  it('unparsed_service_lines_without_a_count_falls_back_to_the_plain_line', () => {
+    // A refusal that lost its identity block still says what is wrong.
+    const info = describeRefusal('print_record_incomplete', { checks: ['print_record_service_lines_unread'] });
+    expect(info.checks?.[0]?.text).toBe(strings.tablet.printRecordChecks.print_record_service_lines_unread);
+    expect(info.checks?.[0]?.link).toBeUndefined();
+    expect(info.text).toBe(strings.tablet.blocked.print_record_service_lines_unread);
+  });
+
+  it('who_is_signing_title_does_not_say_reprint_for_unread_service_lines', () => {
+    expect(
+      whoBlockedTitle({
+        blockedReason: 'print_record_incomplete',
+        printRecord: { checks: ['print_record_service_lines_unread'], print: UNREAD_PRINT },
+      }),
+    ).toBe(strings.tablet.whoBlockedByUnreadServiceLines);
+    expect(
+      whoBlockedTitle({ blockedReason: 'print_record_incomplete', printRecord: { checks: ['print_record_irn_missing'] } }),
+    ).toBe(strings.tablet.whoBlockedByPrintRecord);
+    expect(whoBlockedTitle({ blockedReason: null, printRecord: null })).toBeUndefined();
   });
 
   it('a_refusal_with_no_identity_still_draws_its_sentence_and_its_checks', () => {

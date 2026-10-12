@@ -6685,6 +6685,22 @@ export const strings = {
         + 'not gone to the tablet. The agreement itself is fine — this is about our reading of the form. '
         + 'Reprint it from your practice software and it will come through again, or take this one on '
         + 'paper or after the service. The patient is seen and billed either way.',
+      /**
+       * SERVICE LINES WE SAW AND COULD NOT READ (D-2026-10-11-05) — used IN
+       * PLACE OF the two above whenever that check is in the list.
+       *
+       * IT DOES NOT SAY "REPRINT" (wow.md §13). The same layout prints the
+       * same lines, so a reprint comes back with the same lines unread; telling
+       * reception to reprint would send them round a loop that cannot end. The
+       * fix is ours — a parser template that reads that layout — and the check
+       * line below names the form and links to support.
+       */
+      print_record_service_lines_unreadTitle: 'Some service lines could not be read',
+      print_record_service_lines_unread:
+        'The printed form has service lines we could not read, so this one has not gone to the tablet: the '
+        + 'patient would have been shown a copy missing a service. The agreement itself is fine — this is '
+        + 'about our reading of the form, and reprinting prints the same lines, so it will not help. Take '
+        + 'this one on paper or after the service. The patient is seen and billed either way.',
       /** A code this build has not met yet. Shown, never swallowed (Carl, 4 Sep 2026). */
       other: (code: string) => `Could not send (${code}). Please tell support this code.`,
       /** The rarer case of a refusal that carries no code at all — the server's own sentence, as it came. */
@@ -6738,7 +6754,34 @@ export const strings = {
       print_record_service_date_missing: 'We could not read a date of service',
       /** Carl’s own case, and the only one of the five that reaches a real agreement today. */
       print_record_benefit_missing: 'We could not read an amount against any service',
+      /**
+       * THE FALLBACK ONLY — for a refusal that arrived without its count.
+       * The line reception normally reads is `printRecordServiceLinesUnread`,
+       * which names how many and on which form.
+       */
+      print_record_service_lines_unread: 'We saw service lines we could not read, so the copy would be missing a service',
     } as Record<string, string>,
+    /**
+     * HOW MANY LINES, ON WHICH FORM, READ BY WHICH TEMPLATE (D-2026-10-11-05;
+     * CLAUDE.md §7c, shortcuts to the answer). A count, a form reference and a
+     * template version — none of them a patient's (hard rule 9), and never the
+     * line itself, which never left the practice.
+     *
+     * THE REMEDY IS TRUE FOR EVERY RECORD THAT REACHES THESE WORDS (wow.md
+     * §13): whatever the unread line was, a reprint prints it again the same
+     * way, and what fixes it is a parser template that reads it — which is
+     * ours to ship, so the line sends the reference to support.
+     */
+    printRecordServiceLinesUnread: (count: number, formReference?: string, templateVersion?: string) =>
+      `We could not read ${count === 1 ? '1 service line' : `${count} service lines`} on `
+      + (formReference ? `form ${formReference}` : 'this form')
+      + ', so the patient’s copy would be missing '
+      + (count === 1 ? 'it' : 'them')
+      + '. Send support the form reference'
+      + (templateVersion ? ` and the parser template (${templateVersion})` : '')
+      + ' so the reading can be fixed.',
+    /** The link beside that line. `/help` is where the support contact details live. */
+    printRecordServiceLinesUnreadLink: 'Contact support',
     /*
      * WHY THE s 65C CHECK REFUSED, AND WHAT TO DO ABOUT IT (Carl, 28
      * September 2026: *"why the 65c validation failed - we need context in
@@ -6826,6 +6869,13 @@ export const strings = {
       noFileNote:
         'We hold the reading of the form and a reference to it, never the file itself — so reprint from '
         + 'your practice software rather than looking for a document.',
+      /**
+       * THE SAME FACT WITHOUT THE REPRINT, for a form with unread service
+       * lines — where a reprint brings the same lines back unread (wow.md §13).
+       */
+      noFileNoteNoReprint:
+        'We hold the reading of the form and a reference to it, never the file itself — quote the form '
+        + 'reference above to support rather than looking for a document.',
     },
     /**
      * A CHECK THIS BUILD HAS NOT MET YET — shown with its code, never
@@ -6893,6 +6943,10 @@ export const strings = {
     whoBlockedByPrintRecord:
       'Reprint the form first — this agreement cannot be sent, and a reprint starts a new one, so an '
       + 'answer saved here would not carry over.',
+    /** The same control, where a reprint would not help (D-2026-10-11-05). */
+    whoBlockedByUnreadServiceLines:
+      'This agreement cannot be sent — the form has service lines we could not read — so an answer saved '
+      + 'here would not reach a tablet.',
 
     /** Enduring's own extra line where the provider is not a GP (hard rule 6, REQ-END-01a). */
     enduringOfferOther: 'Offer an episodic agreement or a Treatment Plan Assignment instead.',

@@ -248,6 +248,30 @@ export const DB4_PRINT_RECORD_CHECKS = [
    * knowing; neither is suppressed to make a tidier list.
    */
   'print_record_benefit_missing',
+  /**
+   * AOBPRINTER SAW SERVICE LINES IT COULD NOT READ (Opus review, 10 October
+   * 2026; D-2026-10-11-05).
+   *
+   * LIVE, AND IT CLOSES THE HOLE THE AMOUNT CHECK LEAVES. That check asks
+   * whether ANY row carries an amount, so a form with one row lost among
+   * several passed it: a credit (`-$10.00`, `($10.00)`), a whole-dollar amount
+   * (`$45`) or a row printed with no amount did not match either shipped
+   * template's row pattern and simply vanished from `services`. The patient
+   * would then read, and sign, a copy of their form missing a service.
+   *
+   * READ FROM `unparsedServiceLines`, A COUNT THE DESKTOP SENDS — never the
+   * lines themselves. The count is not a patient's (hard rule 9): it rides on
+   * `Db4PrintRecordIdentity` so the band can say HOW MANY and on WHICH FORM.
+   *
+   * CONDITIONAL ON THE COUNT BEING THERE. A record from an AOBPRINTER that
+   * predates the count carries none, and is not refused: nobody observed a
+   * lost row, and refusing every push from every desktop not yet upgraded
+   * would stop working practices over nothing (hard rule 8).
+   *
+   * REPRINTING DOES NOT FIX IT. The same layout prints the same lines, so the
+   * console's copy for this one must not promise that it does (wow.md §13).
+   */
+  'print_record_service_lines_unread',
 ] as const;
 
 /** One failed check. Never a value, never a sentence — see the header. */
@@ -287,6 +311,8 @@ export const DB4_PRINT_RECORD_CHECK_GATED_AT_INGEST: Readonly<
   print_record_service_date_missing: 'no_service_date',
   // THE GAP. Nothing upstream reads an amount, and nothing should compute one.
   print_record_benefit_missing: null,
+  // Ingest places an agreement from the rows it has and never reads the count.
+  print_record_service_lines_unread: null,
 };
 
 /**
@@ -392,4 +418,12 @@ export interface Db4PrintRecordIdentity {
    * template is the ordinary cause of everything these checks detect.
    */
   readonly parserTemplateVersion?: string;
+  /**
+   * HOW MANY SERVICE LINES THAT TEMPLATE COULD NOT READ (D-2026-10-11-05).
+   * A count about the machinery, never a line's content, so it sits with the
+   * rest of the identity: `print_record_service_lines_unread` names the fault
+   * and this says how many, so the band can say "2 service lines on form …".
+   * Absent on a record from a desktop that predates the count.
+   */
+  readonly unparsedServiceLines?: number;
 }

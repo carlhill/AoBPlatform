@@ -25,6 +25,11 @@
  *   own line for a row — and the mark was not on it. "We looked and it was not
  *   there" is an answer; "we did not look" is the thing that must stay absent.
  *
+ *   AND ONE COUNT, FOR THE SAME REASON. `unparsedServiceLines` is written —
+ *   zero included — whenever the template reads service rows: it is the number
+ *   of service-shaped lines the row pattern did NOT read. Zero is "we looked
+ *   and read them all", which is an answer, not a default.
+ *
  * EVERYTHING SPECIFIC TO PRACSOFT IS IN THE TEMPLATE. This file knows how a
  * `line` extractor behaves; it does not know that the chart number is labelled
  * "Chart Number". That distinction is what lets the layout change without a
@@ -185,6 +190,49 @@ function runRows(extractor: RowExtractor, lines: readonly string[], out: Mutable
   }
 }
 
+/**
+ * A LINE THAT OPENS WITH A DAY-FIRST DATE — the shape every service row on a
+ * DB4 starts with, and the same shape `date:dmy` already knows.
+ *
+ * DELIBERATELY LOOSER THAN ANY ROW PATTERN (one- or two-digit day and month,
+ * leading space allowed). Its job is to catch the near-miss the row pattern
+ * rejected, so it must accept more than the row pattern does.
+ */
+const DATE_LED = /^\s*\d{1,2}\/\d{1,2}\/\d{4}(?!\d)/;
+
+/**
+ * HOW MANY SERVICE LINES THE TEMPLATE DID NOT READ (Opus review, 10 Oct 2026;
+ * D-2026-10-11-05).
+ *
+ * `runRows` skips a line its pattern does not match, which is right for the
+ * page in general and wrong for a service row: a credit (`-$10.00`,
+ * `($10.00)`), a whole-dollar amount (`$45`) or a row printed with no amount
+ * all vanished from `services` under both shipped templates, and the patient's
+ * copy of the form was then missing a row with nothing to say so. Core refuses
+ * Send-to-tablet on a non-zero count.
+ *
+ * THE SERVICES BLOCK IS EVERY DATE-LED LINE ON THE PAGE. Neither shipped
+ * template declares where the block starts and stops, and declaring it is a
+ * template change (hard rule 14). On a DB4 the only lines that open with a date
+ * are service rows, so the page-wide count is the block's count; a layout that
+ * prints something else date-led (a footer timestamp, say) would be counted
+ * too, and that errs toward a refusal at the desk rather than a missing row in
+ * front of the patient.
+ *
+ * A COUNT, NEVER CONTENT. The lines are not kept, logged or returned — no
+ * description, no item number, no amount leaves this function.
+ *
+ * NULL WHEN THE TEMPLATE READS NO SERVICE ROWS AT ALL, because then nobody
+ * looked, and "we did not look" stays absent.
+ */
+function countUnparsedServiceLines(template: ParserTemplate, lines: readonly string[]): number | null {
+  const serviceRows = template.extractors.filter(
+    (e): e is RowExtractor => (e.kind === 'rows' || e.kind === 'row') && e.path === 'services',
+  );
+  if (serviceRows.length === 0) return null;
+  return lines.filter((line) => DATE_LED.test(line) && !serviceRows.some((e) => e.pattern.test(line))).length;
+}
+
 export interface ParseInput {
   /** The printed lines, top to bottom. */
   readonly lines: readonly string[];
@@ -236,6 +284,7 @@ export function parseDb4(template: ParserTemplate, input: ParseInput): Db4PrintR
 
   if (!looksLikeThisForm(out)) return null;
 
+  const unparsedServiceLines = countUnparsedServiceLines(template, input.lines);
   return {
     documentType: DB4_DOCUMENT_TYPE,
     sourceSha256: input.sourceSha256,
@@ -243,6 +292,7 @@ export function parseDb4(template: ParserTemplate, input: ParseInput): Db4PrintR
     pms: template.pms,
     capturedAt: input.capturedAt,
     ...(out as Omit<Db4PrintRecord, 'documentType' | 'sourceSha256' | 'parserTemplateVersion' | 'pms' | 'capturedAt'>),
+    ...(unparsedServiceLines === null ? {} : { unparsedServiceLines }),
   };
 }
 

@@ -14,6 +14,32 @@ being decided.
 
 ---
 
+## Read credits and whole-dollar amounts as service rows? (11 Oct 2026) - D-2026-10-11-05
+
+**Open, Carl to decide.** AOBPRINTER now COUNTS the service lines its template
+cannot read, and Send-to-tablet refuses a form with any
+(`print_record_service_lines_unread`). The lines are still not READ. Under both
+shipped templates these shapes are dropped from `services`: `-$10.00`,
+`($10.00)`, `$45`, and a date-led line with no amount.
+
+Reading them is a template change, so it needs a new version
+(`pracsoft3-db4-2026-10-2`), not an edit (hard rule 14). Questions to answer
+first:
+1. **Reversals (credits): OPEN in the decision register as Q-2026-10-11-01**
+   (Carl, 11 Oct 2026: *"Not sure if reversals are allowed"*). No template
+   reads one until that question closes.
+2. **Whole-dollar `$45`** looks safe to read as printed (still a string, never
+   parsed: hard rule 4). Does PracSoft's real output print it?
+3. **A row with no amount:** should it be read as a row with no
+   `benefitAssigned`? The row would then show on the patient's copy, and
+   D-2026-09-27-06's "one row is enough" would still decide the push.
+4. **Declare the services block's edges** in the same version, so a date-led
+   footer can never be counted as a service line.
+
+Check all four against the first real print before writing the template.
+
+---
+
 ## The kiosk for patients with a physical impairment (Carl, 10 Oct 2026)
 
 **Carl asked for** the kiosk to work for physically impaired patients, with

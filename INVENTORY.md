@@ -17,17 +17,17 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 | | Count |
 |---|---|
-| Exported symbols indexed | 2507 |
+| Exported symbols indexed | 2508 |
 | Files scanned for exports | 583 |
 | Files scanned for imports | 626 |
-| Exports with no comment of their own | 1020 |
-| Exports imported nowhere else | 1038 |
+| Exports with no comment of their own | 1019 |
+| Exports imported nowhere else | 1039 |
 
 ## Sections
 
 - [Web components](#web-components) — 241
 - [Web hooks](#web-hooks) — 16
-- [Web helpers and constants](#web-helpers-and-constants) — 318
+- [Web helpers and constants](#web-helpers-and-constants) — 319
 - [Web types](#web-types) — 122
 - [Domain functions](#domain-functions) — 405
 - [Domain constants and content](#domain-constants-and-content) — 265
@@ -311,7 +311,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Web helpers and constants
 
-318 exports.
+319 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -530,7 +530,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `candidateText` | web:practice/reconciliation/AssociationChoices.tsx | One draft, as a line: what kind, where it is, the day it was for and when it was made. | 0 |
 | `choiceReasonText` | web:practice/reconciliation/AssociationChoices.tsx | What was found, in words, or the code where there are none (CLAUDE.md §7c). | 0 |
 | `closeFixtureSession` | web:patient/portal/fixtures.ts |  | 0 |
-| `describePrintRecordCheck` | web:practice/tablet/pushDesk.tsx |  | 0 |
+| `describePrintRecordCheck` | web:practice/tablet/pushDesk.tsx | ONE FAILED CHECK, IN OUR WORDS — and its own code where we have none. | 0 |
 | `describePrintedNameDifference` | web:practice/tablet/pushDesk.tsx | THE PRINTED-NAME WARNING, IN OUR WORDS (D-2026-10-10-11) — `null` when the row carries none. | 0 |
 | `describeRefusal` | web:practice/tablet/pushDesk.tsx |  | 0 |
 | `describeRuleFailure` | web:practice/tablet/pushDesk.tsx | ONE RULES VERDICT, SPLIT INTO WHAT THE RULE SET SAID AND WHAT TO DO. | 0 |
@@ -630,6 +630,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `when` | web:practice/aobprinter-host/AobPrinterHostView.tsx |  | 0 |
 | `whenLabel` | web:practice/reconciliation/ServiceDescriptionsNeeded.tsx | "Thu 3 Sep, 09:00" — or nothing, for a walk-in with no booked time. | 0 |
 | `whenLabel` | web:practice/tablet/pushDesk.tsx | "9:00", or the honest absence for a walk-in nobody booked. | 0 |
+| `whoBlockedTitle` | web:practice/tablet/pushDesk.tsx | WHY "WHO IS SIGNING?" IS DEAD, IN WORDS THAT ARE TRUE FOR THIS ROW. | 0 |
 | `whoDraftFromRow` | web:practice/tablet/pushDesk.tsx | WHAT THE PANEL OPENS SHOWING, WHEN NOBODY HAS TYPED IN IT YET (Carl, 10 Sep 2026). | 0 |
 | `whoFault` | web:practice/tablet/pushDesk.tsx | THE GATE ON THE "SOMEONE ELSE" BRANCH — the single source of truth behind what Save refuses to send and the reason shown UNDER THE CONTROL IT IS ABOUT. | 0 |
 | `whoSnapshot` | web:practice/tablet/pushDesk.tsx | THE PANEL'S ANSWER, IN THE SHAPE THE DOMAIN COMPARES (Carl, 11 Sep 2026 — D-2026-09-11-01). | 0 |
