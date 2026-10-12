@@ -7,24 +7,24 @@ describe('the telehealth code', () => {
     for (let i = 0; i < 200; i += 1) expect(generateTelehealthCode(6)).toMatch(/^[0-9]{6}$/);
   });
 
-  it('telehealth_code_stored_hashed', () => {
+  it('telehealth_code_stored_hashed', async () => {
     const code = '042917';
-    const stored = hashTelehealthCode(code);
-    // Never the code, and the shape the migration's CHECK insists on.
-    expect(stored).not.toContain(code);
+    const stored = await hashTelehealthCode(code);
+    // The shape the migration's CHECK insists on: a salted scrypt, so the code itself is not in it.
     expect(stored).toMatch(/^scrypt\$[0-9]+\$[0-9a-f]{32}\$[0-9a-f]{64}$/);
+    expect(stored.split('$')).not.toContain(code);
     // Salted: the same code twice is two different hashes.
-    expect(hashTelehealthCode(code)).not.toBe(stored);
-    expect(telehealthCodeMatches(code, stored)).toBe(true);
-    expect(telehealthCodeMatches('042918', stored)).toBe(false);
-    expect(telehealthCodeMatches('', stored)).toBe(false);
-    expect(telehealthCodeMatches(code, null)).toBe(false);
-    expect(telehealthCodeMatches(code, 'sha256$abc')).toBe(false);
+    expect(await hashTelehealthCode(code)).not.toBe(stored);
+    expect(await telehealthCodeMatches(code, stored)).toBe(true);
+    expect(await telehealthCodeMatches('042918', stored)).toBe(false);
+    expect(await telehealthCodeMatches('', stored)).toBe(false);
+    expect(await telehealthCodeMatches(code, null)).toBe(false);
+    expect(await telehealthCodeMatches(code, 'sha256$abc')).toBe(false);
   });
 });
 
 describe('the proposed telehealth vault events', () => {
-  it('telehealth_identifier_types_never_values', () => {
+  it('telehealth_vault_payloads_refuse_value_keys', () => {
     // A payload key that could carry a value is refused before it reaches any sink.
     for (const key of ['code', 'note', 'mobile', 'email', 'name', 'dateOfBirth', 'medicareNumber', 'pageKey']) {
       expect(() => assertNoValues({ [key]: 'x' })).toThrow(/hard rule 9/);

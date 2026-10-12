@@ -20,6 +20,7 @@ import {
   TELEHEALTH_NOT_DONE_NOTE_MAX,
   TELEHEALTH_NOT_DONE_REASONS_VERSION,
   assertValidIdentifierSet,
+  isApprovedIdentifierType,
   isTelehealthSessionState,
   maskEmail,
   maskMobile,
@@ -104,8 +105,15 @@ export class TelehealthService {
    */
   enabled(): boolean {
     if (this.config.get<string>('TELEHEALTH_ENABLED', 'false') !== 'true') return false;
-    if (!TELEHEALTH_VAULT_EVENTS_APPROVED && this.config.get<string>('NODE_ENV') === 'production') return false;
-    return true;
+    if (TELEHEALTH_VAULT_EVENTS_APPROVED) return true;
+    /*
+     * FAILS CLOSED. Until the vault event types are approved, writes without
+     * vault events are allowed ONLY where NODE_ENV says development or test.
+     * Staging, an unset NODE_ENV and anything else are refused (hard rule 11;
+     * review, 12 Oct 2026).
+     */
+    const env = this.config.get<string>('NODE_ENV') ?? '';
+    return env === 'development' || env === 'test';
   }
 
   private assertEnabled(): void {
@@ -208,12 +216,7 @@ export class TelehealthService {
     },
   ): Promise<TelehealthSendResult> {
     const { practiceId, practitionerId, actorId } = await this.scope(actor, headerPracticeId);
-    try {
-      assertValidIdentifierSet(input.identifierTypes);
-    } catch (err) {
-      if (err instanceof IdentifierSetError) throw new BadRequestException(err.message);
-      throw err;
-    }
+    this.assertIdentifierTypes(input.identifierTypes);
     const channel = this.channelOf(input.channel);
     this.assertConsenter(input);
 
@@ -233,6 +236,7 @@ export class TelehealthService {
         identifierTypes: input.identifierTypes,
         staffId: actorId,
         channel: TELEHEALTH_VERIFICATION_CHANNEL,
+        principalType: 'practitioner',
       });
 
       const session = await tx.telehealthSession.create({
@@ -253,7 +257,7 @@ export class TelehealthService {
           linkTokenHash: minted.tokenHash,
           linkExpiresAt: codeExpiresAt,
           linkSentCount: 1,
-          codeHash: hashTelehealthCode(code),
+          codeHash: await hashTelehealthCode(code),
           codeExpiresAt,
           contentVersion: TELEHEALTH_CONTENT_VERSION,
           createdById: actorId,
@@ -324,10 +328,12 @@ export class TelehealthService {
           linkExpiresAt: codeExpiresAt,
           linkConsumedAt: null,
           linkSentCount: session.linkSentCount + 1,
-          codeHash: hashTelehealthCode(code),
+          codeHash: await hashTelehealthCode(code),
           codeExpiresAt,
           codeAttempts: 0,
           codeLockedAt: null,
+          // The open page, if any, stops working and is told why ("a newer link was sent").
+          retiredPageKeyHash: session.pageKeyHash ?? session.retiredPageKeyHash,
           pageKeyHash: null,
           pageKeyExpiresAt: null,
         },
@@ -480,10 +486,10 @@ export class TelehealthService {
   async landing(token: string): Promise<TelehealthLinkLanding> {
     this.assertEnabled();
     const parsed = parseCaptureToken(token);
-    if (!parsed) throw new NotFoundException('This link is not valid.');
+    if (!parsed) throw new NotFoundException({ code: 'link_invalid', message: 'This link is not valid.' });
     return this.prisma.withPractice(parsed.practiceId, async (tx) => {
       const session = await tx.telehealthSession.findFirst({ where: { linkTokenHash: parsed.tokenHash } });
-      if (!session) throw new NotFoundException('This link is not valid.');
+      if (!session) throw new NotFoundException({ code: 'link_invalid', message: 'This link is not valid.' });
       const practice = await tx.practice.findFirst({ select: { name: true } });
       return { state: this.linkState(session), practiceName: practice?.name ?? null };
     });
@@ -500,68 +506,92 @@ export class TelehealthService {
   async enterCode(token: string, code: string): Promise<TelehealthCodeAccepted> {
     this.assertEnabled();
     const parsed = parseCaptureToken(token);
-    if (!parsed) throw new NotFoundException('This link is not valid.');
+    if (!parsed) throw new NotFoundException({ code: 'link_invalid', message: 'This link is not valid.' });
     const pageKey = mintCaptureToken(parsed.practiceId);
+    const limit = TELEHEALTH_CONTENT.code.wrongAttemptsBeforeLock;
 
-    const outcome = await this.prisma.withPractice(
-      parsed.practiceId,
-      async (tx): Promise<{ ok: true } | { ok: false; refusal: TelehealthCodeRefused; status: number }> => {
-        const session = await tx.telehealthSession.findFirst({ where: { linkTokenHash: parsed.tokenHash } });
-        if (!session) throw new NotFoundException('This link is not valid.');
-        const state = this.linkState(session);
-        if (state === 'locked') return { ok: false, status: 423, refusal: { outcome: 'locked', attemptsLeft: 0 } };
-        if (state !== 'open') return { ok: false, status: 410, refusal: { outcome: 'expired', attemptsLeft: null } };
-        if (session.codeExpiresAt && session.codeExpiresAt < new Date()) {
-          return { ok: false, status: 410, refusal: { outcome: 'expired', attemptsLeft: null } };
+    type Outcome = { ok: true } | { ok: false; refusal: TelehealthCodeRefused & { code: string }; status: number };
+    const refuse = (status: number, outcome: TelehealthCodeRefused['outcome'], attemptsLeft: number | null, code: string = outcome): Outcome => ({
+      ok: false,
+      status,
+      refusal: { code, outcome, attemptsLeft },
+    });
+
+    const outcome = await this.prisma.withPractice(parsed.practiceId, async (tx): Promise<Outcome> => {
+      /*
+       * THE ROW LOCK FIRST. Parallel guesses on one link queue here, so each
+       * one reads the attempt count the last one committed. Without it, N
+       * requests could all read "4 so far", all compare, and all be counted
+       * as the fourth (review, 12 Oct 2026).
+       */
+      const locked = await tx.$queryRaw<{ id: string }[]>`
+        SELECT "id" FROM "telehealth_sessions" WHERE "linkTokenHash" = ${parsed.tokenHash} FOR UPDATE`;
+      if (locked.length === 0) throw new NotFoundException({ code: 'link_invalid', message: 'This link is not valid.' });
+      const session = await tx.telehealthSession.findFirstOrThrow({ where: { id: locked[0]!.id } });
+
+      const state = this.linkState(session);
+      if (state === 'locked') return refuse(423, 'locked', 0);
+      if (state === 'used') return refuse(410, 'expired', null, 'link_used');
+      if (state === 'closed') return refuse(410, 'expired', null, 'session_closed');
+      if (state === 'expired' || (session.codeExpiresAt && session.codeExpiresAt < new Date())) {
+        return refuse(410, 'expired', null, 'code_expired');
+      }
+
+      /*
+       * COUNTED BEFORE IT IS COMPARED, and only while the code is not locked.
+       * A right code is a try too; what matters is that no guess is ever
+       * compared without having been counted.
+       */
+      const counted = await tx.$queryRaw<{ codeAttempts: number }[]>`
+        UPDATE "telehealth_sessions" SET "codeAttempts" = "codeAttempts" + 1, "updatedAt" = now()
+        WHERE "id" = ${session.id}::uuid AND "codeLockedAt" IS NULL
+        RETURNING "codeAttempts"`;
+      if (counted.length === 0) return refuse(423, 'locked', 0);
+      const attempts = counted[0]!.codeAttempts;
+
+      if (!(await telehealthCodeMatches((code ?? '').trim(), session.codeHash))) {
+        if (attempts >= limit) {
+          await tx.telehealthSession.update({
+            where: { id: session.id },
+            data: { codeLockedAt: new Date(), codeHash: null },
+          });
+          const task = await this.reviewTasks.raise(tx, {
+            practiceId: parsed.practiceId,
+            kind: TELEHEALTH_CODE_LOCKED_TASK_KIND,
+            subjectType: 'TelehealthSession',
+            subjectId: session.id,
+            summary: `A telehealth link was locked after ${attempts} wrong codes. The provider can send a fresh link and code.`,
+            detail: { attempts },
+          });
+          await this.record(tx, session.id, { principalType: 'system', id: 'core' }, {
+            type: 'telehealth.code_locked_out',
+            payload: { attempts, reviewTaskId: task.id },
+          });
+          return refuse(423, 'locked', 0);
         }
+        return refuse(400, 'wrong_code', limit - attempts);
+      }
 
-        const limit = TELEHEALTH_CONTENT.code.wrongAttemptsBeforeLock;
-        if (!telehealthCodeMatches((code ?? '').trim(), session.codeHash)) {
-          const attempts = session.codeAttempts + 1;
-          if (attempts >= limit) {
-            const now = new Date();
-            await tx.telehealthSession.update({
-              where: { id: session.id },
-              data: { codeAttempts: attempts, codeLockedAt: now, codeHash: null },
-            });
-            const task = await this.reviewTasks.raise(tx, {
-              practiceId: parsed.practiceId,
-              kind: TELEHEALTH_CODE_LOCKED_TASK_KIND,
-              subjectType: 'TelehealthSession',
-              subjectId: session.id,
-              summary: `A telehealth link was locked after ${attempts} wrong codes. The provider can send a fresh link and code.`,
-              detail: { attempts },
-            });
-            await this.record(tx, session.id, { principalType: 'system', id: 'core' }, {
-              type: 'telehealth.code_locked_out',
-              payload: { attempts, reviewTaskId: task.id },
-            });
-            return { ok: false, status: 423, refusal: { outcome: 'locked', attemptsLeft: 0 } };
-          }
-          await tx.telehealthSession.update({ where: { id: session.id }, data: { codeAttempts: attempts } });
-          return { ok: false, status: 400, refusal: { outcome: 'wrong_code', attemptsLeft: limit - attempts } };
-        }
+      const now = new Date();
+      await tx.telehealthSession.update({
+        where: { id: session.id },
+        data: {
+          linkConsumedAt: now,
+          codeHash: null,
+          codeCheckedAt: session.codeCheckedAt ?? now,
+          state: session.state === 'opened' ? 'code_checked' : session.state,
+          pageKeyHash: pageKey.tokenHash,
+          pageKeyExpiresAt: new Date(now.getTime() + TELEHEALTH_CONTENT.page.pageHours * 3600_000),
+        },
+      });
+      await this.record(tx, session.id, { principalType: 'system', id: 'core' }, {
+        type: 'telehealth.code_checked',
+        payload: { attempts },
+      });
+      return { ok: true };
+    });
 
-        const now = new Date();
-        await tx.telehealthSession.update({
-          where: { id: session.id },
-          data: {
-            linkConsumedAt: now,
-            codeHash: null,
-            codeCheckedAt: session.codeCheckedAt ?? now,
-            state: session.state === 'opened' ? 'code_checked' : session.state,
-            pageKeyHash: pageKey.tokenHash,
-            pageKeyExpiresAt: new Date(now.getTime() + TELEHEALTH_CONTENT.page.pageHours * 3600_000),
-          },
-        });
-        await this.record(tx, session.id, { principalType: 'system', id: 'core' }, {
-          type: 'telehealth.code_checked',
-          payload: { attempts: session.codeAttempts + 1 },
-        });
-        return { ok: true };
-      },
-    );
-
+    // Thrown AFTER the transaction commits, so the count is never rolled back with the refusal.
     if (!outcome.ok) throw new HttpException(outcome.refusal, outcome.status);
     return { pageKey: pageKey.token };
   }
@@ -582,12 +612,22 @@ export class TelehealthService {
     this.assertEnabled();
     const { practiceId, session } = await this.byPageKey(pageKey);
     if (consentKey !== TELEHEALTH_CONTENT.consent.key) {
-      throw new ConflictException('The wording on this page has changed. Reload the page to read it again.');
+      throw new ConflictException({
+        code: 'wording_changed',
+        message: 'The wording on this page has changed. Reload the page to read it again.',
+      });
     }
     return this.prisma.withPractice(practiceId, async (tx) => {
       const current = await tx.telehealthSession.findFirst({ where: { id: session.id } });
       if (!current) throw new NotFoundException('This page is no longer open.');
       if (current.state === 'agreed') return this.pageView(tx, current);
+      if (current.state === 'not_done' || current.state === 'did_not_proceed') {
+        // Said by code, so the page shows what the practitioner recorded, not "the wording changed".
+        throw new ConflictException({
+          code: current.state === 'not_done' ? 'session_not_done' : 'session_did_not_proceed',
+          message: 'Your practitioner has already recorded this consultation.',
+        });
+      }
       this.assertMove(current.state, 'agreed');
       const updated = await tx.telehealthSession.update({
         where: { id: current.id },
@@ -655,14 +695,27 @@ export class TelehealthService {
   }
 
   private async byPageKey(pageKey: string | undefined) {
+    const notOpen = () =>
+      new NotFoundException({
+        code: 'page_not_open',
+        message: 'This page is not open. Ask the practitioner on the call for a new link.',
+      });
     const parsed = pageKey ? parseCaptureToken(pageKey) : null;
-    if (!parsed) throw new NotFoundException('This page is not open. Ask the practitioner on the call for a new link.');
+    if (!parsed) throw notOpen();
     const session = await this.prisma.withPractice(parsed.practiceId, (tx) =>
-      tx.telehealthSession.findFirst({ where: { pageKeyHash: parsed.tokenHash } }),
+      tx.telehealthSession.findFirst({
+        where: { OR: [{ pageKeyHash: parsed.tokenHash }, { retiredPageKeyHash: parsed.tokenHash }] },
+      }),
     );
-    if (!session) throw new NotFoundException('This page is not open. Ask the practitioner on the call for a new link.');
+    if (!session) throw notOpen();
+    if (session.pageKeyHash !== parsed.tokenHash) {
+      throw new GoneException({
+        code: 'page_replaced',
+        message: 'A newer link was sent for this consultation. Open the latest message.',
+      });
+    }
     if (session.pageKeyExpiresAt && session.pageKeyExpiresAt < new Date()) {
-      throw new GoneException('This page has closed. Ask the practitioner on the call for a new link.');
+      throw new GoneException({ code: 'page_expired', message: 'This page has closed. Ask your practice for a new link.' });
     }
     return { practiceId: parsed.practiceId, session };
   }
@@ -696,6 +749,34 @@ export class TelehealthService {
     if (session.linkConsumedAt) return 'used';
     if (!session.linkExpiresAt || session.linkExpiresAt < new Date()) return 'expired';
     return 'open';
+  }
+
+  /**
+   * THE APPROVED SIX, AT LEAST THREE — AND THE REFUSAL NEVER REPEATS WHAT WAS
+   * SENT. The domain guard's own message quotes the offending entry; a value
+   * that should never have been typed must not come back in an error, a log
+   * line or a screen (hard rule 9).
+   */
+  private assertIdentifierTypes(types: readonly string[]): void {
+    if (!Array.isArray(types) || !types.every((t) => typeof t === 'string' && isApprovedIdentifierType(t))) {
+      throw new BadRequestException({
+        code: 'identifier_type_not_approved',
+        message:
+          'Only the approved identifier types can be ticked: name, date of birth, gender, address, patient record ' +
+          'number and IHI. The Medicare card number is not one of them.',
+      });
+    }
+    try {
+      assertValidIdentifierSet(types);
+    } catch (err) {
+      if (err instanceof IdentifierSetError) {
+        throw new BadRequestException({
+          code: 'identifier_types_too_few',
+          message: 'Tick at least three of the approved identifier types you checked on the call.',
+        });
+      }
+      throw err;
+    }
   }
 
   private channelOf(raw: string): TelehealthChannel {
@@ -747,7 +828,7 @@ export class TelehealthService {
     if (note.length > TELEHEALTH_NOT_DONE_NOTE_MAX) {
       throw new BadRequestException(`Keep the note to ${TELEHEALTH_NOT_DONE_NOTE_MAX} characters.`);
     }
-    if (NOTE_LOOKS_LIKE_A_VALUE.test(note)) {
+    if (NOTE_LOOKS_LIKE_A_VALUE.test(note) || /\d{6,}/.test(note.replace(/[\s\-\u2010-\u2015]/g, ''))) {
       throw new BadRequestException(
         'The note looks like it holds a number or an email address. Describe the reason without any identifiers.',
       );
@@ -789,6 +870,7 @@ export class TelehealthService {
         identifierTypes: row.identifierTypes,
         consenterIsPatient: row.consenterIsPatient,
         codeExpiresAt: row.codeExpiresAt?.toISOString() ?? null,
+        pageExpiresAt: row.pageKeyExpiresAt?.toISOString() ?? null,
         codeLocked: row.codeLockedAt !== null,
         codeAttemptsLeft: row.linkSentCount ? Math.max(0, limit - row.codeAttempts) : null,
         linkSentCount: row.linkSentCount,

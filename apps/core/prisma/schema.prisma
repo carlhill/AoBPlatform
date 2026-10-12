@@ -3677,6 +3677,8 @@ model TelehealthSession {
   codeCheckedAt         DateTime?
   pageKeyHash           String?   @unique
   pageKeyExpiresAt      DateTime?
+  /// The page key a fresh link replaced, so that page can say "a newer link was sent" rather than "not open".
+  retiredPageKeyHash    String?   @unique
   agreedAt              DateTime?
   /// The consent statement key and the content version it was rendered from (hard rule 14).
   consentKey            String?

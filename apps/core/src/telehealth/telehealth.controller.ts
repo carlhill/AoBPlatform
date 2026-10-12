@@ -11,7 +11,7 @@ import {
   Matches,
   MaxLength,
 } from 'class-validator';
-import { TELEHEALTH_CHANNELS, TELEHEALTH_NOT_DONE_REASON_KEYS } from '@aobplatform/domain';
+import { APPROVED_IDENTIFIER_TYPES, TELEHEALTH_CHANNELS, TELEHEALTH_NOT_DONE_REASON_KEYS } from '@aobplatform/domain';
 import { Public } from '../auth/public.decorator';
 import { SessionActor, type Actor } from '../auth/actor.decorator';
 import { TelehealthService } from './telehealth.service';
@@ -31,6 +31,11 @@ export class SendTelehealthDto {
   @IsArray()
   @ArrayMaxSize(6)
   @IsString({ each: true })
+  // The approved six at the boundary (hard rule 1). The message names the rule, never the value sent (hard rule 9).
+  @IsIn(APPROVED_IDENTIFIER_TYPES as unknown as string[], {
+    each: true,
+    message: 'identifierTypes may hold only the approved identifier types',
+  })
   identifierTypes!: string[];
 
   @IsIn(TELEHEALTH_CHANNELS as unknown as string[])

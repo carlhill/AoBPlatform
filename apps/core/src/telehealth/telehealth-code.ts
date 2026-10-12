@@ -1,4 +1,4 @@
-import { randomInt, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
+import { randomInt, randomBytes, scrypt, timingSafeEqual, type ScryptOptions } from 'node:crypto';
 
 /**
  * THE 6-DIGIT CODE THE PROVIDER READS OUT ON THE CALL (TELEHEALTH-PLAN.md §3
@@ -20,12 +20,21 @@ import { randomInt, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto
  * is dead within minutes anyway. No pepper, deliberately: a server-held key is
  * key management, which is a human-authored zone (CLAUDE.md §7c).
  *
+ * ASYNC, so a burst of guesses does not stall the event loop for every other
+ * request in the process (review, 12 Oct 2026).
+ *
  * NEVER LOGGED. Nothing in this file writes anywhere, and the one caller
  * returns the code once, to the provider's screen.
  */
 
 const SCRYPT_COST = 16384;
 const KEY_LENGTH = 32;
+
+function scryptAsync(secret: string, salt: Buffer, options: ScryptOptions): Promise<Buffer> {
+  return new Promise((resolve, reject) =>
+    scrypt(secret, salt, KEY_LENGTH, options, (err, key) => (err ? reject(err) : resolve(key))),
+  );
+}
 
 /** A fresh code of `digits` digits, leading zeros kept. */
 export function generateTelehealthCode(digits: number): string {
@@ -34,14 +43,14 @@ export function generateTelehealthCode(digits: number): string {
 }
 
 /** `scrypt$<cost>$<salt hex>$<hash hex>` — the shape the migration's CHECK insists on. */
-export function hashTelehealthCode(code: string): string {
+export async function hashTelehealthCode(code: string): Promise<string> {
   const salt = randomBytes(16);
-  const hash = scryptSync(code, salt, KEY_LENGTH, { N: SCRYPT_COST });
+  const hash = await scryptAsync(code, salt, { N: SCRYPT_COST });
   return `scrypt$${SCRYPT_COST}$${salt.toString('hex')}$${hash.toString('hex')}`;
 }
 
 /** Constant-time. A malformed stored value never matches, rather than throwing. */
-export function telehealthCodeMatches(candidate: string, stored: string | null): boolean {
+export async function telehealthCodeMatches(candidate: string, stored: string | null): Promise<boolean> {
   if (!stored) return false;
   const parts = stored.split('$');
   if (parts.length !== 4 || parts[0] !== 'scrypt') return false;
@@ -52,6 +61,6 @@ export function telehealthCodeMatches(candidate: string, stored: string | null):
   if (expected.length !== KEY_LENGTH) return false;
   // Only digits are ever compared; anything else is a wrong code, cheaply.
   if (!/^[0-9]{4,10}$/.test(candidate)) return false;
-  const actual = scryptSync(candidate, salt, KEY_LENGTH, { N: cost });
+  const actual = await scryptAsync(candidate, salt, { N: cost });
   return timingSafeEqual(actual, expected);
 }

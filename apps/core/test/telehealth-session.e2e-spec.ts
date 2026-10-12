@@ -132,18 +132,21 @@ describe('telehealth sessions (e2e, real Postgres)', () => {
     );
     expect(items).toHaveLength(2);
     for (const item of items) {
-      const text = JSON.stringify(item.payload);
-      expect(text).not.toContain(sent.code);
-      expect(text.replace(/https?:\/\/\S+/g, '')).not.toMatch(TELEHEALTH_NEUTRAL_WORDING_FORBIDDEN);
+      // The link carries a random token, so it is taken out before looking for the code in the words.
+      const words = JSON.stringify(item.payload).replace(/https?:\/\/[^\s"\\]+/g, '<link>');
+      expect(words.split(/[^0-9]+/)).not.toContain(sent.code);
+      expect(words.replace(/<link>/g, '')).not.toMatch(TELEHEALTH_NEUTRAL_WORDING_FORBIDDEN);
     }
 
     // telehealth_code_stored_hashed and telehealth_identifier_types_never_values, at rest.
     const row = await prisma.withPractice(practiceId, (tx) =>
       tx.telehealthSession.findFirstOrThrow({ where: { id: sent.session.id } }),
     );
-    expect(row.codeHash).toMatch(/^scrypt\$/);
-    expect(JSON.stringify(row)).not.toContain(sent.code);
-    expect(JSON.stringify(row)).not.toContain('0400 000 412');
+    expect(row.codeHash).toMatch(/^scrypt\$[0-9]+\$[0-9a-f]{32}\$[0-9a-f]{64}$/);
+    // Equality, never substring: no column holds the code or the contact.
+    expect(Object.values(row)).not.toContain(sent.code);
+    expect(Object.values(row)).not.toContain('0400 000 412');
+    expect(Object.values(row)).not.toContain('testy@example.invalid');
     expect(row.identifierTypes.sort()).toEqual([...checked].sort());
     expect(row.affiliationId).toBe(gp.affiliationId);
 
@@ -153,6 +156,11 @@ describe('telehealth sessions (e2e, real Postgres)', () => {
     );
     expect(verification.channel).toBe('telehealth');
     expect(verification.verifiedByStaffId).toBe(`keycloak-${gp.practitionerId}`);
+    // The vault event names the real principal: a practitioner, not staff.
+    const verificationEvent = await prisma.vaultOutbox.findFirstOrThrow({
+      where: { type: 'verification.staff_verified', subjectId: row.verificationEventId! },
+    });
+    expect((verificationEvent.actor as { principalType: string }).principalType).toBe('practitioner');
 
     // The patient: landing (practice only), code, page, agree.
     const token = await tokenFrom(sent.session.id);
@@ -200,7 +208,124 @@ describe('telehealth sessions (e2e, real Postgres)', () => {
       'telehealth.code_checked',
       'telehealth.consent_recorded',
     ]);
-    expect(JSON.stringify(recorded)).not.toContain(sent.code);
+    for (const entry of recorded) expect(Object.values(entry.event.payload)).not.toContain(sent.code);
+  });
+
+  it('telehealth_identifier_types_never_values', async () => {
+    recorded.length = 0;
+    const sent = await telehealth.send(asPractitioner(gp.practitionerId), practiceId, {
+      patientId,
+      identifierTypes: checked,
+      channel: 'sms',
+      consenterIsPatient: true,
+    });
+    const row = await prisma.withPractice(practiceId, (tx) =>
+      tx.telehealthSession.findFirstOrThrow({ where: { id: sent.session.id } }),
+    );
+    // The session holds kinds of identifier, and has no column a value could sit in.
+    expect(row.identifierTypes.sort()).toEqual(['address', 'date_of_birth', 'name']);
+    const columns = Object.keys(row);
+    for (const valueColumn of ['familyName', 'givenNames', 'dateOfBirth', 'address', 'mobile', 'email', 'ihi', 'code']) {
+      expect(columns).not.toContain(valueColumn);
+    }
+    // The patient's own values appear in no column (equality, not substring).
+    for (const value of ['Telehealthson', 'Testy', '1980-01-01', '0400 000 412', 'testy@example.invalid']) {
+      expect(Object.values(row)).not.toContain(value);
+    }
+    // The verification evidence carries the types joined, never a value.
+    const outbox = await prisma.vaultOutbox.findFirstOrThrow({
+      where: { type: 'verification.staff_verified', subjectId: row.verificationEventId! },
+    });
+    expect((outbox.payload as { identifierTypes: string }).identifierTypes).toBe('address,date_of_birth,name');
+    // And the proposed events carry a count, not the list and not the values.
+    const opened = recorded.find((e) => e.event.type === 'telehealth.session_opened')!;
+    expect(opened.event.payload).toMatchObject({ identifierTypeCount: 3 });
+    expect(Object.keys(opened.event.payload)).not.toContain('identifierTypes');
+  });
+
+  it('carer_must_attest_18_before_send', async () => {
+    await expect(
+      telehealth.send(asPractitioner(gp.practitionerId), practiceId, {
+        patientId,
+        identifierTypes: checked,
+        channel: 'sms',
+        consenterIsPatient: false,
+        consenterRelationship: 'mother',
+      }),
+    ).rejects.toThrow(/18 or over/);
+    await expect(
+      telehealth.send(asPractitioner(gp.practitionerId), practiceId, {
+        patientId,
+        identifierTypes: checked,
+        channel: 'sms',
+        consenterIsPatient: false,
+        consenterAttested18: true,
+      }),
+    ).rejects.toThrow(/related to the patient/);
+    // And the database refuses a carer with no attestation even if a caller got past the service.
+    await expect(
+      prisma.withPractice(practiceId, (tx) =>
+        tx.telehealthSession.create({
+          data: {
+            practiceId,
+            patientId,
+            practitionerId: gp.practitionerId,
+            affiliationId: gp.affiliationId,
+            consenterIsPatient: false,
+            consenterRelationship: 'mother',
+            contentVersion: 'test',
+            createdById: 'test',
+          },
+        }),
+      ),
+    ).rejects.toThrow(/telehealth_sessions_carer_attested/);
+  });
+
+  it('parallel wrong guesses never exceed the attempt limit', async () => {
+    const sent = await telehealth.send(asPractitioner(gp.practitionerId), practiceId, {
+      patientId,
+      identifierTypes: checked,
+      channel: 'sms',
+      consenterIsPatient: true,
+    });
+    const token = await tokenFrom(sent.session.id);
+    const wrong = sent.code === '000000' ? '111111' : '000000';
+    const limit = TELEHEALTH_CONTENT.code.wrongAttemptsBeforeLock;
+    const replies = await Promise.all(
+      Array.from({ length: limit + 3 }, () =>
+        request(app.getHttpServer()).post(`/telehealth/link/${token}/code`).send({ code: wrong }),
+      ),
+    );
+    expect(replies.filter((r) => r.status === 400)).toHaveLength(limit - 1);
+    expect(replies.filter((r) => r.status === 423)).toHaveLength(4);
+    const row = await prisma.withPractice(practiceId, (tx) =>
+      tx.telehealthSession.findFirstOrThrow({ where: { id: sent.session.id } }),
+    );
+    expect(row.codeAttempts).toBe(limit);
+    const tasks = await prisma.withPractice(practiceId, (tx) =>
+      tx.reviewTask.findMany({ where: { subjectId: sent.session.id, kind: 'telehealth_code_locked' } }),
+    );
+    expect(tasks).toHaveLength(1);
+  });
+
+  it('a page replaced by a fresh link says so, by code', async () => {
+    const sent = await telehealth.send(asPractitioner(gp.practitionerId), practiceId, {
+      patientId,
+      identifierTypes: checked,
+      channel: 'sms',
+      consenterIsPatient: true,
+    });
+    const token = await tokenFrom(sent.session.id);
+    const ok = await request(app.getHttpServer()).post(`/telehealth/link/${token}/code`).send({ code: sent.code }).expect(201);
+    await telehealth.sendAgain(asPractitioner(gp.practitionerId), practiceId, sent.session.id, {});
+    const old = await request(app.getHttpServer()).get('/telehealth/page').set('x-telehealth-page-key', ok.body.pageKey).expect(410);
+    expect(old.body.code).toBe('page_replaced');
+    // Every refusal on the code carries a code the page maps, not only a status.
+    const fresh = await tokenFrom(sent.session.id);
+    const wrong = await request(app.getHttpServer()).post(`/telehealth/link/${fresh}/code`).send({ code: '999999' === sent.code ? '888888' : '999999' });
+    expect(wrong.body.code).toBe('wrong_code');
+    const unknown = await request(app.getHttpServer()).get('/telehealth/page').set('x-telehealth-page-key', 'nonsense').expect(404);
+    expect(unknown.body.code).toBe('page_not_open');
   });
 
   it('a wrong code locks after the limit, tells the practice, and a fresh link reuses the session', async () => {
@@ -292,6 +417,16 @@ describe('telehealth sessions (e2e, real Postgres)', () => {
         note: 'Card 2123456701 would not scan',
       }),
     ).rejects.toThrow(/without any identifiers/);
+    // Spaces and dashes do not hide a number.
+    for (const note of ['Card 2123 45670 1 would not scan', 'Ref 212-345-6701']) {
+      await expect(
+        telehealth.recordNotDone(asPractitioner(gp.practitionerId), practiceId, {
+          patientId: noMobilePatientId,
+          reason: 'other',
+          note,
+        }),
+      ).rejects.toThrow(/without any identifiers/);
+    }
     await expect(
       telehealth.recordNotDone(asPractitioner(gp.practitionerId), practiceId, {
         patientId: noMobilePatientId,
@@ -318,7 +453,15 @@ describe('telehealth sessions (e2e, real Postgres)', () => {
         channel: 'sms',
         consenterIsPatient: true,
       }),
-    ).rejects.toThrow(/not an approved patient identifier/);
+    ).rejects.toThrow(/approved identifier types/);
+    await expect(
+      telehealth.send(asPractitioner(gp.practitionerId), practiceId, {
+        patientId,
+        identifierTypes: ['name', 'date_of_birth', 'medicare_number'],
+        channel: 'sms',
+        consenterIsPatient: true,
+      }),
+    ).rejects.not.toThrow(/medicare_number/);
     // Two approved types are not a check (the floor of three, REQ-VER-03).
     await expect(
       telehealth.send(asPractitioner(gp.practitionerId), practiceId, {
@@ -327,7 +470,7 @@ describe('telehealth sessions (e2e, real Postgres)', () => {
         channel: 'sms',
         consenterIsPatient: true,
       }),
-    ).rejects.toThrow(/At least 3/);
+    ).rejects.toThrow(/at least three/);
     // And the database refuses the type even if a caller got past the service.
     await expect(
       prisma.withPractice(practiceId, (tx) =>
@@ -369,6 +512,20 @@ describe('telehealth sessions (e2e, real Postgres)', () => {
     const [, secret] = token.split('.');
     const forged = `${Buffer.from(otherPracticeId, 'utf8').toString('base64url')}.${secret}`;
     await request(app.getHttpServer()).get(`/telehealth/link/${forged}`).expect(404);
+  });
+
+  it('fails closed outside development and test while the vault events are unapproved', async () => {
+    const was = process.env.NODE_ENV;
+    try {
+      for (const env of ['production', 'staging', '']) {
+        process.env.NODE_ENV = env;
+        expect({ env, enabled: telehealth.enabled() }).toEqual({ env, enabled: false });
+      }
+      process.env.NODE_ENV = 'development';
+      expect(telehealth.enabled()).toBe(true);
+    } finally {
+      process.env.NODE_ENV = was;
+    }
   });
 
   it('is off unless the flag is on', async () => {

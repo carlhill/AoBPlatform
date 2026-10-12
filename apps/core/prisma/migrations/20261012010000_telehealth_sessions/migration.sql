@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS "telehealth_sessions" (
   "codeCheckedAt"         TIMESTAMP(3),
   "pageKeyHash"           TEXT,
   "pageKeyExpiresAt"      TIMESTAMP(3),
+  "retiredPageKeyHash"    TEXT,
   "agreedAt"              TIMESTAMP(3),
   "consentKey"            TEXT,
   "contentVersion"        TEXT NOT NULL,
@@ -61,6 +62,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS "telehealth_sessions_linkTokenHash_key"
   ON "telehealth_sessions" ("linkTokenHash");
 CREATE UNIQUE INDEX IF NOT EXISTS "telehealth_sessions_pageKeyHash_key"
   ON "telehealth_sessions" ("pageKeyHash");
+CREATE UNIQUE INDEX IF NOT EXISTS "telehealth_sessions_retiredPageKeyHash_key"
+  ON "telehealth_sessions" ("retiredPageKeyHash");
 CREATE INDEX IF NOT EXISTS "telehealth_sessions_practiceId_practitionerId_createdAt_idx"
   ON "telehealth_sessions" ("practiceId", "practitionerId", "createdAt");
 CREATE INDEX IF NOT EXISTS "telehealth_sessions_practiceId_patientId_idx"
@@ -94,6 +97,14 @@ ALTER TABLE "telehealth_sessions" DROP CONSTRAINT IF EXISTS "telehealth_sessions
 ALTER TABLE "telehealth_sessions" ADD CONSTRAINT "telehealth_sessions_link_needs_check"
   CHECK ("linkSentCount" = 0 OR ("identityCheckedById" IS NOT NULL AND cardinality("identifierTypes") >= 3 AND "channel" IS NOT NULL AND "consenterIsPatient" IS NOT NULL));
 
+-- HARD RULE 10 AT THE DATABASE: somebody acting for the patient has said how
+-- they are related and has attested they are 18 or over.
+ALTER TABLE "telehealth_sessions" DROP CONSTRAINT IF EXISTS "telehealth_sessions_carer_attested";
+ALTER TABLE "telehealth_sessions" ADD CONSTRAINT "telehealth_sessions_carer_attested"
+  -- COALESCE, because NULL = true is NULL and a CHECK passes on NULL: without
+  -- it a carer with no attestation at all would get through.
+  CHECK ("consenterIsPatient" IS DISTINCT FROM false OR (COALESCE("consenterAttested18", false) = true AND "consenterRelationship" IS NOT NULL));
+
 -- NOT DONE IF AND ONLY IF THERE IS A REASON, and a note only beside a reason.
 ALTER TABLE "telehealth_sessions" DROP CONSTRAINT IF EXISTS "telehealth_sessions_not_done_iff_reason";
 ALTER TABLE "telehealth_sessions" ADD CONSTRAINT "telehealth_sessions_not_done_iff_reason"
@@ -110,6 +121,7 @@ ALTER TABLE "telehealth_sessions" ADD CONSTRAINT "telehealth_sessions_hashes_are
   CHECK (
     ("linkTokenHash" IS NULL OR "linkTokenHash" ~ '^[0-9a-f]{64}$')
     AND ("pageKeyHash" IS NULL OR "pageKeyHash" ~ '^[0-9a-f]{64}$')
+    AND ("retiredPageKeyHash" IS NULL OR "retiredPageKeyHash" ~ '^[0-9a-f]{64}$')
     AND ("codeHash" IS NULL OR "codeHash" ~ '^scrypt\$[0-9]+\$[0-9a-f]{32}\$[0-9a-f]{64}$')
   );
 

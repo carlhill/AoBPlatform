@@ -43,6 +43,8 @@ export interface TelehealthSessionView {
   readonly identifierTypes: readonly string[];
   readonly consenterIsPatient: boolean | null;
   readonly codeExpiresAt: string | null;
+  /** When the patient's page closes, once the code was entered. The panel polls only while this is ahead. */
+  readonly pageExpiresAt: string | null;
   /** True once the code was entered wrongly too many times; a fresh link and code is the way on. */
   readonly codeLocked: boolean;
   readonly codeAttemptsLeft: number | null;
@@ -83,6 +85,14 @@ export interface TelehealthCodeAccepted {
 /** A wrong code. Never which digit, never the right one. */
 export interface TelehealthCodeRefused {
   readonly outcome: 'wrong_code' | 'locked' | 'expired';
+  /**
+   * What the page maps its words from — never the status alone (wow.md §13):
+   * `wrong_code`, `locked`, `code_expired`, `link_used`, `session_closed`.
+   * Other refusals on these routes carry `link_invalid`, `page_not_open`,
+   * `page_replaced`, `page_expired`, `wording_changed`, `session_not_done` or
+   * `session_did_not_proceed`.
+   */
+  readonly code?: string;
   readonly attemptsLeft: number | null;
 }
 
