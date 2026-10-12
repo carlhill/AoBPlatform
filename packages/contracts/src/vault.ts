@@ -967,6 +967,11 @@ export const VAULT_EVENT_TYPES = [
    *
    * `telehealth.code_checked` (system) — attempts.
    *
+   * `telehealth.code_wrong` (system) — attempts, the count after this wrong
+   * code, emitted when a wrong code is still under the limit (approved by
+   * Carl, 12 Oct 2026, later; D-2026-10-12-02 ruling item 8). The wrong code
+   * that reaches the limit is `telehealth.code_locked_out` instead.
+   *
    * `telehealth.code_locked_out` (system) — attempts, reviewTaskId.
    *
    * `telehealth.consent_recorded` (system) — consentKey, contentVersion,
@@ -985,6 +990,7 @@ export const VAULT_EVENT_TYPES = [
   'telehealth.session_opened',
   'telehealth.link_sent',
   'telehealth.code_checked',
+  'telehealth.code_wrong',
   'telehealth.code_locked_out',
   'telehealth.consent_recorded',
   'telehealth.not_done',

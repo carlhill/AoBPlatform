@@ -353,6 +353,75 @@ describe('telehealth sessions (e2e, real Postgres)', () => {
     ).rejects.toThrow(/telehealth_sessions_carer_attested/);
   });
 
+  it('a wrong code under the limit is vaulted when it happens: one code_wrong row per attempt, attempts only', async () => {
+    // D-2026-10-12-02 ruling item 8. Before it, a wrong attempt reached the vault only through a later
+    // code_checked or code_locked_out, and a fresh send that reset the count lost it.
+    const sent = await telehealth.send(asPractitioner(gp.practitionerId), practiceId, {
+      patientId,
+      identifierTypes: checked,
+      channel: 'sms',
+      consenterIsPatient: true,
+    });
+    const token = await tokenFrom(sent.session.id);
+    const wrong = sent.code === '000000' ? '111111' : '000000';
+    const codeWrongRows = async () =>
+      prisma.vaultOutbox.findMany({
+        where: { subjectType: 'TelehealthSession', subjectId: sent.session.id, type: 'telehealth.code_wrong' },
+      });
+
+    await request(app.getHttpServer()).post(`/telehealth/link/${token}/code`).send({ code: wrong }).expect(400);
+    const first = await codeWrongRows();
+    expect(first).toHaveLength(1);
+    expect(Object.keys(first[0]!.payload as Record<string, unknown>)).toEqual(['attempts']);
+    expect((first[0]!.payload as { attempts: number }).attempts).toBe(1);
+    expect((first[0]!.actor as { principalType: string }).principalType).toBe('system');
+
+    await request(app.getHttpServer()).post(`/telehealth/link/${token}/code`).send({ code: wrong }).expect(400);
+    const second = await codeWrongRows();
+    expect(second).toHaveLength(2);
+    expect(second.map((r) => (r.payload as { attempts: number }).attempts).sort()).toEqual([1, 2]);
+    for (const row of second) {
+      expect(Object.keys(row.payload as Record<string, unknown>)).toEqual(['attempts']);
+      // Never the code or the digits entered (hard rule 9).
+      expect(Object.values(row.payload as Record<string, unknown>)).not.toContain(sent.code);
+      expect(Object.values(row.payload as Record<string, unknown>)).not.toContain(wrong);
+    }
+  });
+
+  it('telehealth_code_wrong_and_its_count_commit_together', async () => {
+    // Hard rule 11 on the wrong-code path: the sink writes the real outbox row and then fails on code_wrong,
+    // so the attempt count's UPDATE must roll back with it. If the event were recorded outside the count's
+    // transaction, codeAttempts would move (or the row would survive) without the other.
+    const sent = await telehealth.send(asPractitioner(gp.practitionerId), practiceId, {
+      patientId,
+      identifierTypes: checked,
+      channel: 'sms',
+      consenterIsPatient: true,
+    });
+    const token = await tokenFrom(sent.session.id);
+    const wrong = sent.code === '000000' ? '111111' : '000000';
+    const evidence = app.get(TelehealthEvidence);
+    const previous = evidence.sink;
+    evidence.sink = async (tx, entry) => {
+      await outboxSink(tx, entry);
+      if (entry.event.type === 'telehealth.code_wrong') throw new Error('simulated failure after the outbox write');
+    };
+    try {
+      await request(app.getHttpServer()).post(`/telehealth/link/${token}/code`).send({ code: wrong }).expect(500);
+    } finally {
+      evidence.sink = previous;
+    }
+
+    const row = await prisma.withPractice(practiceId, (tx) =>
+      tx.telehealthSession.findFirstOrThrow({ where: { id: sent.session.id } }),
+    );
+    expect(row.codeAttempts).toBe(0);
+    const outbox = await prisma.vaultOutbox.findMany({
+      where: { subjectType: 'TelehealthSession', subjectId: sent.session.id, type: 'telehealth.code_wrong' },
+    });
+    expect(outbox).toHaveLength(0);
+  });
+
   it('parallel wrong guesses never exceed the attempt limit', async () => {
     const sent = await telehealth.send(asPractitioner(gp.practitionerId), practiceId, {
       patientId,
@@ -425,8 +494,15 @@ describe('telehealth sessions (e2e, real Postgres)', () => {
       tx.reviewTask.findFirstOrThrow({ where: { subjectId: sent.session.id, kind: 'telehealth_code_locked' } }),
     );
     expect(task.summary).not.toContain(sent.code);
+    // One attempt, one event: each wrong code under the limit is code_wrong, and the one that reaches the
+    // limit is code_locked_out alone (it carries the count), never code_wrong as well.
+    const vaulted = await prisma.vaultOutbox.findMany({ where: { subjectType: 'TelehealthSession', subjectId: sent.session.id } });
+    expect(vaulted.filter((r) => r.type === 'telehealth.code_wrong')).toHaveLength(limit - 1);
+    const lockedOut = vaulted.filter((r) => r.type === 'telehealth.code_locked_out');
+    expect(lockedOut).toHaveLength(1);
+    expect((lockedOut[0]!.payload as { attempts: number }).attempts).toBe(limit);
 
-    const view = (await telehealth.list(asPractitioner(gp.practitionerId), practiceId)).find((s) => s.id === sent.session.id);
+    const view =(await telehealth.list(asPractitioner(gp.practitionerId), practiceId)).find((s) => s.id === sent.session.id);
     expect(view?.codeLocked).toBe(true);
 
     const again = await telehealth.sendAgain(asPractitioner(gp.practitionerId), practiceId, sent.session.id, {});

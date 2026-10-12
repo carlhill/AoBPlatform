@@ -4085,6 +4085,7 @@ codes, counts and times only: never the 6-digit code, a contact, a name or the
 | `telehealth.session_opened` | practitioner | patientId, practitionerId, affiliationId, verificationEventId, identifierTypeCount, consenterIsPatient, channel, contentVersion |
 | `telehealth.link_sent` | practitioner | channel, sendCount, codeExpiresAt |
 | `telehealth.code_checked` | system | attempts |
+| `telehealth.code_wrong` | system | attempts (the count after this wrong code, under the limit; added by ruling item 8) |
 | `telehealth.code_locked_out` | system | attempts, reviewTaskId |
 | `telehealth.consent_recorded` | system | consentKey, contentVersion, consenterIsPatient |
 | `telehealth.not_done` | practitioner | reason, reasonsVersion, hasNote, fromState, consultationAt, recordedAt |
@@ -4127,6 +4128,7 @@ approved as proposed:
 6. the English consent wording as written, carer form included;
 7. the carer path records no name; the staff-list block runs at the DB4 in
    step 3.
+8. (12 Oct 2026, later) Carl approved an eighth type, `telehealth.code_wrong` (system; attempts), so a wrong code under the limit is vaulted when it happens, not only when the code is later accepted or locked.
 
 **Wiring landed (PR #33, 12 Oct 2026):** the seven types are in `VAULT_EVENT_TYPES`, `TelehealthEvidence` enqueues each event with `enqueueVaultEvent` on the write's own `tx`, and `TELEHEALTH_VAULT_EVENTS_APPROVED` is true, so `TELEHEALTH_ENABLED` alone gates the feature and the `NODE_ENV` restriction above no longer applies.
 

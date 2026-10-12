@@ -2369,7 +2369,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `PreparedLock` | core:agreements/agreements.service.ts |  | **1** · core:tablet-sessions/tablet-sessions.service.ts |
 | `REQUIRED_ROLES` | core:auth/roles.decorator.ts |  | **1** · core:auth/auth.guard.ts |
 | `ResolvedChange` | core:identity/practitioner-email.service.ts | The subject of a change, as resolved from a token before any scope exists. | **1** · core:organisations/pending-email.service.ts |
-| `TELEHEALTH_VAULT_EVENTS_APPROVED` | core:telehealth/telehealth-evidence.ts | THE VAULT EVENTS A TELEHEALTH SESSION EMITS — APPROVED BY CARL, 12 OCT 2026 (TELEHEALTH-PLAN.md §6 item 8; DECISIONS.md D-2026-10-12-02, "Carl's ruling" item 1). | **1** · core:telehealth/telehealth.service.ts |
+| `TELEHEALTH_VAULT_EVENTS_APPROVED` | core:telehealth/telehealth-evidence.ts | THE VAULT EVENTS A TELEHEALTH SESSION EMITS — APPROVED BY CARL, 12 OCT 2026 (TELEHEALTH-PLAN.md §6 item 8; DECISIONS.md D-2026-10-12-02, "Carl's ruling" item 1; the eighth, `telehealth.code_wrong`, item 8, later the same day). | **1** · core:telehealth/telehealth.service.ts |
 | `TelehealthVaultEvent` | core:telehealth/telehealth-evidence.ts |  | **1** · core:telehealth/telehealth.service.ts |
 | `anchorsForAffiliations` | core:affiliations/agreement-anchor.ts | The batch form. | **1** · core:arrivals/arrivals.service.ts |
 | `assertRenderable` | core:render/agreement-document.ts |  | **1** · core:render/agreement-pdf-renderer.ts |

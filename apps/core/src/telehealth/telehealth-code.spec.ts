@@ -34,11 +34,24 @@ describe('the telehealth vault events', () => {
   });
 
   it('are_in_the_vault_list_as_carl_approved_them', () => {
-    // Approved by Carl, 12 Oct 2026 (D-2026-10-12-02): all seven are listed, and the approval constant says so.
+    // Approved by Carl, 12 Oct 2026 (D-2026-10-12-02): the seven of ruling item 1 and `code_wrong` of item 8
+    // are all listed, and the approval constant says so.
     const listed: readonly string[] = VAULT_EVENT_TYPES;
     expect(TELEHEALTH_VAULT_EVENTS_APPROVED).toBe(true);
     for (const type of TELEHEALTH_EVENT_TYPES) expect(listed).toContain(type);
-    // Exactly the seven approved: no other telehealth type has crept into the vault list.
+    // Exactly the eight approved: no other telehealth type has crept into the vault list.
+    expect([...TELEHEALTH_EVENT_TYPES].sort()).toEqual(
+      [
+        'telehealth.session_opened',
+        'telehealth.link_sent',
+        'telehealth.code_checked',
+        'telehealth.code_wrong',
+        'telehealth.code_locked_out',
+        'telehealth.consent_recorded',
+        'telehealth.not_done',
+        'telehealth.did_not_proceed',
+      ].sort(),
+    );
     expect(listed.filter((t) => t.startsWith('telehealth.')).sort()).toEqual([...TELEHEALTH_EVENT_TYPES].sort());
   });
 
