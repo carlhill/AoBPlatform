@@ -253,6 +253,18 @@ const EMPTY_SERVICE: ServiceRow = {
 const LOAD_TEST_PRESET_KEYS = ['clean', 'ragged-amounts', 'long-form', 'no-amount', 'no-irn'] as const;
 
 /**
+ * THE CHECK CASES, READY TO PRINT, NEVER SENT BY THE BUTTON (Carl, 12 Oct
+ * 2026). Every other preset — no provider name, every live check at once, no
+ * card, no place of practice, and the two refused at the door — is listed
+ * under the button after a press. Choosing one only puts it in the form, for
+ * the fixture patient the press has just made sure is on file; nothing reaches
+ * core until the tester presses Print to AoB. Every DB4 core receives either
+ * places an agreement or is refused at the door, so sending these from the
+ * button would put check cases on the desk as agreements.
+ */
+const CHECK_CASE_PRESETS = PRESETS.filter((p) => !(LOAD_TEST_PRESET_KEYS as readonly string[]).includes(p.key));
+
+/**
  * THE FIVE PATIENTS, ALREADY FAMILIAR FROM THE DEV SCRIPTS. The first is the
  * printed fixture's patient in `db4-round-trip.sh`; the other four are
  * `stage-kiosk-patients.sh`'s identities under the chart numbers that script
@@ -435,6 +447,25 @@ export function AobPrinterTool() {
        */
       return { ...next, formReference: `TOOL-${key.toUpperCase()}-${Date.now().toString(36).toUpperCase()}` };
     });
+  }, []);
+
+  /** Put one check case in the form for the fixture patient, with a fresh reference. Sends nothing. */
+  const stageCheckCase = useCallback((key: string) => {
+    const preset = PRESETS.find((p) => p.key === key);
+    const patient = LOAD_TEST_PATIENTS[0];
+    if (!preset || !patient) return;
+    setDraft((d) => ({
+      ...startFromPreset(preset, {
+        ...BLANK,
+        practiceId: d.practiceId,
+        patientRecordNumber: patient.patientRecordNumber,
+        givenNames: patient.givenNames,
+        familyName: patient.familyName,
+      }),
+      dateOfBirth: patient.dateOfBirth,
+      formReference: `CHECK-${key.toUpperCase()}-${Date.now().toString(36).toUpperCase()}`,
+    }));
+    document.getElementById('form-h')?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
   }, []);
 
   /** What became of it — state and CODES, never the stored envelope. Null when it could not be read. */
@@ -870,6 +901,29 @@ export function AobPrinterTool() {
                     </li>
                   ))}
                 </ul>
+                <div data-testid="check-cases">
+                  <p className={styles.outcomeLead}>Check cases, ready to print. Nothing has been sent for these.</p>
+                  <p className={styles.outcomeNote}>
+                    Choosing one puts it in the form below for{' '}
+                    {LOAD_TEST_PATIENTS[0] ? `${LOAD_TEST_PATIENTS[0].givenNames} ${LOAD_TEST_PATIENTS[0].familyName}` : 'the fixture patient'}{' '}
+                    with a new form reference. Press <strong>Print to AoB</strong> to send it; a sent check case either
+                    places an agreement with its band or is refused at the door, as its description says.
+                  </p>
+                  <div className={styles.presets}>
+                    {CHECK_CASE_PRESETS.map((p) => (
+                      <button
+                        key={p.key}
+                        type="button"
+                        className={styles.preset}
+                        onClick={() => stageCheckCase(p.key)}
+                        title={p.why}
+                      >
+                        <span className={styles.presetLabel}>{p.label}</span>
+                        <span className={styles.presetWhy}>{p.why}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
             ) : null}
           </div>

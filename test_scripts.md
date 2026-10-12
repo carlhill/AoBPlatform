@@ -103,6 +103,11 @@ and says how many placed. Each press adds five new agreements. It never creates
 a servicing provider: if 9999999X is not set up, it says so and points at
 `db4-round-trip`'s seed step.
 
+After a press it also lists the **check cases** (no provider name, every live
+check at once, no card, no place of practice, and the two refused at the door),
+ready to print. Nothing is sent for them: choosing one puts it in the form for
+Testalina Fakesurname with a new form reference, and **Print to AoB** sends it.
+
 ---
 
 ## Test runs
