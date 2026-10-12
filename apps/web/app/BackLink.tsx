@@ -150,6 +150,8 @@ const PARENTS: Readonly<Record<string, string>> = {
    * `parentOf` beside reports and correspondence.
    */
 
+  /* Practitioner-only, so one parent: their landing page (TELEHEALTH-PLAN.md §8 step 2). */
+  '/practice/practitioner/telehealth': '/practice/practitioner',
   '/practitioner/affiliations': '/practitioner',
   '/practitioner/messages': '/practitioner',
   /*

@@ -17,17 +17,17 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 | | Count |
 |---|---|
-| Exported symbols indexed | 2567 |
-| Files scanned for exports | 591 |
-| Files scanned for imports | 634 |
-| Exports with no comment of their own | 1043 |
-| Exports imported nowhere else | 1061 |
+| Exported symbols indexed | 2574 |
+| Files scanned for exports | 595 |
+| Files scanned for imports | 638 |
+| Exports with no comment of their own | 1044 |
+| Exports imported nowhere else | 1064 |
 
 ## Sections
 
-- [Web components](#web-components) — 241
+- [Web components](#web-components) — 246
 - [Web hooks](#web-hooks) — 16
-- [Web helpers and constants](#web-helpers-and-constants) — 319
+- [Web helpers and constants](#web-helpers-and-constants) — 321
 - [Web types](#web-types) — 122
 - [Domain functions](#domain-functions) — 412
 - [Domain constants and content](#domain-constants-and-content) — 278
@@ -40,18 +40,18 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Web components
 
-241 exports.
+246 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
-| `Notice` | web:ui/index.tsx |  | **70** · web:AccessGuard.tsx, web:HistoryDisclosure.tsx, web:NotFoundView.tsx, +67 more |
-| `Shell` | web:ui/index.tsx |  | **58** · web:AccessGuard.tsx, web:NotFoundView.tsx, web:apply/ApplyForm.tsx, +55 more |
-| `Button` | web:ui/index.tsx |  | **55** · web:ClearForm.tsx, web:HistoryDisclosure.tsx, web:apply/ApplyForm.tsx, +52 more |
-| `SessionControl` | web:SessionControl.tsx | (file) Who is signed in, WHICH PRACTICE they are from, and the way out. | **48** · web:AccessGuard.tsx, web:apply/ApplyForm.tsx, web:help/HelpView.tsx, +45 more |
-| `Chip` | web:ui/index.tsx | The text IS the status. | **36** · web:EmailStatusChip.tsx, web:apply/ApplyForm.tsx, web:apply/GateLedger.tsx, +33 more |
-| `Field` | web:ui/index.tsx |  | **31** · web:apply/ApplyForm.tsx, web:platform/acting-as/history/HistoryView.tsx, web:platform/practices/[practiceId]/aobprinter-host/RebaselinePanel.tsx, +28 more |
-| `TextInput` | web:ui/index.tsx |  | **25** · web:apply/ApplyForm.tsx, web:platform/acting-as/history/HistoryView.tsx, web:practice/ActingAs.tsx, +22 more |
-| `SelectInput` | web:ui/index.tsx |  | **23** · web:apply/ApplyForm.tsx, web:platform/practices/[practiceId]/aobprinter-host/RebaselinePanel.tsx, web:practice/ActingAs.tsx, +20 more |
+| `Notice` | web:ui/index.tsx |  | **72** · web:AccessGuard.tsx, web:HistoryDisclosure.tsx, web:NotFoundView.tsx, +69 more |
+| `Shell` | web:ui/index.tsx |  | **60** · web:AccessGuard.tsx, web:NotFoundView.tsx, web:apply/ApplyForm.tsx, +57 more |
+| `Button` | web:ui/index.tsx |  | **57** · web:ClearForm.tsx, web:HistoryDisclosure.tsx, web:apply/ApplyForm.tsx, +54 more |
+| `SessionControl` | web:SessionControl.tsx | (file) Who is signed in, WHICH PRACTICE they are from, and the way out. | **49** · web:AccessGuard.tsx, web:apply/ApplyForm.tsx, web:help/HelpView.tsx, +46 more |
+| `Chip` | web:ui/index.tsx | The text IS the status. | **37** · web:EmailStatusChip.tsx, web:apply/ApplyForm.tsx, web:apply/GateLedger.tsx, +34 more |
+| `Field` | web:ui/index.tsx |  | **33** · web:apply/ApplyForm.tsx, web:patient/telehealth/[token]/TelehealthPatientView.tsx, web:platform/acting-as/history/HistoryView.tsx, +30 more |
+| `TextInput` | web:ui/index.tsx |  | **27** · web:apply/ApplyForm.tsx, web:patient/telehealth/[token]/TelehealthPatientView.tsx, web:platform/acting-as/history/HistoryView.tsx, +24 more |
+| `SelectInput` | web:ui/index.tsx |  | **24** · web:apply/ApplyForm.tsx, web:platform/practices/[practiceId]/aobprinter-host/RebaselinePanel.tsx, web:practice/ActingAs.tsx, +21 more |
 | `ViewOnly` | web:platform/practices/[practiceId]/ViewOnly.tsx | (file) A practice page opened as the platform: readable, and genuinely inert. | **17** · web:platform/practices/[practiceId]/affiliations/page.tsx, web:platform/practices/[practiceId]/aobprinter-host/AobPrinterHostTwin.tsx, web:platform/practices/[practiceId]/application/page.tsx, +14 more |
 | `PracticeGate` | web:practice/PracticeGate.tsx | (file) "Which practice" resolved, with the two states that answer can be in. | **16** · web:practice/affiliations/page.tsx, web:practice/aobprinter-host/page.tsx, web:practice/channels/page.tsx, +13 more |
 | `Screen` | web:kiosk/components/Chrome.tsx | Header, content and footer. | **12** · web:kiosk/screens/AssignorScreen.tsx, web:kiosk/screens/CheckDetailsScreen.tsx, web:kiosk/screens/CompleteScreen.tsx, +9 more |
@@ -59,7 +59,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `Section` | web:ui/index.tsx |  | **11** · web:apply/ApplyForm.tsx, web:platform/practices/[practiceId]/aobprinter-host/RebaselinePanel.tsx, web:practice/aobprinter-host/AobPrinterHostView.tsx, +8 more |
 | `Card` | web:patient/portal/portal-ui.tsx |  | **9** · web:patient/portal/cards/AgreementsCard.tsx, web:patient/portal/cards/DataCard.tsx, web:patient/portal/cards/DetailsCard.tsx, +6 more |
 | `CardState` | web:patient/portal/portal-ui.tsx | Loading, failed, or empty — the three answers that are not data. | **9** · web:patient/portal/cards/AgreementsCard.tsx, web:patient/portal/cards/DataCard.tsx, web:patient/portal/cards/DetailsCard.tsx, +6 more |
-| `Checkbox` | web:ui/index.tsx | ONE CHECKBOX, AND FROM 12 SEP 2026 IT ALSO WORKS IN A TABLE ROW. | **8** · web:apply/ApplyForm.tsx, web:patient/agree/[token]/AgreeView.tsx, web:practice/affiliations/AffiliationsView.tsx, +5 more |
+| `Checkbox` | web:ui/index.tsx | ONE CHECKBOX, AND FROM 12 SEP 2026 IT ALSO WORKS IN A TABLE ROW. | **9** · web:apply/ApplyForm.tsx, web:patient/agree/[token]/AgreeView.tsx, web:practice/affiliations/AffiliationsView.tsx, +6 more |
 | `PracticeOverride` | web:practice/usePractice.tsx |  | **7** · web:platform/practices/[practiceId]/application/page.tsx, web:platform/practices/[practiceId]/correspondence/page.tsx, web:platform/practices/[practiceId]/queue/page.tsx, +4 more |
 | `GuardedButton` | web:kiosk/components/Buttons.tsx |  | **6** · web:kiosk/components/SignatureControl.tsx, web:kiosk/screens/AssignorScreen.tsx, web:kiosk/screens/CheckDetailsScreen.tsx, +3 more |
 | `PortalButton` | web:patient/portal/portal-ui.tsx | A BUTTON WITH A 44px TARGET, which is why this is not `Button` from `app/ui`. | **6** · web:patient/portal/PortalView.tsx, web:patient/portal/activate/[token]/ActivateView.tsx, web:patient/portal/cards/DetailsCard.tsx, +3 more |
@@ -189,6 +189,8 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `SmallDeskView` | web:practice/frontdesksmall/SmallDeskView.tsx | (file) THE FRONT DESK ON A SMALL SCREEN — one list, not five rails. | **1** · web:practice/frontdesksmall/page.tsx |
 | `StatusView` | web:status/[token]/StatusView.tsx |  | **1** · web:status/[token]/page.tsx |
 | `StopEmailChangeView` | web:practice/stop-email-change/StopEmailChangeView.tsx | (file) "Stop this change" — the page the warning links to. | **1** · web:practice/stop-email-change/page.tsx |
+| `TelehealthPanel` | web:practice/practitioner/telehealth/TelehealthPanel.tsx | (file) THE PRACTITIONER'S TELEHEALTH PANEL (TELEHEALTH-PLAN.md §3 steps 2–8, §4). | **1** · web:practice/practitioner/telehealth/page.tsx |
+| `TelehealthPatientView` | web:patient/telehealth/[token]/TelehealthPatientView.tsx | (file) THE ONE PAGE FOR A TELEHEALTH CONSULTATION (TELEHEALTH-PLAN.md §3 steps 6–9; decision 4: one page for the whole consultation). | **1** · web:patient/telehealth/[token]/page.tsx |
 | `TemplateForm` | web:practice/templates/TemplateForm.tsx | (file) THE WORDING EDITOR — a form, not a box of JSON (Carl, 7 Sep 2026; W1). | **1** · web:practice/templates/TemplatesView.tsx |
 | `TemplatePreview` | web:practice/templates/TemplatesView.tsx | The words, read-only, exactly as they are stored — placeholders and all. | **1** · web:platform/templates/PlatformTemplatesView.tsx |
 | `TemplatesView` | web:practice/templates/TemplatesView.tsx | (file) WHAT THE AGREEMENT LOOKS LIKE, AND WHAT IT SAYS (Carl, 5 Sep 2026; PMS_to_AoB_Workflow.md W1, Q3/Q4). | **1** · web:practice/templates/page.tsx |
@@ -229,6 +231,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `KioskPage` | web:kiosk/page.tsx |  | 0 |
 | `LegacyAgreePage` | web:agree/[token]/page.tsx | The patient's page lives under /patient, like every audience's pages live under their prefix (/practice, /practitioner, /platform). | 0 |
 | `LocationsPage` | web:practice/locations/page.tsx |  | 0 |
+| `NotDoneForm` | web:practice/practitioner/telehealth/TelehealthPanel.tsx | "NOT DONE, WITH A REASON" (§4). | 0 |
 | `NotFound` | web:not-found.tsx | Next's 404. Handed to the same component that handles a refused page, so "there is no such page" and "that page is not yours" look and behave alike — both say which it is, and both take somebody back to a page they can use. | 0 |
 | `OfferEpisodic` | web:practice/tablet/pushDesk.tsx | "CREATE AGREEMENT FOR TODAY'S VISIT" — reception's one press after a patient declines an ongoing agreement (Carl, 4 Sep 2026; GA-PLAN B5). | 0 |
 | `Page` | web:aobprinter/page.tsx | (file) `/aobprinter` — THE BENCH INSTRUMENT'S ROUTE. | 0 |
@@ -263,6 +266,8 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `StatusPage` | web:status/[token]/page.tsx |  | 0 |
 | `StopEmailChangePage` | web:practice/stop-email-change/page.tsx |  | 0 |
 | `TabletPage` | web:practice/tablet/page.tsx | `/practice/tablet` — "Send to the tablet". | 0 |
+| `TelehealthPage` | web:practice/practitioner/telehealth/page.tsx | `/practice/practitioner/telehealth` — the practitioner's Telehealth panel (TELEHEALTH-PLAN.md §8 step 2). | 0 |
+| `TelehealthPatientPage` | web:patient/telehealth/[token]/page.tsx | `/patient/telehealth/[token]` — the one page for a telehealth consultation (TELEHEALTH-PLAN.md §8 step 2). | 0 |
 | `TemplatesPage` | web:practice/templates/page.tsx |  | 0 |
 | `TodayPage` | web:practice/today/page.tsx | `/practice/today` — THE DAY'S WORK (Carl, 12 Sep 2026; PRACTICE-NAVIGATION.md §2). | 0 |
 | `UsersPage` | web:practice/users/page.tsx |  | 0 |
@@ -292,9 +297,9 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
-| `useRefreshable` | web:refresh.ts | Register this page's reload. | **33** · web:patient/portal/PortalView.tsx, web:patient/portal/activate/[token]/ActivateView.tsx, web:platform/acting-as/ActingAsRegister.tsx, +30 more |
-| `usePractice` | web:practice/usePractice.tsx | (file) Which practice is this page about? | **9** · web:practice/PracticeGate.tsx, web:practice/application/ApplicationView.tsx, web:practice/correspondence/CorrespondenceView.tsx, +6 more |
-| `useLiveRefresh` | web:useLiveRefresh.tsx | (file) Re-fetch a screen that is waiting on somebody else. | **4** · web:practice/affiliations/AffiliationsView.tsx, web:practice/queue/QueueView.tsx, web:practice/queue/SummaryView.tsx, +1 more |
+| `useRefreshable` | web:refresh.ts | Register this page's reload. | **34** · web:patient/portal/PortalView.tsx, web:patient/portal/activate/[token]/ActivateView.tsx, web:platform/acting-as/ActingAsRegister.tsx, +31 more |
+| `usePractice` | web:practice/usePractice.tsx | (file) Which practice is this page about? | **10** · web:practice/PracticeGate.tsx, web:practice/application/ApplicationView.tsx, web:practice/correspondence/CorrespondenceView.tsx, +7 more |
+| `useLiveRefresh` | web:useLiveRefresh.tsx | (file) Re-fetch a screen that is waiting on somebody else. | **6** · web:patient/telehealth/[token]/TelehealthPatientView.tsx, web:practice/affiliations/AffiliationsView.tsx, web:practice/practitioner/telehealth/TelehealthPanel.tsx, +3 more |
 | `usePushDesk` | web:practice/tablet/pushDesk.tsx | EVERYTHING RECEPTION CAN DO TO A TABLET, IN ONE PLACE — the fetches, the three-second poll, and the outcome of the last thing anybody pressed. | **4** · web:practice/frontdesk/FrontDeskView.tsx, web:practice/frontdesksmall/SmallDeskView.tsx, web:practice/patients/PatientWorkView.tsx, +1 more |
 | `useSurfaceProfile` | web:surfaceProfile.ts | The practice's profile, and whether we know yet. | **4** · web:AccessGuard.tsx, web:MainMenu.tsx, web:practice/setup/SetupHub.tsx, +1 more |
 | `useEffectivePractice` | web:effectivePractice.ts | The practice claim this browser effectively holds, and whether we know yet. | **3** · web:AccessGuard.tsx, web:BackLink.tsx, web:MainMenu.tsx |
@@ -311,12 +316,12 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Web helpers and constants
 
-319 exports.
+321 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
-| `strings` | web:strings.ts | (file) String table (REQ-LANG-01): every user-facing string lives here, none inline in components. | **138** · web:AccessGuard.tsx, web:AuthGate.tsx, web:BackLink.tsx, +135 more |
-| `apiHeaders` | web:auth.ts | Headers for a core API call: bearer when signed in, dev practice header otherwise. | **54** · web:ConsoleDashboard.tsx, web:HistoryDisclosure.tsx, web:OrgConsole.tsx, +51 more |
+| `strings` | web:strings.ts | (file) String table (REQ-LANG-01): every user-facing string lives here, none inline in components. | **141** · web:AccessGuard.tsx, web:AuthGate.tsx, web:BackLink.tsx, +138 more |
+| `apiHeaders` | web:auth.ts | Headers for a core API call: bearer when signed in, dev practice header otherwise. | **55** · web:ConsoleDashboard.tsx, web:HistoryDisclosure.tsx, web:OrgConsole.tsx, +52 more |
 | `currentSession` | web:auth.ts |  | **36** · web:AccessGuard.tsx, web:AuthGate.tsx, web:BackLink.tsx, +33 more |
 | `strings` | web:kiosk/strings.ts | (file) The kiosk's view of the one string table (REQ-LANG-01). | **23** · web:kiosk/Ceremony.tsx, web:kiosk/components/Chrome.tsx, web:kiosk/components/InactivityWarning.tsx, +20 more |
 | `beginLogin` | web:auth.ts | Sends the browser to Keycloak. | **8** · web:AccessGuard.tsx, web:AuthGate.tsx, web:ConsoleDashboard.tsx, +5 more |
@@ -575,6 +580,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `metadata` | web:patient/messages/[token]/page.tsx |  | 0 |
 | `metadata` | web:patient/portal/activate/[token]/page.tsx |  | 0 |
 | `metadata` | web:patient/portal/page.tsx |  | 0 |
+| `metadata` | web:patient/telehealth/[token]/page.tsx |  | 0 |
 | `metadata` | web:platform/acting-as/history/page.tsx |  | 0 |
 | `metadata` | web:platform/acting-as/page.tsx |  | 0 |
 | `metadata` | web:platform/templates/page.tsx |  | 0 |
@@ -601,6 +607,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `metadata` | web:status/[token]/correct/page.tsx |  | 0 |
 | `metadata` | web:status/[token]/page.tsx |  | 0 |
 | `metadata` | web:verify/[token]/page.tsx |  | 0 |
+| `mobileEnding` | web:practice/practitioner/telehealth/TelehealthPanel.tsx | The last three digits of a masked mobile ("•••••• 412" → "412"), for the read-back. | 0 |
 | `newAgreementBlocked` | web:practice/patients/NewAgreementPanel.tsx | EVERY REASON THIS CANNOT BE SUBMITTED, ALL AT ONCE — live, before anybody presses (CLAUDE.md §6: blocked states are unreachable, not merely inert). | 0 |
 | `openFixtureSession` | web:patient/portal/fixtures.ts |  | 0 |
 | `outcomeMessage` | web:practice/reconciliation/ServiceDescriptionsNeeded.tsx | What to say after a successful set. | 0 |
@@ -1189,9 +1196,9 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
+| `ASSIGNOR_RELATIONSHIP_OPTIONS` | domain:assignor-relationships.ts | The list, in file order, which is screen order. | **5** · web:kiosk/rules/assignor.ts, web:kiosk/screens/AssignorScreen.tsx, web:practice/patients/NewAgreementPanel.tsx, +2 more |
 | `CONFIRMABLE_DETAIL_TYPES` | domain:tablet-session.ts | WHAT THE PATIENT TICKS, AND WHY IT IS NOT THE IDENTIFIER LIST. | **5** · core:portal/portal-reads.service.ts, core:tablet-sessions/dispute-resolution.dto.ts, core:tablet-sessions/tablet-sessions.dto.ts, +2 more |
 | `MIN_AGE_ASSIGN_FOR_OTHER` | domain:guards.ts |  | **5** · web:kiosk/rules/assignor.ts, web:kiosk/screens/AssignorScreen.tsx, web:practice/patients/NewAgreementPanel.tsx, +2 more |
-| `ASSIGNOR_RELATIONSHIP_OPTIONS` | domain:assignor-relationships.ts | The list, in file order, which is screen order. | **4** · web:kiosk/rules/assignor.ts, web:kiosk/screens/AssignorScreen.tsx, web:practice/patients/NewAgreementPanel.tsx, +1 more |
 | `CHECK_CATALOGUE` | domain:checks.ts | The catalogue. | **4** · core:artefacts/artefacts.service.ts, core:organisations/audit.service.ts, core:organisations/checks.service.ts, +1 more |
 | `ASSIGNOR_RELATIONSHIPS_VERSION` | domain:assignor-relationships.ts | Recorded alongside the assignor, so a stored agreement says which list it was made from. | **3** · web:kiosk/rules/assignor.ts, web:practice/patients/NewAgreementPanel.tsx, web:practice/tablet/pushDesk.tsx |
 | `AUTHORITY_BASES_FOR_ANOTHER` | domain:assignor.ts | The fixed list from REQ-VUL-01, for somebody signing FOR ANOTHER PERSON. | **3** · core:agreements/agreements.dto.ts, core:arrivals/arrivals.dto.ts, domain:assignor-relationships.ts |
@@ -1224,6 +1231,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `SERVICE_DESCRIPTIONS` | domain:service-descriptions.ts | The list, in file order, which is screen order. | **2** · core:arrivals/arrivals.dto.ts, core:service-descriptions/service-descriptions.service.ts |
 | `SURFACE_PROFILE_KEYS` | domain:practice-surfaces.ts | The profile keys a practice's column may hold. | **2** · core:practices/practices.dto.ts, web:practice/channels/ChannelsView.tsx |
 | `TELEHEALTH_CHANNELS` | domain:telehealth.ts | How the link goes. | **2** · core:telehealth/telehealth.controller.ts, core:telehealth/telehealth.service.ts |
+| `TELEHEALTH_NOT_DONE_NOTE_MAX` | domain:telehealth.ts | The longest note the panel accepts. | **2** · core:telehealth/telehealth.service.ts, web:practice/practitioner/telehealth/TelehealthPanel.tsx |
 | `UNSIGNED_DRAFT_CLOSURE_DEFAULT_DAYS` | domain:unsigned-draft-closure.ts |  | **2** · core:practices/practices.service.ts, web:practice/channels/ChannelsView.tsx |
 | `UNSIGNED_DRAFT_CLOSURE_MAX_DAYS` | domain:unsigned-draft-closure.ts |  | **2** · core:practices/practices.dto.ts, web:practice/channels/ChannelsView.tsx |
 | `UNSIGNED_DRAFT_CLOSURE_VERSION` | domain:unsigned-draft-closure.ts |  | **2** · core:practices/practices.service.ts, web:practice/channels/ChannelsView.tsx |
@@ -1326,8 +1334,9 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `TELEHEALTH_CODE_LOCKED_TASK_KIND` | domain:review-tasks.ts | The kind a locked telehealth code raises. | **1** · core:telehealth/telehealth.service.ts |
 | `TELEHEALTH_CONTENT` | domain:telehealth.ts |  | **1** · core:telehealth/telehealth.service.ts |
 | `TELEHEALTH_CONTENT_VERSION` | domain:telehealth.ts |  | **1** · core:telehealth/telehealth.service.ts |
+| `TELEHEALTH_IDENTITY_CHECKLIST` | domain:telehealth.ts | WHAT THE PROVIDER TICKS ON THE CALL: identifier TYPES, from the approved six, never values (hard rules 1 and 9; REQ-VER-02/-04). | **1** · web:practice/practitioner/telehealth/TelehealthPanel.tsx |
 | `TELEHEALTH_LINK_STATES` | domain:telehealth.ts | States in which the patient's page is still live and a fresh link may be sent. | **1** · core:telehealth/telehealth.service.ts |
-| `TELEHEALTH_NOT_DONE_NOTE_MAX` | domain:telehealth.ts | The longest note the panel accepts. | **1** · core:telehealth/telehealth.service.ts |
+| `TELEHEALTH_NOT_DONE_REASONS` | domain:telehealth.ts | In file order, which is screen order. | **1** · web:practice/practitioner/telehealth/TelehealthPanel.tsx |
 | `TELEHEALTH_NOT_DONE_REASONS_VERSION` | domain:telehealth.ts |  | **1** · core:telehealth/telehealth.service.ts |
 | `TELEHEALTH_NOT_DONE_REASON_KEYS` | domain:telehealth.ts |  | **1** · core:telehealth/telehealth.controller.ts |
 | `TERMINATION_BUSINESS_DAYS` | domain:enduring.ts |  | **1** · domain:departure-notice.ts |
@@ -1453,9 +1462,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `SUPPRESSIONS_SHOWN_ON_LOG` | domain:correspondence-log.ts | A send that never happened, and why. | 0 |
 | `TABLET_SESSION_PATIENT_FIELDS` | domain:tablet-session.ts | WHAT THE TABLET IS SHOWN ABOUT THE PATIENT, and the list is the contract. | 0 |
 | `TABLET_SESSION_STATES` | domain:tablet-session.ts |  | 0 |
-| `TELEHEALTH_IDENTITY_CHECKLIST` | domain:telehealth.ts | WHAT THE PROVIDER TICKS ON THE CALL: identifier TYPES, from the approved six, never values (hard rules 1 and 9; REQ-VER-02/-04). | 0 |
 | `TELEHEALTH_NEUTRAL_WORDING_FORBIDDEN` | domain:telehealth.ts | WORDS THE CONSENT STATEMENT AND THE LINK MESSAGE MAY NEVER USE, until the Department answers G10 (TELEHEALTH-PLAN.md §9). | 0 |
-| `TELEHEALTH_NOT_DONE_REASONS` | domain:telehealth.ts | In file order, which is screen order. | 0 |
 | `TELEHEALTH_SESSION_MOVES` | domain:telehealth.ts | THE MOVES, AND ONLY THESE. | 0 |
 | `TELEHEALTH_SESSION_STATES` | domain:telehealth.ts | WHERE A SESSION HAS GOT TO. | 0 |
 | `UNSIGNED_DRAFT_CLOSURE_REASONS` | domain:unsigned-draft-closure.ts | WHY AN AGREEMENT WAS CLOSED. | 0 |
@@ -1827,6 +1834,11 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `PmsAppointment` | contracts:pms-adapter.ts |  | **2** · connector:mock-adapter.ts, contracts:print-capture.ts |
 | `PortalLink` | contracts:portal.ts | One practice the patient linked for themselves. | **2** · core:portal/portal-reads.service.ts, core:portal/portal.service.ts |
 | `RefusedArrival` | contracts:arrivals.ts | ONE ARRIVAL WAITING FOR RECEPTION TO NAME A PROVIDER. | **2** · core:arrivals/arrivals.service.ts, web:practice/patients/PatientsQueueView.tsx |
+| `TelehealthLinkLanding` | contracts:telehealth.ts | The landing, before the code. | **2** · core:telehealth/telehealth.service.ts, web:patient/telehealth/[token]/TelehealthPatientView.tsx |
+| `TelehealthMaskedContact` | contracts:telehealth.ts | The contact on the record, masked. | **2** · core:telehealth/telehealth.service.ts, web:practice/practitioner/telehealth/TelehealthPanel.tsx |
+| `TelehealthPageView` | contracts:telehealth.ts | The one page, after the code. | **2** · core:telehealth/telehealth.service.ts, web:patient/telehealth/[token]/TelehealthPatientView.tsx |
+| `TelehealthSendResult` | contracts:telehealth.ts | What Send (and Send again) returns. | **2** · core:telehealth/telehealth.service.ts, web:practice/practitioner/telehealth/TelehealthPanel.tsx |
+| `TelehealthSessionView` | contracts:telehealth.ts | One session as the provider's panel sees it. | **2** · core:telehealth/telehealth.service.ts, web:practice/practitioner/telehealth/TelehealthPanel.tsx |
 | `VaultEventType` | contracts:vault.ts |  | **2** · vault:events/create-event.dto.ts, vault-client:relay.ts |
 | `AobPrinterChainRegressionView` | contracts:aobprinter-heartbeat.ts | A regression as stored on the row: the finding, and when it was made. | **1** · core:aobprinter-hosts/aobprinter-hosts.service.ts |
 | `AobPrinterExceptionStage` | contracts:aobprinter-heartbeat.ts | One of `AOBPRINTER_EXCEPTION_STAGES`. | **1** · aobprinter:store.ts |
@@ -1880,11 +1892,6 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `SilentRestoreClient` | contracts:auth.ts |  | **1** · web:AccessGuard.tsx |
 | `TelehealthCodeAccepted` | contracts:telehealth.ts | A right code. | **1** · core:telehealth/telehealth.service.ts |
 | `TelehealthCodeRefused` | contracts:telehealth.ts | A wrong code. | **1** · core:telehealth/telehealth.service.ts |
-| `TelehealthLinkLanding` | contracts:telehealth.ts | The landing, before the code. | **1** · core:telehealth/telehealth.service.ts |
-| `TelehealthMaskedContact` | contracts:telehealth.ts | The contact on the record, masked. | **1** · core:telehealth/telehealth.service.ts |
-| `TelehealthPageView` | contracts:telehealth.ts | The one page, after the code. | **1** · core:telehealth/telehealth.service.ts |
-| `TelehealthSendResult` | contracts:telehealth.ts | What Send (and Send again) returns. | **1** · core:telehealth/telehealth.service.ts |
-| `TelehealthSessionView` | contracts:telehealth.ts | One session as the provider's panel sees it. | **1** · core:telehealth/telehealth.service.ts |
 | `ValidationRequest` | contracts:rules-engine.ts |  | **1** · core:rules-client/rules-client.module.ts |
 | `WriteArtefactRequest` | contracts:pms-adapter.ts |  | **1** · connector:mock-adapter.ts |
 | `WriteBackManifest` | contracts:print-capture.ts | THE WRITE-BACK MANIFEST — the small JSON beside the PDF in the patient's folder (DB4-AND-AOBL.md §7, row 3b). | **1** · aobprinter:collector.ts |
