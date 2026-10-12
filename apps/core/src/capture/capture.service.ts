@@ -1,6 +1,7 @@
-import { BadRequestException, GoneException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, GoneException, HttpException, Injectable, NotFoundException } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
 import type { Prisma } from '@prisma/client';
+import { canTransition, type AgreementStatus } from '@aobplatform/domain';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import { PrismaService } from '../prisma/prisma.service';
 import { VerificationService } from '../verification/verification.service';
@@ -42,10 +43,25 @@ export class CaptureService {
    * locked agreement's status is untouched by opening a channel to it.
    */
   async open(practiceId: string, input: { agreementId: string; channel: string }) {
+    return this.prisma.withPractice(practiceId, (tx) => this.openWithin(tx, practiceId, input));
+  }
+
+  /**
+   * `open`, INSIDE A CALLER'S TRANSACTION (12 Oct 2026). Reception's resend
+   * opens the link and queues the message that carries it in one
+   * transaction, so a send that fails leaves no open request behind — an
+   * open request nobody was sent would make every retry hit FR-2.7's
+   * duplicate refusal and name the wrong cause (wow.md §13).
+   */
+  async openWithin(
+    tx: Prisma.TransactionClient,
+    practiceId: string,
+    input: { agreementId: string; channel: string },
+  ) {
     const remote = REMOTE_CHANNELS.includes(input.channel);
     const minted = remote ? mintCaptureToken(practiceId) : null;
 
-    const request = await this.prisma.withPractice(practiceId, async (tx) => {
+    const request = await (async () => {
       const agreement = await tx.agreement.findFirst({ where: { id: input.agreementId } });
       if (!agreement) throw new NotFoundException('Agreement not found.');
       if (!['draft', 'verification_pending', 'awaiting_signature'].includes(agreement.status)) {
@@ -84,7 +100,7 @@ export class CaptureService {
         payload: { channel: input.channel, agreementId: input.agreementId },
       });
       return created;
-    });
+    })();
 
     // The raw token appears exactly once, in this response, for the message
     // dispatcher — it is not recoverable afterwards (only its hash is held).
@@ -183,7 +199,13 @@ export class CaptureService {
     return this.prisma.withPractice(parsed.practiceId, async (tx) => {
       const request = await tx.captureRequest.findFirst({ where: { tokenHash: parsed.tokenHash } });
       if (!request) throw new NotFoundException('This link is not valid.');
-      if (request.status !== 'open') throw new GoneException('This link has already been used or closed.');
+      if (request.status !== 'open') {
+        // A link closed BY its lockout says so (423), not "used or closed".
+        if (await challengeLocked(tx, request.verificationChallengeId)) {
+          throw new HttpException('Verification is locked. Contact the practice.', 423);
+        }
+        throw new GoneException('This link has already been used or closed.');
+      }
       if (request.expiresAt && request.expiresAt < new Date()) {
         throw new GoneException('This link has expired. Contact the practice for a new one.');
       }
@@ -234,32 +256,102 @@ export class CaptureService {
       if (!request?.verificationChallengeId || request.status !== 'open') {
         throw new NotFoundException('This link is not valid.');
       }
-      return { requestId: request.id, challengeId: request.verificationChallengeId, agreementId: request.agreementId };
+      return {
+        requestId: request.id,
+        challengeId: request.verificationChallengeId,
+        agreementId: request.agreementId,
+        channel: request.channel,
+      };
     });
 
     const result = await this.verification.attempt(parsed.practiceId, context.challengeId, { stated });
 
+    /*
+     * THE STATUS IS READ, NOT ASSUMED (TELEHEALTH-PLAN §8 step 1, 12 Oct 2026).
+     *
+     * Until a DB4 could be sent by link, every agreement that reached here was
+     * `verification_pending`, and the events below said so as a literal. A DB4
+     * agreement is not: the inbound handler locks it and leaves it at
+     * `awaiting_signature` before any device sees it, and so does the
+     * post-service push. Writing `from: verification_pending` for one of those
+     * would put a transition in the vault that never happened.
+     *
+     * PASSED, ALREADY AT THE SIGNING STEP: the status does not move, and the
+     * link's own verification is BOUND to the agreement, so the signature
+     * binds the check the person holding the link just passed rather than one
+     * made at the desk earlier (REQ-SIG-02). The event shape is the re-push's
+     * (`from` equals `to`, with the verification id) — one idiom for "the
+     * verification behind this agreement changed and the status did not".
+     *
+     * LOCKED OUT, ALREADY AT THE SIGNING STEP: nothing on the agreement moves.
+     * `awaiting_signature → verification_failed` is not a transition the
+     * lifecycle allows, and the challenge row is what is locked (the link
+     * page reads it and says so). Five wrong guesses by whoever holds a
+     * forwarded link must not take a signable DB4 away from the tablet at the
+     * desk (hard rule 8). Named test: `a_locked_link_leaves_a_signable_db4_signable`.
+     */
     if (result.outcome === 'passed' && result.verificationEventId) {
       await this.prisma.withPractice(parsed.practiceId, async (tx) => {
+        const agreement = await tx.agreement.findFirst({
+          where: { id: context.agreementId },
+          select: { status: true },
+        });
+        const from = (agreement?.status ?? 'verification_pending') as AgreementStatus;
+        const to = 'awaiting_signature';
+        /*
+         * NEVER A MOVE THE LIFECYCLE FORBIDS (12 Oct 2026). With two links open
+         * (SMS and email), one can lock the agreement (`verification_failed`)
+         * and the other then pass its own check. `verification_failed →
+         * awaiting_signature` is not a transition, and writing it would undo
+         * the first link's lockout in the record and in the vault. The
+         * agreement stays locked; the page reads it and says so (423).
+         * Named test: `a_passed_second_link_never_undoes_the_first_links_lockout`.
+         */
+        if (from !== to && !canTransition(from, to)) return;
         await tx.agreement.update({
           where: { id: context.agreementId },
-          data: { status: 'awaiting_signature', verificationEventId: result.verificationEventId },
+          data: { status: to, verificationEventId: result.verificationEventId },
         });
         await enqueueVaultEvent(tx, {
           type: 'agreement.status_changed',
           actor: SYSTEM_ACTOR,
           subject: { type: 'Agreement', id: context.agreementId },
-          payload: { from: 'verification_pending', to: 'awaiting_signature' },
+          payload:
+            from === to
+              ? { from, to, verificationEventId: result.verificationEventId as string, channel: 'link' }
+              : { from, to },
         });
       });
     } else if (result.outcome === 'locked_out') {
       await this.prisma.withPractice(parsed.practiceId, async (tx) => {
+        const agreement = await tx.agreement.findFirst({
+          where: { id: context.agreementId },
+          select: { status: true },
+        });
+        const from = (agreement?.status ?? 'verification_pending') as AgreementStatus;
+        if (!canTransition(from, 'verification_failed')) {
+          /*
+           * THE LINK IS WHAT LOCKED, SO THE LINK IS WHAT CLOSES (12 Oct 2026).
+           * The agreement cannot move (a DB4 is already at the signing step),
+           * so this link's request is cancelled in the same transaction, with
+           * the existing event and a reason. Reception's queue then shows
+           * the lock and why, and a fresh link is not refused as a duplicate.
+           */
+          await tx.captureRequest.update({ where: { id: context.requestId }, data: { status: 'cancelled' } });
+          await enqueueVaultEvent(tx, {
+            type: 'capture.cancelled',
+            actor: SYSTEM_ACTOR,
+            subject: { type: 'CaptureRequest', id: context.requestId },
+            payload: { reason: 'verification_locked_out', agreementId: context.agreementId, channel: context.channel },
+          });
+          return;
+        }
         await tx.agreement.update({ where: { id: context.agreementId }, data: { status: 'verification_failed' } });
         await enqueueVaultEvent(tx, {
           type: 'agreement.status_changed',
           actor: SYSTEM_ACTOR,
           subject: { type: 'Agreement', id: context.agreementId },
-          payload: { from: 'verification_pending', to: 'verification_failed' },
+          payload: { from, to: 'verification_failed' },
         });
       });
     }
@@ -325,4 +417,14 @@ export class CaptureService {
       );
     }
   }
+}
+
+/**
+ * Is the verification challenge behind a link locked? Used where a closed
+ * request has to say WHY it is closed: a lockout is 423, not "used".
+ */
+export async function challengeLocked(tx: Prisma.TransactionClient, challengeId: string | null): Promise<boolean> {
+  if (!challengeId) return false;
+  const challenge = await tx.verificationChallenge.findFirst({ where: { id: challengeId }, select: { lockedAt: true } });
+  return Boolean(challenge?.lockedAt);
 }

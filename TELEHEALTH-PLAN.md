@@ -168,7 +168,9 @@ up any DB4 that was not signed at the practice.
 **New:**
 1. **The link page shows the DB4 sheets.** Today the link pages render the
    general agreement, not the DB4. This is needed by both telehealth and
-   reception's follow-up, so it comes first.
+   reception's follow-up, so it comes first. **Built 12 Oct 2026** on
+   `feat/link-page-db4-sheets` (D-2026-10-12-01, assumptions for Carl to
+   confirm).
 2. **A telehealth session** record: patient, practitioner, the identifier types
    checked and by whom, channel, and states (opened, code checked, agreed or
    not done with a reason, DB4 matched, sent, signed, did not proceed).
@@ -247,8 +249,10 @@ up any DB4 that was not signed at the practice.
 - **The 5c scenarios:** Carl to rule.
 - **Do the session states need an expiry?** For example, a session waiting for
   its DB4 longer than N days becomes C7. N is not decided.
-- **How a link sent to an unsigned draft interacts with the 7-day closure**
+- ~~**How a link sent to an unsigned draft interacts with the 7-day closure**
   (D-2026-10-10-09): a link sent on day 6 would die at closure. Check when step
-  1 is built.
+  1 is built.~~ Checked 12 Oct 2026: it does not, for a DB4. The closure sweep
+  never closes an agreement with a service record or an open, unexpired
+  capture request, and a DB4 agreement has both (D-2026-10-12-01 item 7).
 - **The wording of the consent statement and of the "not done" reasons** in
   English, before translation.

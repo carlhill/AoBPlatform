@@ -83,6 +83,8 @@ describe('M7 reconciliation queue (e2e, real Postgres + mock adapter)', () => {
 
   afterAll(async () => {
     await prisma.withPractice(practiceId, async (tx) => {
+      await tx.correspondence.deleteMany({});
+      await tx.outboundItem.deleteMany({});
       await tx.captureRequest.deleteMany({});
       await tx.verificationChallenge.deleteMany({});
       // A decided service record stays: its decision is append-only evidence
@@ -203,12 +205,32 @@ describe('M7 reconciliation queue (e2e, real Postgres + mock adapter)', () => {
       tx.serviceRecord.update({ where: { id: urgent.serviceRecordId }, data: { agreementId: draft.body.id } }),
     );
 
+    /*
+     * A MOBILE ON FILE, added here and not in the shared fixture (12 Oct 2026).
+     * Resend now refuses a channel with no contact behind it before any link
+     * is opened (`no_contact_for_channel`, D-2026-10-12-01). Added only now
+     * because a contact on the fixture from the start lets the PMS sync's
+     * auto-capture open links of its own, which the earlier tests count.
+     */
+    await prisma.withPractice(practiceId, (tx) =>
+      tx.patient.update({ where: { id: patientId }, data: { mobile: '+61400000123' } }),
+    );
     const res = await request(app.getHttpServer())
       .post(`/reconciliation/${urgent.serviceRecordId}/resend`)
       .set('x-practice-id', practiceId)
       .send({ channel: 'sms_link' })
       .expect(201);
-    expect(res.body.token).toBeDefined();
+    /*
+     * THE SAME ASSERTION — a working link exists — read from where the patient
+     * receives it. The response no longer carries the token: a console holding
+     * a working link to a patient's agreement could open it (D-2026-10-12-01).
+     */
+    expect(res.body.token).toBeUndefined();
+    const message = await prisma.withPractice(practiceId, (tx) =>
+      tx.outboundItem.findFirst({ where: { subjectType: 'CaptureRequest', subjectId: res.body.captureRequestId } }),
+    );
+    expect(message?.destination).toBe('+61400000123');
+    expect(JSON.stringify(message?.payload)).toMatch(/\/patient\/agree\/[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/);
   });
 
   it('metrics expose band counts, capture rate, and the verbal countdown (REQ-MON-01 subset)', async () => {

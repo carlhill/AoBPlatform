@@ -40,6 +40,7 @@ import { strings } from '../../../strings';
  */
 import { relationshipLabel } from '../../../kiosk/rules/assignor';
 import styles from '../../../verify/verify.module.css';
+import { Db4LinkSigning, type Db4LinkRead } from './Db4LinkSigning';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
 
@@ -96,6 +97,13 @@ export function AgreeView({ token }: { token: string }) {
    */
   const [statements, setStatements] = useState<readonly Statement[]>([]);
   const [affirmed, setAffirmed] = useState<readonly string[]>([]);
+  /**
+   * THE DB4, WHERE THE AGREEMENT CAME FROM ONE (TELEHEALTH-PLAN §8 step 1).
+   * Set only when the read carried a form view AND stated who is signing; the
+   * page then draws the tablet's own K-3 and K-4 (`Db4LinkSigning`). Null for
+   * every other agreement, which keeps the page below exactly as it was.
+   */
+  const [db4, setDb4] = useState<Db4LinkRead | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Whether the copy has already landed in the practice's system, or is on
@@ -121,10 +129,32 @@ export function AgreeView({ token }: { token: string }) {
     if (!res) return setOutcome('unreachable');
     if (res.status === 501) return setStage('blocked');
     if (!res.ok) return fail(res.status);
-    const body = (await res.json()) as { particulars: Particulars; statements?: readonly Statement[] };
+    const body = (await res.json()) as Omit<Partial<Db4LinkRead>, 'particulars'> & {
+      particulars: Particulars;
+      statements?: readonly Statement[];
+    };
     setParticulars(body.particulars);
     setStatements(body.statements ?? []);
     setAffirmed([]);
+    /*
+     * D7 IS NEVER GUESSED (CLAUDE.md §3). A locked payload always states who
+     * signs; if one did not, the DB4 screens — which state it on every page —
+     * are not drawn, and the page below draws no "who" line at all.
+     */
+    const assignorIsPatient = body.particulars.assignorIsPatient;
+    setDb4(
+      body.db4Form && body.gate && assignorIsPatient !== null
+        ? {
+            particulars: { ...body.particulars, assignorIsPatient },
+            statements: body.statements ?? [],
+            templateVersion: body.templateVersion ?? null,
+            db4Form: body.db4Form,
+            gate: body.gate,
+            providerAddress: body.providerAddress ?? null,
+            basicServiceDescription: body.basicServiceDescription ?? null,
+          }
+        : null,
+    );
     setStage('ready');
   }, [token]);
 
@@ -282,6 +312,21 @@ export function AgreeView({ token }: { token: string }) {
           <p className={styles.lead}>{strings.agree.checking}</p>
         </div>
       </Shell>
+    );
+  }
+
+  if (stage === 'ready' && db4) {
+    return (
+      <Db4LinkSigning
+        token={token}
+        coreUrl={CORE_URL}
+        read={db4}
+        onSigned={(landed) => {
+          setWrittenBack(landed);
+          setStage('done');
+        }}
+        onLinkOutcome={fail}
+      />
     );
   }
 

@@ -3968,3 +3968,90 @@ fixtures that sign in a platform operator (`acting-as`, `agreement-templates`,
 **What would reopen it:** a realm or identity provider for operators that
 cannot emit `amr`. Refusing would then lock operators out, and the method
 would need proving another way.
+
+## D-2026-10-12-01 - The link page shows the DB4 sheets: a DB4 sent by link is read and signed on the tablet's own screens, and the link's own check gates it (ASSUMPTIONS for Carl to confirm)
+
+**Date:** 12 October 2026. **Made by:** the build agent for `TELEHEALTH-PLAN.md`
+§8 step 1, under D-2026-10-11-07 and D-2026-10-11-08 (scenario B, "by link
+only"). **Status: assumptions, Carl to confirm** (wow.md §9) - each is written
+as built, with why, and what would reopen it.
+
+1. **A DB4 sent by link is drawn with the kiosk's own K-3 and K-4.** The link
+   page (`/patient/agree/[token]`) renders `ParticularsScreen` (the measured
+   DB4 sheets, page turns, ticks) and `SignatureScreen` (`SignaturePad`) for an
+   agreement whose read carries a `db4Form`, and keeps the general page for
+   every other agreement. *Why:* the practice wants the exact same DB4
+   (D-2026-09-14-02); a second rendering on the phone would be a second source
+   of the words on a contract. *Enforced by:* `link_page_draws_the_kiosk_db4_sheets_not_a_copy`
+   (`apps/web/app/patient/agree/[token]/Db4LinkSigning.test.tsx`).
+2. **The link takes a drawn signature, on a DB4 only.** `POST /agree/:token/approve`
+   accepts `drawn` with the kiosk's `DrawnSignatureDto` when the agreement has a
+   `sourcePrintJobId`, and refuses it otherwise with reason
+   `drawn_not_offered_on_this_link`. Tap-to-approve stays, as on the tablet
+   (hard rule 8), and still produces no Signed-DB4 (`no_drawn_signature`).
+   *Why:* without a drawing the Signed-DB4 cannot be produced, and the
+   practice's folder never receives the form. *Enforced by:* `AgreeService.approve`;
+   `link_takes_a_drawing_only_on_a_db4`, `the_link_signs_the_db4_and_the_signed_db4_is_produced_vaulted_and_listed_for_write_back`
+   (`apps/core/test/link-db4.e2e-spec.ts`).
+3. **A link shows and signs nothing until ITS OWN challenge has passed.**
+   `/agree/:token`, its approve and its messages read the link's
+   `verificationChallenge` (`passedAt` / `lockedAt`), not the agreement's
+   status or `verificationEventId`. *Why:* a DB4 is at `awaiting_signature`
+   from the moment it is printed, and a DB4 pushed to the tablet carries a
+   staff verification, so both old gates would have shown the whole form - and
+   accepted a signature - with nothing typed (REQ-VER-03, REQ-CHILD-04). This
+   was a live gap for any link sent to a post-service-pushed agreement.
+   *Enforced by:* `a_db4_link_shows_nothing_before_three_identifiers`,
+   `a_db4_link_cannot_be_signed_before_three_identifiers`.
+4. **A passed link check on an agreement already at the signing step binds the
+   link's verification and moves no status.** The vault event is the re-push's
+   shape (`from` = `to`, with the verification id). A locked-out link moves no
+   status either when the lifecycle does not allow `verification_failed`
+   (it does not from `awaiting_signature`): the link is locked, the DB4 stays
+   signable at the desk. *Why:* the old code wrote a `verification_pending`
+   transition that never happened, and five wrong guesses at a forwarded link
+   would have taken a signable DB4 off the tablet (hard rule 8). *Enforced by:*
+   `a_locked_link_leaves_a_signable_db4_signable`, and the event assertion in
+   `link-db4.e2e-spec.ts`.
+   **Amended after review, 12 Oct 2026:**
+   - **A passed check never makes a move the lifecycle forbids.** With two links
+     open, one can lock the agreement (`verification_failed`) and the other pass;
+     the agreement stays locked, nothing is bound, and no event is written
+     (`a_passed_second_link_never_undoes_the_first_links_lockout`).
+   - **A link that locks without moving the agreement is cancelled** in the same
+     transaction, with the existing `capture.cancelled` event and reason
+     `verification_locked_out`. The link then answers 423, reception's queue
+     shows the lock with its reason, and a fresh link is not refused as a
+     duplicate.
+   - **The link signs only with its own check.** If the agreement's verification
+     is no longer the one this link's challenge passed (a desk re-push swapped a
+     staff check in), approve refuses 409 with `link_verification_replaced`
+     (`link_refuses_a_signature_when_the_desk_replaced_the_links_verification`).
+5. **Reception's resend sends the message.** `POST /reconciliation/:id/resend`
+   used to open a capture request and return its token, and send nothing - the
+   queue row said "sent". It now queues the same message the post-service
+   chase sends (`CaptureLinkDispatcher.sendPostAgreementLink`), to the email or
+   mobile ON FILE only (D-2026-09-11-03). In development the outbound queue
+   goes to the sandbox gateway and Mailhog. **Amended after review, 12 Oct
+   2026:** a channel with no contact on file is refused BEFORE any link is
+   opened (`no_contact_for_channel`); opening the link and queueing the
+   message are one transaction, so a failed send leaves no open request; the
+   response is `{captureRequestId, channel, expiresAt}` and never the token;
+   and the console dashboard's resend uses the channel the patient has on
+   file (`channelFor`). *Enforced by:*
+   `reception_sends_the_unsigned_db4_to_the_contact_on_file`,
+   `resend_refuses_a_channel_with_no_contact_on_file`,
+   `resend_opens_nothing_when_the_message_cannot_be_queued`,
+   `resend_from_another_practice_fails_closed`.
+6. **`LINK_DB4_SHEETS_ENABLED`, default on, is the switch.** `false` returns
+   the link page to the general summary for DB4s. *Why default on:* off is the
+   broken state for a DB4 (no form, a "no dollar amount" line, no Signed-DB4),
+   so the switch is a kill switch rather than a gate.
+7. **The 7-day closure does not kill a DB4 link** (closes the
+   `TELEHEALTH-PLAN.md` §9 question). `unsigned-draft-closure.sweep.ts` never
+   closes an agreement with a service record or with an open, unexpired
+   capture request, and a DB4 agreement has both.
+
+**What would reopen it:** Carl wanting the phone to show its own layout rather
+than the tablet's; a decision that a link should never take a drawn signature;
+or a practice wanting reception's resend to open a link without sending one.
