@@ -638,8 +638,14 @@ export class PractitionerQueueService {
    * NO HEADER AND ONE PRACTICE is the ordinary case and needs no question
    * asked. No header and SEVERAL is a real choice the platform must not make
    * for them, and the refusal says so rather than guessing.
+   *
+   * PUBLIC SINCE 12 OCT 2026, UNCHANGED, so the telehealth panel resolves a
+   * practitioner's practice by this one answer rather than a second copy
+   * (TELEHEALTH-PLAN.md §8 step 2; wow.md §10). What a practitioner can see
+   * on the waiting list and where they can start a telehealth session cannot
+   * drift apart.
    */
-  private async practiceForPractitioner(
+  async practiceForPractitioner(
     practitionerId: string,
     headerPracticeId: string | undefined,
   ): Promise<string> {
