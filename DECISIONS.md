@@ -3931,9 +3931,10 @@ routinely, or a practice where reception cannot do next-day follow-up.
 
 **Date:** 12 October 2026. **Proposed by:** Claude, building TELEHEALTH-PLAN.md §8
 step 2. **Status: PROPOSED — needs Carl's approval.** Nothing ships without it:
-the feature is behind `TELEHEALTH_ENABLED` (default off), and core refuses to
-run it under `NODE_ENV=production` while `TELEHEALTH_VAULT_EVENTS_APPROVED` in
-`apps/core/src/telehealth/telehealth-evidence.ts` is false.
+the feature is behind `TELEHEALTH_ENABLED` (default off), and while
+`TELEHEALTH_VAULT_EVENTS_APPROVED` in `apps/core/src/telehealth/telehealth-evidence.ts`
+is false core runs it only when `NODE_ENV` is `development` or `test`; it fails
+closed everywhere else, staging and an unset `NODE_ENV` included.
 
 **Why it needs a decision.** Additions to `VAULT_EVENT_TYPES` need human
 approval (the vault is a human-authored zone, CLAUDE.md §7c). Every telehealth

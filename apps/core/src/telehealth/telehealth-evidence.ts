@@ -14,10 +14,10 @@ import type { Prisma } from '@prisma/client';
  * WHY THIS IS NOT SHIPPABLE AS IT STANDS, AND WHAT STOPS IT SHIPPING. Hard rule
  * 11 says a domain write without its vault event must be structurally
  * impossible. Until approval these writes have no vault event, so the feature
- * MUST NOT run anywhere real. `TelehealthGate` refuses every telehealth route
- * unless `TELEHEALTH_ENABLED=true`, and refuses even then when
- * `NODE_ENV=production` while `TELEHEALTH_VAULT_EVENTS_APPROVED` below is
- * false. Turning that constant to true is the same commit that adds the types
+ * MUST NOT run anywhere real. `TelehealthService.enabled()` refuses every
+ * telehealth route unless `TELEHEALTH_ENABLED=true`, and even then FAILS CLOSED
+ * unless `NODE_ENV` is `development` or `test` while
+ * `TELEHEALTH_VAULT_EVENTS_APPROVED` below is false. Turning that constant to true is the same commit that adds the types
  * to `VAULT_EVENT_TYPES` and replaces the sink with `enqueueVaultEvent`.
  *
  * WHAT IS ALREADY VAULTED TODAY. The provider's identity check goes through

@@ -99,8 +99,8 @@ export class TelehealthService {
    * ------------------------------------------------------------------ */
 
   /**
-   * OFF BY DEFAULT (`TELEHEALTH_ENABLED`), AND OFF IN PRODUCTION WHATEVER THE
-   * FLAG SAYS until the vault event types are approved: a domain write with no
+   * OFF BY DEFAULT (`TELEHEALTH_ENABLED`), AND OFF EVERYWHERE BUT DEVELOPMENT
+   * AND TEST until the vault event types are approved: a domain write with no
    * vault event must not run anywhere real (hard rule 11).
    */
   enabled(): boolean {
