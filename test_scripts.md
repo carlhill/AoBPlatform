@@ -145,3 +145,20 @@ npm run inventory
 ```bash
 npm run validate:inventory
 ```
+
+---
+
+## When something shows nothing
+
+### The test tool says "The 0 most recent forms", or the tablet cannot connect
+Your PC's network address has changed (a different Wi-Fi). Web calls core at the
+address in `apps/web/.env.local`, and an old address fails silently. Find the
+current one:
+```bash
+ipconfig | grep IPv4
+```
+Use the `192.168.x.x` Wi-Fi address (not `192.168.56.1`, which is VirtualBox), and
+put it in three places: `NEXT_PUBLIC_CORE_URL` and `DEV_LAN_HOSTS` in
+`apps/web/.env.local`, and `CORS_ORIGINS` in `apps/core/.env`. No restart needed:
+core and Next.js dev both reload their env files when they change. Refresh the
+page.
