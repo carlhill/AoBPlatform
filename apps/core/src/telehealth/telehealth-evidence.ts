@@ -3,7 +3,7 @@ import type { Prisma } from '@prisma/client';
 
 /**
  * THE VAULT EVENTS A TELEHEALTH SESSION WILL EMIT — PROPOSED, NOT YET APPROVED
- * (TELEHEALTH-PLAN.md §6 item 8; DECISIONS.md D-2026-10-12-01, PROPOSED).
+ * (TELEHEALTH-PLAN.md §6 item 8; DECISIONS.md D-2026-10-12-02, PROPOSED).
  *
  * Additions to `VAULT_EVENT_TYPES` need Carl's approval: the vault is a
  * human-authored zone (CLAUDE.md §7c). So this file holds the exact shapes, and
@@ -108,7 +108,7 @@ export class TelehealthEvidence {
       this.warned = true;
       this.logger.warn(
         'Telehealth vault event types are PROPOSED and not yet in VAULT_EVENT_TYPES; events are not reaching the ' +
-          'vault. This build must not run anywhere real (DECISIONS.md D-2026-10-12-01).',
+          'vault. This build must not run anywhere real (DECISIONS.md D-2026-10-12-02).',
       );
     }
   };
