@@ -1,11 +1,7 @@
 /**
  * THE AOBPRINTER TEST TOOL'S PRESETS AND THE ENVELOPE THEY BECOME.
  *
- * NOT IN THE WEB VITEST INCLUDE LIST (11 October 2026): `vitest.config.mts`
- * names app/kiosk, practice, callback, platform, patient and apply, and not
- * app/aobprinter, so `npm test -w apps/web` does not pick this file up. It
- * was run with a throwaway config that only widened `include`; adding
- * `app/aobprinter/**` to the list is Carl's call (CLAUDE.md §7a rule 6).
+ * In the web Vitest include list since 12 October 2026, so CI runs it.
  */
 import { describe, expect, it } from 'vitest';
 import { buildEnvelope, draftFromEnvelope } from './envelope';
