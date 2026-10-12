@@ -294,3 +294,22 @@ export const TELEHEALTH_NOT_DONE_REASON_KEYS: readonly string[] = parsedReasons.
 export function telehealthNotDoneReason(key: unknown): TelehealthNotDoneReason | undefined {
   return typeof key === 'string' ? parsedReasons.reasons.find((r) => r.key === key) : undefined;
 }
+
+/**
+ * THE TELEHEALTH CONSULTATION ID (Carl, 12 Oct 2026, D-2026-10-12-03 item 11):
+ * a short reference the patient sees in the message and on their page, and
+ * quotes when they ring the practice. `TH-` and two groups of four from
+ * Crockford's base 32, which drops I, L, O and U so it survives being read
+ * out over the phone. 40 random bits, unique across the platform (a unique
+ * index says so, and core draws again on the rare clash). A REFERENCE, NOT A KEY: it opens nothing and carries nothing
+ * about the patient.
+ */
+export const TELEHEALTH_CONSULTATION_ID_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+export const TELEHEALTH_CONSULTATION_ID_PATTERN = /^TH-[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4}$/;
+
+export function telehealthConsultationId(randomBytes: (n: number) => Uint8Array): string {
+  const bytes = randomBytes(8);
+  let out = '';
+  for (let i = 0; i < 8; i++) out += TELEHEALTH_CONSULTATION_ID_ALPHABET[bytes[i]! % 32];
+  return `TH-${out.slice(0, 4)}-${out.slice(4)}`;
+}

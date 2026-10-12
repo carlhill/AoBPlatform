@@ -189,3 +189,9 @@
   align-items: center;
   justify-content: space-between;
 }
+
+.reference {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+}

@@ -44,6 +44,7 @@ const calls: { url: string; method: string; body?: unknown }[] = [];
 function session(state: string, extra: Record<string, unknown> = {}) {
   return {
     id: 's-1',
+    consultationId: 'TH-AB12-CD34',
     patientId: 'p-1',
     patientName: 'Testy Telehealthson',
     state,
@@ -202,6 +203,8 @@ describe('TelehealthPanel', () => {
     expect(screen.getByTestId('telehealth-did-not-proceed-s-1')).toBeTruthy();
     // The two outcomes after agreeing: complete, or did not go ahead.
     expect(screen.getByTestId('telehealth-went-ahead-s-1').textContent).toBe(p.wentAhead);
+    // The reference the patient quotes is beside the session (D-2026-10-12-03 item 11).
+    expect(screen.getByTestId('telehealth-id-s-1').textContent).toBe(p.consultationId('TH-AB12-CD34'));
   });
 
   it('a refused send is said next to the Send button, not off-screen at the top', async () => {

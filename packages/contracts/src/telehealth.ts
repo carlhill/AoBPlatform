@@ -55,6 +55,8 @@ export interface TelehealthMaskedContact {
 /** One session as the provider's panel sees it. */
 export interface TelehealthSessionView {
   readonly id: string;
+  /** The TH-XXXX-XXXX reference the patient quotes to the practice (D-2026-10-12-03 item 11). */
+  readonly consultationId: string;
   readonly patientId: string;
   /** The patient's own name from the PMS mirror, for the provider's screen only. */
   readonly patientName: string;
@@ -124,6 +126,8 @@ export interface TelehealthPageView {
   readonly providerName: string | null;
   /** The provider's Ahpra number, only when sighted and current; null shows no line (D-2026-10-12-03 item 10). */
   readonly ahpraNumber: string | null;
+  /** The TH-XXXX-XXXX reference the patient quotes to the practice (D-2026-10-12-03 item 11). */
+  readonly consultationId: string;
   /** The one statement, from versioned content, as it will be recorded. */
   readonly statement: string;
   readonly consentKey: string;

@@ -294,6 +294,10 @@ export function TelehealthPatientView({ token }: { token: string }) {
             {t.didNotProceedBody}
           </Notice>
         )}
+        {/* The reference to quote to the practice, at the foot of every state (D-2026-10-12-03 item 11). */}
+        <p className={styles.reference} data-testid="telehealth-consultation-id">
+          {t.consultationId(page.consultationId)}
+        </p>
       </Shell>
     );
   }

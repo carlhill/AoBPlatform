@@ -3,6 +3,7 @@
  * (TELEHEALTH-PLAN.md §3–§4, §7; D-2026-10-11-07/-08).
  */
 import {
+  TELEHEALTH_CONSULTATION_ID_PATTERN,
   TELEHEALTH_CONTENT,
   TELEHEALTH_CONTENT_VERSION,
   TELEHEALTH_IDENTITY_CHECKLIST,
@@ -15,6 +16,7 @@ import {
   parseTelehealthContent,
   parseTelehealthNotDoneReasonContent,
   telehealthConsentStatement,
+  telehealthConsultationId,
   telehealthNotDoneReason,
   telehealthTransports,
 } from './telehealth';
@@ -136,5 +138,19 @@ describe('telehealth session states', () => {
 
   it('a_locked_code_raises_a_known_review_task', () => {
     expect(REVIEW_TASK_KEYS).toContain(TELEHEALTH_CODE_LOCKED_TASK_KIND);
+  });
+});
+
+describe('the telehealth consultation ID (D-2026-10-12-03 item 11)', () => {
+  it('is_th_and_two_groups_of_four_with_no_letters_that_read_alike', () => {
+    for (let n = 0; n < 200; n++) {
+      const id = telehealthConsultationId((size) => Uint8Array.from({ length: size }, () => Math.floor(Math.random() * 256)));
+      expect(id).toMatch(TELEHEALTH_CONSULTATION_ID_PATTERN);
+      expect(id.slice(3)).not.toMatch(/[ILOU]/);
+    }
+  });
+
+  it('uses_every_byte_value_without_bias_across_the_alphabet', () => {
+    expect(telehealthConsultationId(() => Uint8Array.from([0, 31, 32, 63, 64, 255, 10, 18]))).toBe('TH-0Z0Z-0ZAJ');
   });
 });

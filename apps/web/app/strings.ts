@@ -5693,6 +5693,7 @@ export const strings = {
       ahpraLine: (provider: string, number: string) =>
         `${provider} is registered with Ahpra, registration number ${number}. You can check this yourself on the public register at`,
       ahpraSite: 'www.ahpra.gov.au',
+      consultationId: (id: string) => `Your telehealth consultation ID is ${id}. Quote it if you call the practice about this consultation.`,
       sending: 'One moment…',
       wordingChanged: 'The wording on this page has changed. Reload the page to read it again.',
       waitingTitle: (provider: string) => `Waiting for ${provider}`,
@@ -5779,6 +5780,7 @@ export const strings = {
       didNotProceed: 'Consultation did not go ahead',
       wentAhead: 'Consultation complete',
       startNew: 'Start new telehealth consultation',
+      consultationId: (id: string) => `Consultation ID ${id}`,
       notDoneHeading: 'Not done, with a reason',
       reasonLabel: 'Reason',
       reasonChoose: 'Choose a reason…',

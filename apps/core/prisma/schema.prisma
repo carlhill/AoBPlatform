@@ -3645,6 +3645,8 @@ model AobPrinterHost {
 model TelehealthSession {
   id                    String    @id @default(uuid()) @db.Uuid
   practiceId            String    @db.Uuid
+  /// The TH-XXXX-XXXX reference the patient quotes to the practice (D-2026-10-12-03 item 11). A reference, never a key. Unique across the platform.
+  consultationId        String    @unique
   patientId             String    @db.Uuid
   practitionerId        String    @db.Uuid
   affiliationId         String    @db.Uuid

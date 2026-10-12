@@ -8,7 +8,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import type { Prisma, TelehealthSession } from '@prisma/client';
+import { randomBytes } from 'node:crypto';
+import { Prisma as PrismaErrors, type Prisma, type TelehealthSession } from '@prisma/client';
 import {
   ASSIGNOR_RELATIONSHIP_KEYS,
   IdentifierSetError,
@@ -26,6 +27,7 @@ import {
   maskMobile,
   mayMoveTelehealthSession,
   telehealthConsentStatement,
+  telehealthConsultationId,
   telehealthNotDoneReason,
   type TelehealthChannel,
   type TelehealthSessionState,
@@ -145,6 +147,27 @@ export class TelehealthService {
     return { practiceId, practitionerId, actorId: actor.id };
   }
 
+  /**
+   * A TRANSACTION THAT CREATES A SESSION, RUN AGAIN ON THE RARE ID CLASH. The
+   * consultation ID is drawn inside `fn`, so a retry draws a fresh one. A
+   * unique violation aborts the whole transaction in Postgres, which is why
+   * the retry is the transaction and not the insert. Three tries: with 40 bits
+   * a second clash in a row is not a thing that happens.
+   */
+  private async withFreshConsultationId<T>(practiceId: string, fn: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await this.prisma.withPractice(practiceId, fn);
+      } catch (err) {
+        const clash =
+          err instanceof PrismaErrors.PrismaClientKnownRequestError &&
+          err.code === 'P2002' &&
+          JSON.stringify(err.meta?.target ?? '').includes('consultationId');
+        if (!clash || attempt >= 3) throw err;
+      }
+    }
+  }
+
   private async liveAffiliation(tx: Prisma.TransactionClient, practitionerId: string) {
     const affiliation = await tx.affiliation.findFirst({
       where: { practitionerId, status: { in: LIVE_AFFILIATION_STATUSES } },
@@ -256,7 +279,7 @@ export class TelehealthService {
     const code = generateTelehealthCode(TELEHEALTH_CONTENT.code.digits);
     const codeExpiresAt = new Date(Date.now() + TELEHEALTH_CONTENT.code.validityMinutes * 60_000);
 
-    const result = await this.prisma.withPractice(practiceId, async (tx) => {
+    const result = await this.withFreshConsultationId(practiceId, async (tx) => {
       const patient = await tx.patient.findFirst({ where: { id: input.patientId } });
       if (!patient) throw new NotFoundException('That patient is not on this practice’s records.');
       this.assertContactFor(channel, patient);
@@ -274,6 +297,11 @@ export class TelehealthService {
       const session = await tx.telehealthSession.create({
         data: {
           practiceId,
+          /*
+           * The reference the patient quotes (D-2026-10-12-03 item 11). Unique across the
+           * platform: the index refuses a clash and `withFreshConsultationId` draws again.
+           */
+          consultationId: telehealthConsultationId((n) => randomBytes(n)),
           patientId: patient.id,
           practitionerId,
           affiliationId,
@@ -439,7 +467,7 @@ export class TelehealthService {
     const { practiceId, practitionerId, actorId } = await this.scope(actor, headerPracticeId);
     const { reason, note } = this.reasonOf(input);
     const consultationAt = this.consultationAtOf(input.consultationAt);
-    return this.prisma.withPractice(practiceId, async (tx) => {
+    return this.withFreshConsultationId(practiceId, async (tx) => {
       const patient = await tx.patient.findFirst({ where: { id: input.patientId }, select: { id: true } });
       if (!patient) throw new NotFoundException('That patient is not on this practice’s records.');
       const affiliationId = await this.liveAffiliation(tx, practitionerId);
@@ -447,6 +475,11 @@ export class TelehealthService {
       const session = await tx.telehealthSession.create({
         data: {
           practiceId,
+          /*
+           * The reference the patient quotes (D-2026-10-12-03 item 11). Unique across the
+           * platform: the index refuses a clash and `withFreshConsultationId` draws again.
+           */
+          consultationId: telehealthConsultationId((n) => randomBytes(n)),
           patientId: patient.id,
           practitionerId,
           affiliationId,
@@ -775,6 +808,7 @@ export class TelehealthService {
       practiceName: practice?.name ?? 'Your practice',
       providerName: provider?.name ?? 'your practitioner',
       ahpraNumber: provider?.ahpraNumber ?? null,
+      consultationId: session.consultationId,
       sessionId: session.id,
       sendNumber: session.linkSentCount,
       patient,
@@ -842,6 +876,7 @@ export class TelehealthService {
       practiceName: practice?.name ?? null,
       providerName,
       ahpraNumber: provider?.ahpraNumber ?? null,
+      consultationId: session.consultationId,
       statement: telehealthConsentStatement({
         providerName: providerName ?? 'your practitioner',
         consenterIsPatient,
@@ -973,6 +1008,7 @@ export class TelehealthService {
       const p = byId.get(row.patientId);
       return {
         id: row.id,
+        consultationId: row.consultationId,
         patientId: row.patientId,
         patientName: p ? `${p.givenNames} ${p.familyName}` : '',
         state: row.state as TelehealthSessionView['state'],

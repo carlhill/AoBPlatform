@@ -530,7 +530,9 @@ export function TelehealthPanel() {
       {sent && (
         <section aria-labelledby="th-code" className={styles.card} data-testid="telehealth-code-panel">
           <h2 id="th-code">{p.codeHeading}</h2>
-          <p data-testid="telehealth-code-for">{p.codeFor(sent.session.patientName)}</p>
+          <p data-testid="telehealth-code-for">
+            {p.codeFor(sent.session.patientName)} · {p.consultationId(sent.session.consultationId)}
+          </p>
           <p className={th.code} data-testid="telehealth-code" aria-live="polite">
             {sent.code.split('').join(' ')}
           </p>
@@ -548,6 +550,9 @@ export function TelehealthPanel() {
           {sessions.map((s) => (
             <li key={s.id} className={th.session} data-testid={`telehealth-session-${s.id}`}>
               <strong>{s.patientName}</strong>
+              <span className={th.reference} data-testid={`telehealth-id-${s.id}`}>
+                {p.consultationId(s.consultationId)}
+              </span>
               <Chip tone={s.state === 'agreed' || s.state === 'went_ahead' ? 'ok' : s.state === 'not_done' || s.state === 'did_not_proceed' ? 'neutral' : 'warn'}>
                 <span data-testid={`telehealth-status-${s.id}`}>{p.status[s.state] ?? s.state}</span>
               </Chip>

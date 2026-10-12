@@ -27,6 +27,8 @@ const page = (state: string) => ({
   state,
   practiceName: 'Sample Practice',
   providerName: 'Dr Sample Chen',
+  ahpraNumber: null,
+  consultationId: 'TH-AB12-CD34',
   statement: STATEMENT,
   consentKey: 'telehealth_consult_v2',
   contentVersion: 'telehealth-test',
@@ -75,6 +77,8 @@ describe('TelehealthPatientView', () => {
     fireEvent.click(tick);
 
     expect((await screen.findByTestId('telehealth-waiting')).textContent).toContain(t.started);
+    // The reference to quote to the practice, at the foot of the page (D-2026-10-12-03 item 11).
+    expect(screen.getByTestId('telehealth-consultation-id').textContent).toBe(t.consultationId('TH-AB12-CD34'));
 
     const codeCall = fetchMock.mock.calls.find(([u]) => String(u).endsWith('/code'))!;
     expect(JSON.parse(String(codeCall[1]!.body))).toEqual({ code: '042917' });

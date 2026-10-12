@@ -97,3 +97,11 @@
 .started .heading {
   color: var(--ok);
 }
+/* The consultation ID at the foot of the page: plain, centred, easy to read out. */
+.reference {
+  max-width: 520px;
+  margin: 0 auto var(--s7);
+  text-align: center;
+  font-size: 1.0625rem;
+  color: var(--ink);
+}

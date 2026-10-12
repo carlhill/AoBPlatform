@@ -13,9 +13,9 @@ process.env.TELEHEALTH_ENABLED = 'true';
 
 import { Test } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import request from 'supertest';
-import { TELEHEALTH_CONTENT, TELEHEALTH_NEUTRAL_WORDING_FORBIDDEN } from '@aobplatform/domain';
+import { TELEHEALTH_CONTENT, TELEHEALTH_NEUTRAL_WORDING_FORBIDDEN, telehealthConsultationId } from '@aobplatform/domain';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { TelehealthService } from '../src/telehealth/telehealth.service';
@@ -78,6 +78,8 @@ describe('telehealth sessions (e2e, real Postgres)', () => {
     await prisma.withPractice(practiceId, async (tx) => {
       await tx.practice.create({ data: { id: practiceId, name: 'Telehealth Test Practice' } });
       gp = await createServicingProvider(tx, practiceId, { name: 'Dr Sample Chen' });
+      // A medical practitioner, so the patient sees "Dr" (D-2026-10-12-03 item 10: only from the profession).
+      await tx.practitioner.update({ where: { id: gp.practitionerId }, data: { profession: 'Medical Practitioner' } });
       patientId = (
         await tx.patient.create({
           data: {
@@ -340,6 +342,8 @@ describe('telehealth sessions (e2e, real Postgres)', () => {
         tx.telehealthSession.create({
           data: {
             practiceId,
+            // A valid reference, so the database refuses for the reason under test and no other.
+            consultationId: telehealthConsultationId((size) => randomBytes(size)),
             patientId,
             practitionerId: gp.practitionerId,
             affiliationId: gp.affiliationId,
@@ -625,6 +629,8 @@ describe('telehealth sessions (e2e, real Postgres)', () => {
         tx.telehealthSession.create({
           data: {
             practiceId,
+            // A valid reference, so the database refuses for the reason under test and no other.
+            consultationId: telehealthConsultationId((size) => randomBytes(size)),
             patientId,
             practitionerId: gp.practitionerId,
             affiliationId: gp.affiliationId,

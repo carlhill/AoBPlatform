@@ -4190,6 +4190,15 @@ the Department's answer to G10 changing what the step before the call records.
    `patient-messages-2026-10-12-2`. Never the Medicare provider number. The
    number says who the provider is; the code read out on the call is what
    shows the message is genuine. The DB4 agreement anchor is untouched.
+11. **A telehealth consultation ID** the patient quotes when they ring the
+   practice: `TH-XXXX-XXXX` from Crockford's base 32 (no I, L, O, U), saved on
+   the session (`telehealth_sessions.consultationId`, NOT NULL), unique across
+   the platform by index, drawn again on the rare clash. Shown in the email and
+   SMS (`telehealth_consultation_id_line_v1`), at the foot of the patient's page,
+   and beside the session on the doctor's panel. A reference, never a key.
+   Carl considered `TH-<Ahpra>-<practice>-DDMMYYYY-<random>` and chose the short
+   form (\"keep it short\"): it has to be read out on the phone, and the doctor,
+   practice and date are on the session anyway.
 
 **Status:** items 1-5 and 9 build now (display and content only). Items 6-8 build in a fresh
 session from the brief `TELEHEALTH-REGISTER-BRIEF.md`.
