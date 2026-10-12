@@ -101,8 +101,8 @@ describe('TelehealthPatientView', () => {
       if (url.endsWith(`/telehealth/link/${TOKEN}`)) return { status: 200, body: { state: 'open', practiceName: 'Sample Practice' } };
       tries += 1;
       return tries === 1
-        ? { status: 400, body: { outcome: 'wrong_code', attemptsLeft: 2 } }
-        : { status: 423, body: { outcome: 'locked', attemptsLeft: 0 } };
+        ? { status: 400, body: { code: 'wrong_code', outcome: 'wrong_code', attemptsLeft: 2 } }
+        : { status: 423, body: { code: 'locked', outcome: 'locked', attemptsLeft: 0 } };
     });
     render(<TelehealthPatientView token={TOKEN} />);
     fireEvent.change(await screen.findByLabelText(t.codeLabel), { target: { value: '000000' } });
@@ -131,6 +131,93 @@ describe('TelehealthPatientView', () => {
     fireEvent.change(await screen.findByLabelText(t.codeLabel), { target: { value: '123456' } });
     fireEvent.click(screen.getByTestId('telehealth-continue'));
     await waitFor(() => expect((screen.getByTestId('telehealth-not-done')).textContent).toContain(t.notDoneBody));
+  });
+
+  it('maps each refusal by its code, not its status (wow.md 13)', async () => {
+    const cases: { reply: Reply; testId: string; words: string }[] = [
+      { reply: { status: 500, body: {} }, testId: 'telehealth-unreachable', words: t.unreachableBody },
+      { reply: { status: 410, body: { code: 'link_used', outcome: 'expired' } }, testId: 'telehealth-used', words: t.usedBody },
+      { reply: { status: 410, body: { code: 'code_expired', outcome: 'expired' } }, testId: 'telehealth-expired', words: t.expiredBody },
+      { reply: { status: 410, body: { code: 'session_closed', outcome: 'expired' } }, testId: 'telehealth-closed', words: t.closedBody },
+    ];
+    for (const c of cases) {
+      stub((url) =>
+        url.endsWith(`/telehealth/link/${TOKEN}`) ? { status: 200, body: { state: 'open', practiceName: 'Sample Practice' } } : c.reply,
+      );
+      render(<TelehealthPatientView token={TOKEN} />);
+      fireEvent.change(await screen.findByLabelText(t.codeLabel), { target: { value: '123456' } });
+      fireEvent.click(screen.getByTestId('telehealth-continue'));
+      expect((await screen.findByTestId(c.testId)).textContent).toContain(c.words);
+      cleanup();
+    }
+  });
+
+  it('an unmapped refusal shows its code', async () => {
+    stub((url) =>
+      url.endsWith(`/telehealth/link/${TOKEN}`)
+        ? { status: 200, body: { state: 'open', practiceName: 'Sample Practice' } }
+        : { status: 418, body: { code: 'something_new' } },
+    );
+    render(<TelehealthPatientView token={TOKEN} />);
+    fireEvent.change(await screen.findByLabelText(t.codeLabel), { target: { value: '123456' } });
+    fireEvent.click(screen.getByTestId('telehealth-continue'));
+    expect((await screen.findByTestId('telehealth-unmapped')).textContent).toContain('something_new');
+  });
+
+  it('a page replaced by a newer link, and an expired page, each say so', async () => {
+    for (const [code, testId, words] of [
+      ['page_replaced', 'telehealth-replaced', t.replacedBody],
+      ['page_expired', 'telehealth-page-expired', t.pageExpiredBody],
+    ] as const) {
+      stub((url) => {
+        if (url.endsWith(`/telehealth/link/${TOKEN}`)) return { status: 200, body: { state: 'open', practiceName: 'Sample Practice' } };
+        if (url.endsWith('/code')) return { status: 201, body: { pageKey: PAGE_KEY } };
+        return { status: 410, body: { code } };
+      });
+      render(<TelehealthPatientView token={TOKEN} />);
+      fireEvent.change(await screen.findByLabelText(t.codeLabel), { target: { value: '123456' } });
+      fireEvent.click(screen.getByTestId('telehealth-continue'));
+      const notice = await screen.findByTestId(testId);
+      expect(notice.textContent).toContain(words);
+      expect(notice.textContent).not.toContain(t.expiredBody);
+      cleanup();
+    }
+  });
+
+  it('a session closed by the practitioner is not "the wording changed"', async () => {
+    let state = 'code_checked';
+    stub((url) => {
+      if (url.endsWith(`/telehealth/link/${TOKEN}`)) return { status: 200, body: { state: 'open', practiceName: 'Sample Practice' } };
+      if (url.endsWith('/code')) return { status: 201, body: { pageKey: PAGE_KEY } };
+      if (url.endsWith('/page/agree')) {
+        state = 'not_done';
+        return { status: 409, body: { code: 'session_not_done' } };
+      }
+      return { status: 200, body: page(state) };
+    });
+    render(<TelehealthPatientView token={TOKEN} />);
+    fireEvent.change(await screen.findByLabelText(t.codeLabel), { target: { value: '123456' } });
+    fireEvent.click(screen.getByTestId('telehealth-continue'));
+    fireEvent.click(await screen.findByTestId('telehealth-agree'));
+    expect((await screen.findByTestId('telehealth-not-done')).textContent).toContain(t.notDoneBody);
+    expect(document.body.textContent ?? '').not.toContain(t.wordingChanged);
+  });
+
+  it('needs every digit before it will continue, and never says "0 more tries"', async () => {
+    const fetchMock = stub((url) =>
+      url.endsWith(`/telehealth/link/${TOKEN}`)
+        ? { status: 200, body: { state: 'open', practiceName: 'Sample Practice' } }
+        : { status: 400, body: { code: 'wrong_code', outcome: 'wrong_code' } },
+    );
+    render(<TelehealthPatientView token={TOKEN} />);
+    fireEvent.change(await screen.findByLabelText(t.codeLabel), { target: { value: '123' } });
+    expect((screen.getByTestId('telehealth-continue') as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByTestId('telehealth-continue'));
+    expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith('/code'))).toBe(false);
+    fireEvent.change(screen.getByLabelText(t.codeLabel), { target: { value: '123456' } });
+    fireEvent.click(screen.getByTestId('telehealth-continue'));
+    expect(await screen.findByText(t.wrongCodeNoCount)).toBeTruthy();
+    expect(document.body.textContent ?? '').not.toMatch(/\b0 more tr/);
   });
 
   it('writes nothing to browser storage', async () => {

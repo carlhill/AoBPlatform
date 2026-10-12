@@ -5,7 +5,7 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { TELEHEALTH_NOT_DONE_REASON_KEYS } from '@aobplatform/domain';
-import { TelehealthPanel, mobileEnding } from './TelehealthPanel';
+import { TelehealthPanel, isWaiting, mobileEnding } from './TelehealthPanel';
 import { strings } from '../../../strings';
 
 const p = strings.telehealth.panel;
@@ -178,6 +178,44 @@ describe('TelehealthPanel', () => {
     render(<TelehealthPanel />);
     expect(await screen.findByText(p.locked)).toBeTruthy();
     expect(screen.getByTestId('telehealth-send-again-s-1').textContent).toBe(p.sendAgain);
+  });
+
+  it('shows the patient beside the code, so it is read to the right person', async () => {
+    await choosePatient();
+    for (const type of ['name', 'date_of_birth', 'address']) fireEvent.click(screen.getByTestId(`telehealth-type-${type}`));
+    fireEvent.click(screen.getByTestId('telehealth-who-patient'));
+    const send = screen.getByTestId('telehealth-send') as HTMLButtonElement;
+    await waitFor(() => expect(send.disabled).toBe(false));
+    fireEvent.click(send);
+    const panel = await screen.findByTestId('telehealth-code-panel');
+    expect(panel.textContent).toContain('Testy Telehealthson');
+  });
+
+  it('a failed contact read shows the refusal and leaves no stale contact behind', async () => {
+    await choosePatient();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (url.endsWith('/contact')) return { ok: false, status: 404, json: async () => ({ message: 'That patient is not on this practice’s records.' }) } as unknown as Response;
+        if (url.includes('/telehealth/patients?q=')) return { ok: true, status: 200, json: async () => [PATIENT] } as unknown as Response;
+        return { ok: true, status: 200, json: async () => [] } as unknown as Response;
+      }),
+    );
+    fireEvent.click(screen.getByTestId('telehealth-choose-p-1'));
+    expect((await screen.findByTestId('telehealth-error')).textContent).toContain('not on this practice');
+    expect(screen.queryByTestId('telehealth-mobile')).toBeNull();
+  });
+
+  it('counts a session as waiting only while its code or page is still live', () => {
+    const now = Date.parse('2026-10-12T00:05:00.000Z');
+    const later = '2026-10-12T00:10:00.000Z';
+    const earlier = '2026-10-12T00:01:00.000Z';
+    expect(isWaiting({ state: 'opened', codeExpiresAt: later, pageExpiresAt: null, codeLocked: false }, now)).toBe(true);
+    expect(isWaiting({ state: 'opened', codeExpiresAt: earlier, pageExpiresAt: null, codeLocked: false }, now)).toBe(false);
+    expect(isWaiting({ state: 'opened', codeExpiresAt: later, pageExpiresAt: null, codeLocked: true }, now)).toBe(false);
+    expect(isWaiting({ state: 'code_checked', codeExpiresAt: earlier, pageExpiresAt: later, codeLocked: false }, now)).toBe(true);
+    expect(isWaiting({ state: 'code_checked', codeExpiresAt: earlier, pageExpiresAt: earlier, codeLocked: false }, now)).toBe(false);
+    expect(isWaiting({ state: 'agreed', codeExpiresAt: later, pageExpiresAt: later, codeLocked: false }, now)).toBe(false);
   });
 
   it('takes the last three digits of a masked mobile for the read-back', () => {

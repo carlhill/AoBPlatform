@@ -5601,6 +5601,15 @@ export const strings = {
         left === 1
           ? 'That code does not match. You have 1 more try. Ask your practitioner to read it out again.'
           : `That code does not match. You have ${left} more tries. Ask your practitioner to read it out again.`,
+      wrongCodeNoCount: 'That code does not match. Ask your practitioner to read it out again.',
+      replacedTitle: 'A newer link was sent',
+      replacedBody: 'Your practitioner sent you a new link for this consultation. Open the latest message and use the new code.',
+      pageExpiredTitle: 'This page has closed',
+      pageExpiredBody: 'This page stays open for one day only. If you still need it, ask your practice for a new link.',
+      pageNotOpenTitle: 'This page is not open',
+      pageNotOpenBody: 'Ask your practitioner on the call to send you a new link and code.',
+      unmappedTitle: 'Something went wrong',
+      unmappedBody: (code: string) => `The server answered with a reason we have no words for yet (${code}). Your consultation can still go ahead; tell your practice this reason.`,
       lockedTitle: 'This link is locked',
       lockedBody: 'The code was typed wrongly too many times. Ask your practitioner on the call to send you a new link and code.',
       usedTitle: 'This link has already been used',
@@ -5667,6 +5676,7 @@ export const strings = {
       send: 'Send the link',
       sending: 'Sending…',
       codeHeading: 'Read this code to the person on the call',
+      codeFor: (patientName: string) => `For ${patientName}`,
       codeHint: (until: string) => `It works once, until ${until}. It is not in the message.`,
       queued: (how: string) => `Link queued by ${how}.`,
       sessionsHeading: 'In the last day',

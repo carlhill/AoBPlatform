@@ -61,6 +61,22 @@ interface PatientHit {
 const WAITING_STATES = ['opened', 'code_checked'];
 const LINK_STATES = ['opened', 'code_checked', 'agreed'];
 
+/**
+ * IS ANYBODY STILL ABOUT TO ACT ON THIS SESSION? Only then is it worth
+ * polling. A link whose code has lapsed or locked, or a page whose window has
+ * closed, is not waiting for anything the patient can still do; polling it
+ * forever would be a busy-loop wearing a status chip.
+ */
+export function isWaiting(
+  s: Pick<TelehealthSessionView, 'state' | 'codeExpiresAt' | 'pageExpiresAt' | 'codeLocked'>,
+  now: number,
+): boolean {
+  const ahead = (iso: string | null) => iso !== null && Date.parse(iso) > now;
+  if (s.state === 'opened') return !s.codeLocked && ahead(s.codeExpiresAt);
+  if (s.state === 'code_checked') return ahead(s.pageExpiresAt);
+  return false;
+}
+
 /** The last three digits of a masked mobile ("•••••• 412" → "412"), for the read-back. */
 export function mobileEnding(masked: string): string {
   return masked.replace(/\D/g, '').slice(-3);
@@ -117,7 +133,7 @@ export function TelehealthPanel() {
   }, [headers, loadSessions]);
 
   useRefreshable(loadSessions);
-  useLiveRefresh(sessions.some((s) => WAITING_STATES.includes(s.state)), loadSessions, LIVE_MS);
+  useLiveRefresh(sessions.some((s) => isWaiting(s, Date.now())), loadSessions, LIVE_MS);
 
   const find = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -131,6 +147,8 @@ export function TelehealthPanel() {
   };
 
   const choose = async (hit: PatientHit) => {
+    // Nothing from the last patient survives a new choice, least of all their contact.
+    setContact(null);
     setPatient(hit);
     setSent(null);
     setTypes([]);
@@ -140,11 +158,11 @@ export function TelehealthPanel() {
     setChannel('');
     setError(null);
     const res = await fetch(`${CORE_URL}/telehealth/patients/${hit.patientId}/contact`, { headers: headers() }).catch(() => null);
-    if (res?.ok) {
-      const c = (await res.json()) as TelehealthMaskedContact;
-      setContact(c);
-      setChannel(c.maskedMobile ? 'sms' : c.maskedEmail ? 'email' : '');
-    }
+    if (!res) return setError(strings.status.unreachable);
+    if (!res.ok) return setError(await refusal(res));
+    const c = (await res.json()) as TelehealthMaskedContact;
+    setContact(c);
+    setChannel(c.maskedMobile ? 'sms' : c.maskedEmail ? 'email' : '');
   };
 
   const toggle = (type: string, on: boolean) =>
@@ -354,6 +372,7 @@ export function TelehealthPanel() {
       {sent && (
         <section aria-labelledby="th-code" className={styles.card} data-testid="telehealth-code-panel">
           <h2 id="th-code">{p.codeHeading}</h2>
+          <p data-testid="telehealth-code-for">{p.codeFor(sent.session.patientName)}</p>
           <p className={styles.cardTitle} data-testid="telehealth-code" aria-live="polite">
             {sent.code.split('').join(' ')}
           </p>

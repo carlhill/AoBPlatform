@@ -42,7 +42,17 @@ const t = strings.telehealth.patient;
 const DIGITS = TELEHEALTH_CONTENT.code.digits;
 
 /** Each maps to words that say what to do next. There is no generic fallback. */
-type Stop = 'invalid' | 'unreachable' | 'used' | 'expired' | 'locked' | 'closed';
+type Stop =
+  | 'invalid'
+  | 'unreachable'
+  | 'used'
+  | 'expired'
+  | 'locked'
+  | 'closed'
+  | 'replaced'
+  | 'page-expired'
+  | 'page-not-open'
+  | 'unmapped';
 
 const stopWords: Record<Stop, { title: string; body: string; tone: 'warn' | 'stop' }> = {
   invalid: { title: t.invalidTitle, body: t.invalidBody, tone: 'warn' },
@@ -51,11 +61,51 @@ const stopWords: Record<Stop, { title: string; body: string; tone: 'warn' | 'sto
   expired: { title: t.expiredTitle, body: t.expiredBody, tone: 'warn' },
   locked: { title: t.lockedTitle, body: t.lockedBody, tone: 'stop' },
   closed: { title: t.closedTitle, body: t.closedBody, tone: 'warn' },
+  replaced: { title: t.replacedTitle, body: t.replacedBody, tone: 'warn' },
+  'page-expired': { title: t.pageExpiredTitle, body: t.pageExpiredBody, tone: 'warn' },
+  'page-not-open': { title: t.pageNotOpenTitle, body: t.pageNotOpenBody, tone: 'warn' },
+  unmapped: { title: t.unmappedTitle, body: '', tone: 'warn' },
 };
+
+/** The server's reason codes, and the words each one gets (TELEHEALTH_ROUTES in contracts). */
+const STOP_FOR_CODE: Record<string, Stop> = {
+  link_invalid: 'invalid',
+  link_used: 'used',
+  code_expired: 'expired',
+  session_closed: 'closed',
+  locked: 'locked',
+  page_replaced: 'replaced',
+  page_expired: 'page-expired',
+  page_not_open: 'page-not-open',
+};
+
+/**
+ * WHAT A REFUSAL MEANS, FROM ITS CODE — NEVER FROM THE STATUS ALONE (wow.md
+ * §13). A 410 can be a used link, a lapsed code, a closed page or a newer link,
+ * and each needs different words. The status decides only what no code can:
+ * the server was not there (5xx). A code with no words shows the code.
+ */
+export function refusalFor(status: number, code: string | undefined): { stop: Stop; code?: string } {
+  if (status >= 500) return { stop: 'unreachable' };
+  if (code && STOP_FOR_CODE[code]) return { stop: STOP_FOR_CODE[code] };
+  return { stop: 'unmapped', code: code ?? `HTTP ${status}` };
+}
+
+async function codeOf(res: Response): Promise<string | undefined> {
+  const body = (await res.json().catch(() => ({}))) as { code?: unknown };
+  return typeof body.code === 'string' ? body.code : undefined;
+}
 
 export function TelehealthPatientView({ token }: { token: string }) {
   const [landing, setLanding] = useState<TelehealthLinkLanding | null>(null);
-  const [stop, setStop] = useState<Stop | null>(null);
+  const [stop, setStopState] = useState<Stop | null>(null);
+  const [unmappedCode, setUnmappedCode] = useState<string | null>(null);
+  const setStop = (next: Stop) => setStopState(next);
+  const refuse = (status: number, code: string | undefined) => {
+    const r = refusalFor(status, code);
+    if (r.code) setUnmappedCode(r.code);
+    setStopState(r.stop);
+  };
   const [code, setCode] = useState('');
   const [codeError, setCodeError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -67,7 +117,7 @@ export function TelehealthPatientView({ token }: { token: string }) {
     void (async () => {
       const res = await fetch(`${CORE_URL}/telehealth/link/${encodeURIComponent(token)}`).catch(() => null);
       if (!res) return setStop('unreachable');
-      if (!res.ok) return setStop('invalid');
+      if (!res.ok) return refuse(res.status, await codeOf(res));
       const body = (await res.json()) as TelehealthLinkLanding;
       setLanding(body);
       if (body.state !== 'open') setStop(body.state);
@@ -76,15 +126,20 @@ export function TelehealthPatientView({ token }: { token: string }) {
 
   const loadPage = useCallback(async (key: string) => {
     const res = await fetch(`${CORE_URL}/telehealth/page`, { headers: { 'x-telehealth-page-key': key } }).catch(() => null);
-    if (!res) return setStop('unreachable');
-    if (!res.ok) return setStop(res.status === 410 ? 'expired' : 'invalid');
+    if (!res) return setStopState('unreachable');
+    if (!res.ok) {
+      const r = refusalFor(res.status, await codeOf(res));
+      if (r.code) setUnmappedCode(r.code);
+      return setStopState(r.stop);
+    }
     setPage((await res.json()) as TelehealthPageView);
   }, []);
 
   const submitCode = async (event: React.FormEvent) => {
     event.preventDefault();
     const digits = code.replace(/\D/g, '');
-    if (digits.length === 0) return;
+    // Every digit, or nothing is sent: a short code is a guess the lockout would count.
+    if (digits.length !== DIGITS) return;
     setBusy(true);
     setCodeError(null);
     try {
@@ -94,17 +149,19 @@ export function TelehealthPatientView({ token }: { token: string }) {
         body: JSON.stringify({ code: digits }),
       }).catch(() => null);
       if (!res) return setStop('unreachable');
-      const body = (await res.json().catch(() => ({}))) as { pageKey?: string; attemptsLeft?: number | null };
+      const body = (await res.json().catch(() => ({}))) as { pageKey?: string; attemptsLeft?: number | null; code?: string };
       if (res.ok && body.pageKey) {
         setPageKey(body.pageKey);
         await loadPage(body.pageKey);
         return;
       }
-      if (res.status === 423) return setStop('locked');
-      if (res.status === 410) return setStop('expired');
-      if (res.status === 404) return setStop('invalid');
-      setCode('');
-      setCodeError(t.wrongCode(body.attemptsLeft ?? 0));
+      if (res.status < 500 && body.code === 'wrong_code') {
+        setCode('');
+        // A count only when the server gave one; never "0 more tries" from a missing number.
+        setCodeError(typeof body.attemptsLeft === 'number' && body.attemptsLeft > 0 ? t.wrongCode(body.attemptsLeft) : t.wrongCodeNoCount);
+        return;
+      }
+      refuse(res.status, typeof body.code === 'string' ? body.code : undefined);
     } finally {
       setBusy(false);
     }
@@ -121,8 +178,13 @@ export function TelehealthPatientView({ token }: { token: string }) {
         body: JSON.stringify({ consentKey: page.consentKey }),
       }).catch(() => null);
       if (!res) return setStop('unreachable');
-      if (res.status === 409) return setAgreeError(t.wordingChanged);
-      if (!res.ok) return setStop(res.status === 410 ? 'expired' : 'invalid');
+      if (!res.ok) {
+        const code = await codeOf(res);
+        if (code === 'wording_changed') return setAgreeError(t.wordingChanged);
+        // The practitioner recorded the consultation meanwhile: show what they recorded.
+        if (code === 'session_not_done' || code === 'session_did_not_proceed') return loadPage(pageKey);
+        return refuse(res.status, code);
+      }
       setPage((await res.json()) as TelehealthPageView);
     } finally {
       setBusy(false);
@@ -145,7 +207,7 @@ export function TelehealthPatientView({ token }: { token: string }) {
       <Shell title={t.title}>
         {practiceLine(landing?.practiceName)}
         <Notice tone={words.tone} title={words.title} data-testid={`telehealth-${stop}`}>
-          {words.body}
+          {stop === 'unmapped' ? t.unmappedBody(unmappedCode ?? '') : words.body}
         </Notice>
       </Shell>
     );
@@ -227,7 +289,7 @@ export function TelehealthPatientView({ token }: { token: string }) {
         </Field>
         </div>
         <div className={styles.big}>
-          <Button type="submit" variant="primary" disabled={busy} data-testid="telehealth-continue">
+          <Button type="submit" variant="primary" disabled={busy || code.length !== DIGITS} data-testid="telehealth-continue">
             {busy ? t.checking : t.continue}
           </Button>
         </div>
