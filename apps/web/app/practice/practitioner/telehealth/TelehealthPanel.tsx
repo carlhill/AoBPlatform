@@ -26,6 +26,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import {
   ASSIGNOR_RELATIONSHIP_OPTIONS,
+  TELEHEALTH_CONTENT,
   TELEHEALTH_IDENTITY_CHECKLIST,
   TELEHEALTH_NOT_DONE_REASONS,
   TELEHEALTH_NOT_DONE_NOTE_MAX,
@@ -372,7 +373,7 @@ export function TelehealthPanel() {
                 <span data-testid={`telehealth-status-${s.id}`}>{p.status[s.state] ?? s.state}</span>
               </Chip>
               {s.codeLocked && <Notice tone="stop">{p.locked}</Notice>}
-              {!s.codeLocked && s.state === 'opened' && s.codeAttemptsLeft !== null && s.codeAttemptsLeft < 5 && (
+              {!s.codeLocked && s.state === 'opened' && s.codeAttemptsLeft !== null && s.codeAttemptsLeft < TELEHEALTH_CONTENT.code.wrongAttemptsBeforeLock && (
                 <span> {p.attemptsLeft(s.codeAttemptsLeft)}</span>
               )}
               {s.notDoneReason && <span> {p.reasonWas(p.reasons[s.notDoneReason] ?? s.notDoneReason)}</span>}

@@ -5592,7 +5592,7 @@ export const strings = {
       loading: 'Opening…',
       fromPractice: (practice: string) => `From ${practice}`,
       codeHeading: 'Type the code',
-      codeLede: 'Type the 6-digit code your practitioner reads out to you on the call.',
+      codeLede: (digits: number) => `Type the ${digits}-digit code your practitioner reads out to you on the call.`,
       codeLabel: 'Code',
       codeHint: 'Numbers only. The code is never in the message we sent you.',
       continue: 'Continue',

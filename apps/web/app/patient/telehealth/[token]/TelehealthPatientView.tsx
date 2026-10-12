@@ -29,6 +29,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { ShieldCheck } from 'lucide-react';
+import { TELEHEALTH_CONTENT } from '@aobplatform/domain';
 import type { TelehealthLinkLanding, TelehealthPageView } from '@aobplatform/contracts';
 import { Button, Field, Notice, Shell, TextInput, ui } from '../../../ui';
 import { strings } from '../../../strings';
@@ -37,6 +38,8 @@ import styles from './telehealth.module.css';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
 const t = strings.telehealth.patient;
+/** From versioned content (hard rule 14), never a literal. */
+const DIGITS = TELEHEALTH_CONTENT.code.digits;
 
 /** Each maps to words that say what to do next. There is no generic fallback. */
 type Stop = 'invalid' | 'unreachable' | 'used' | 'expired' | 'locked' | 'closed';
@@ -204,7 +207,7 @@ export function TelehealthPatientView({ token }: { token: string }) {
         <h2 id="telehealth-code-heading" className={styles.heading}>
           {t.codeHeading}
         </h2>
-        <p>{t.codeLede}</p>
+        <p>{t.codeLede(DIGITS)}</p>
         <div className={styles.code}>
         <Field label={t.codeLabel} hint={t.codeHint} error={codeError}>
           {({ id, describedBy, invalid }) => (
@@ -215,9 +218,9 @@ export function TelehealthPatientView({ token }: { token: string }) {
               inputMode="numeric"
               autoComplete="one-time-code"
               pattern="[0-9]*"
-              maxLength={6}
+              maxLength={DIGITS}
               value={code}
-              onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, DIGITS))}
               data-testid="telehealth-code"
             />
           )}
