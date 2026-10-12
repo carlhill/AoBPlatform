@@ -5682,8 +5682,9 @@ export const strings = {
       usedBody: 'Each link opens once. If you closed the page, ask your practitioner on the call to send you a new link and code.',
       expiredTitle: 'This link has stopped working',
       expiredBody: 'The code only works for a few minutes. Ask your practitioner on the call to send you a new link and code.',
-      closedTitle: 'Nothing to do on this link',
-      closedBody: 'Your practitioner has already recorded this consultation. There is nothing more to do here.',
+      closedTitle: 'Nothing to do on this page.',
+      closedBody:
+        'Your practitioner has already recorded this consultation. Your Tele-Health call has completed. There is nothing more to do here. Please close this page.',
       invalidTitle: 'This link does not open anything',
       invalidBody: 'Check that the whole link was copied. If it still does not open, ask your practice for a new one.',
       unreachableTitle: 'We could not reach the server',
