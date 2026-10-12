@@ -32,7 +32,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ArrowRight, CalendarClock, IdCard } from 'lucide-react';
+import { ArrowRight, CalendarClock, IdCard, Phone } from 'lucide-react';
 import { Notice, Shell, ui } from '../../ui';
 import { SessionControl } from '../../SessionControl';
 import { strings } from '../../strings';
@@ -41,6 +41,8 @@ import { apiHeaders } from '../../auth';
 import styles from './practitioner.module.css';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
+/** The telehealth card, off unless the build says so (TELEHEALTH-PLAN.md §8 step 2). */
+const TELEHEALTH_CARD = process.env.NEXT_PUBLIC_TELEHEALTH_ENABLED === 'true';
 
 /** Statuses that mean somebody is working at a practice now. */
 const LIVE = ['active', 'ending'];
@@ -195,6 +197,30 @@ export function PractitionerLandingView() {
             <ArrowRight size={15} aria-hidden="true" />
           </Link>
         </section>
+
+        {/*
+          TELEHEALTH (TELEHEALTH-PLAN.md §8 step 2), BEHIND A BUILD FLAG,
+          default off: `NEXT_PUBLIC_TELEHEALTH_ENABLED`. The page itself also
+          asks core, whose `TELEHEALTH_ENABLED` is the one that matters; this
+          only keeps the card off the landing page until both are on.
+        */}
+        {TELEHEALTH_CARD && (
+          <section className={styles.card}>
+            <h2 className={styles.cardTitle}>
+              <Phone size={18} aria-hidden="true" />
+              {strings.telehealth.panel.landingTitle}
+            </h2>
+            <p className={styles.cardBody}>{strings.telehealth.panel.landingBody}</p>
+            <Link
+              href={only?.id ? `/practice/practitioner/telehealth?practice=${encodeURIComponent(only.id)}` : '/practice/practitioner/telehealth'}
+              className={ui.buttonLink}
+              data-testid="practitioner-to-telehealth"
+            >
+              {strings.telehealth.panel.openLink}
+              <ArrowRight size={15} aria-hidden="true" />
+            </Link>
+          </section>
+        )}
 
         {/*
           AND THE OTHER PAGE, NAMED RATHER THAN HIDDEN (§1). They answer

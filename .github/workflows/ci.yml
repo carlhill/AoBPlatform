@@ -3,8 +3,11 @@
 # Gates are release-blocking, not advisory (CLAUDE.md §7).
 name: CI
 
+# A PR branch runs once per push (pull_request); a bare `push:` ran it twice.
+# main still runs after every merge.
 on:
   push:
+    branches: [main]
   pull_request:
 
 jobs:

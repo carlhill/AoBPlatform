@@ -3623,3 +3623,80 @@ model AobPrinterHost {
   @@index([practiceId, lastSeenAt])
   @@map("aobprinter_hosts")
 }
+
+/// THE STEP BEFORE A TELEHEALTH CONSULTATION (TELEHEALTH-PLAN.md §3–§4, §8
+/// step 2; D-2026-10-11-07/-08). A record that the identified patient (or
+/// carer) agreed to a telehealth consultation with this provider. NOT an
+/// assignment and NOT a pre-agreement; nothing here is a particular of any
+/// agreement, and no agreement points at it in step 2.
+///
+/// NO IDENTIFIER VALUE AND NO CONTACT VALUE IS STORED (hard rules 1 and 9).
+/// `identifierTypes` holds TYPES from the approved six; the link goes to the
+/// contact already on the patient record and is never copied here.
+///
+/// SECRETS ARE HASHES. `linkTokenHash` and `pageKeyHash` are sha256 of 256-bit
+/// secrets; `codeHash` is a salted scrypt of the 6-digit code (a plain sha256
+/// of a million-value space would be read back from a database dump in a
+/// second). The code is never at rest in plaintext and never in a message.
+///
+/// Scoped by RLS on `practiceId`, FORCEd, no foreign keys, like the rest of
+/// this family of tables. The practitioner anchor is the affiliation, as an
+/// agreement's has been since dbe53a1.
+model TelehealthSession {
+  id                    String    @id @default(uuid()) @db.Uuid
+  practiceId            String    @db.Uuid
+  patientId             String    @db.Uuid
+  practitionerId        String    @db.Uuid
+  affiliationId         String    @db.Uuid
+  /// From TELEHEALTH_SESSION_STATES (CHECK in the migration).
+  state                 String    @default("opened")
+  /// Who checked identity on the call: `practitioner` now, `staff` for reception's phone follow-up (step 4).
+  identityCheckedByType String?
+  /// The checker's token subject: an id somebody signed, never a typed name.
+  identityCheckedById   String?
+  /// TYPES only, from the approved six. Empty when the step was recorded straight as not done.
+  identifierTypes       String[]  @default([])
+  /// The staff-verified verification event behind the check (REQ-VER-03/-04).
+  verificationEventId   String?   @db.Uuid
+  /// D7-style: explicit, never inferred. Null only when no link was sent.
+  consenterIsPatient    Boolean?
+  /// From the assignor-relationships content, when a carer is on the call.
+  consenterRelationship String?
+  /// The 18+ attestation for someone acting for another (hard rule 10). Null for the patient themselves.
+  consenterAttested18   Boolean?
+  /// sms | email | both. Null when no link was sent.
+  channel               String?
+  linkTokenHash         String?   @unique
+  linkExpiresAt         DateTime?
+  linkConsumedAt        DateTime?
+  linkSentCount         Int       @default(0)
+  codeHash              String?
+  codeExpiresAt         DateTime?
+  codeAttempts          Int       @default(0)
+  codeLockedAt          DateTime?
+  codeCheckedAt         DateTime?
+  pageKeyHash           String?   @unique
+  pageKeyExpiresAt      DateTime?
+  /// The page key a fresh link replaced, so that page can say "a newer link was sent" rather than "not open".
+  retiredPageKeyHash    String?   @unique
+  agreedAt              DateTime?
+  /// The consent statement key and the content version it was rendered from (hard rule 14).
+  consentKey            String?
+  contentVersion        String
+  notDoneReason         String?
+  notDoneReasonsVersion String?
+  /// Only for the reason that takes one (`other`). Never in a vault event or a log.
+  notDoneNote           String?
+  /// When the provider says the consultation happened.
+  consultationAt        DateTime?
+  /// When the outcome was recorded. A reason recorded the next morning says so.
+  outcomeRecordedAt     DateTime?
+  outcomeRecordedById   String?
+  createdById           String
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([practiceId, practitionerId, createdAt])
+  @@index([practiceId, patientId])
+  @@map("telehealth_sessions")
+}

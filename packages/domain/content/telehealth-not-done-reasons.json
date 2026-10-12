@@ -1,0 +1,13 @@
+{
+  "$comment": "VERSIONED CONTENT, NOT CODE (CLAUDE.md §7c, option lists are content; hard rule 14). Why the step before a telehealth consultation was not done (TELEHEALTH-PLAN.md §4; D-2026-10-11-08 decision 1). THE DOCTOR DECIDES, AND THE CONSULTATION ALWAYS GOES AHEAD (hard rule 8): a reason records the way past the step, it never blocks the service. THE LIST IS THE SCREEN: order here is the order the panel offers them, and core refuses any code not listed here. Keys must match ^[a-z0-9_]{1,40}$. THE WORDS ARE NOT HERE: labels live in the string table keyed by `key` (REQ-LANG-01). `takesNote` marks the one reason that carries a short free-text note; the screen says not to put identifiers in it, and no vault event ever carries the note itself, only whether there was one. Bump `version` on every edit.",
+  "version": "telehealth-not-done-reasons-2026-10-12",
+  "reasons": [
+    { "key": "emergency" },
+    { "key": "language_barrier" },
+    { "key": "technology_gap" },
+    { "key": "no_contact_on_file" },
+    { "key": "patient_declined_link" },
+    { "key": "doctor_without_access" },
+    { "key": "other", "takesNote": true }
+  ]
+}

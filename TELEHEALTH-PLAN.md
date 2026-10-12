@@ -217,7 +217,10 @@ up any DB4 that was not signed at the practice.
 1. **The link page shows the DB4 sheets.** This delivers reception's follow-up on
    its own.
 2. **The telehealth session, the code, the consent page, the doctor's panel with
-   live status, and the "not done" reasons.**
+   live status, and the "not done" reasons.** *Built 12 Oct 2026 on
+   `feat/telehealth-session`, behind `TELEHEALTH_ENABLED` (default off). Its
+   vault event types are PROPOSED in D-2026-10-12-02 and need Carl's approval
+   before the flag can go on anywhere but development and test.*
 3. **The DB4 into the waiting page.** Scenario A complete.
 4. **Next-day matching, and reception's phone follow-up.** Scenario B complete.
 5. **The language layer.** This can start alongside step 1, and every string

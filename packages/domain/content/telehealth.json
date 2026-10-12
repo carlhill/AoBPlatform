@@ -1,0 +1,17 @@
+{
+  "$comment": "VERSIONED CONTENT, NOT CODE (hard rule 14; TELEHEALTH-PLAN.md §3, §6 items 2-3, §7). The step before a telehealth consultation: the thresholds of the 6-digit code and the link, and the ONE statement the patient (or carer) agrees to. Every session records the `version` it was made under, so a statement changed tomorrow does not rewrite what somebody agreed to today. THE STATEMENT IS ABOUT THE CONSULTATION ONLY, until the Department answers GOVERNMENT-QUESTIONS.md G10: it must not mention bulk billing, Medicare, the assignment of benefit or the DB4, because a step before the service that reads as an offer to assign could turn the DB4 afterwards into a pre-agreement (s 65C(3)(b)(i); TELEHEALTH-RULES-RESEARCH.md Q1). The loader refuses a statement that does. Never 'approve' (hard rule 12; TELEHEALTH-PLAN.md §3 step 7). THE NUMBERS: about 10 minutes and single-use come from TELEHEALTH-PLAN.md §6 item 3; 5 wrong attempts is the D-06 default the identity challenge already uses (aob-requirements.md §9) -- 'a few' in the plan, and Carl may change it here; the link lives as long as its code, because a link whose code has lapsed opens nothing. `pageHours` is NOT from any requirement: it is how long the page stays open after the code is entered, chosen so one page covers a consultation day (TELEHEALTH-PLAN.md decision 4), and is flagged for Carl. Bump `version` on every edit.",
+  "version": "telehealth-2026-10-12",
+  "code": {
+    "digits": 6,
+    "validityMinutes": 10,
+    "wrongAttemptsBeforeLock": 5
+  },
+  "page": {
+    "pageHours": 12
+  },
+  "consent": {
+    "key": "telehealth_consult_v1",
+    "statement": "Yes, start my telehealth consultation with {{providerName}}",
+    "carerStatement": "Yes, start the telehealth consultation for {{patientGivenNames}} with {{providerName}}"
+  }
+}

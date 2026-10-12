@@ -240,7 +240,27 @@ export const REVIEW_TASK_KINDS: readonly ReviewTaskKind[] = [
      */
     stakes: 'high',
   }),
+  kind({
+    key: 'telehealth_code_locked',
+    label: 'A telehealth code was entered wrongly too many times',
+    question: 'Was this the patient mistyping on the call, or somebody else trying a link that was not theirs?',
+    /*
+     * THE PRACTICE NOTIFICATION THE PLAN ASKS FOR (TELEHEALTH-PLAN.md §6 item 3:
+     * "locks after a few wrong attempts and tells the practice"). The link is
+     * dead the moment it locks; the provider on the call sees that live and can
+     * send a fresh link and code. This task is the record somebody at the
+     * practice reads afterwards.
+     *
+     * HIGH, because the honest answer turns on who was holding the phone, and
+     * only a person who can ask the patient can find that out. THE TASK
+     * CARRIES THE SESSION ID AND A COUNT, never a code, a contact or a name.
+     */
+    stakes: 'high',
+  }),
 ] as const;
+
+/** The kind a locked telehealth code raises. A constant so the one caller does not carry the literal. */
+export const TELEHEALTH_CODE_LOCKED_TASK_KIND = 'telehealth_code_locked';
 
 /**
  * THE KIND "REASSIGN" RAISES (PRACTITIONER-QUEUE-PAGE.md §3a rule 4).
