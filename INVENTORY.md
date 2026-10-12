@@ -17,11 +17,11 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 | | Count |
 |---|---|
-| Exported symbols indexed | 2513 |
+| Exported symbols indexed | 2514 |
 | Files scanned for exports | 584 |
 | Files scanned for imports | 627 |
 | Exports with no comment of their own | 1019 |
-| Exports imported nowhere else | 1038 |
+| Exports imported nowhere else | 1039 |
 
 ## Sections
 
@@ -35,7 +35,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 - [Contracts types](#contracts-types) — 121
 - [Contracts functions and constants](#contracts-functions-and-constants) — 37
 - [Core services, controllers and modules](#core-services-controllers-and-modules) — 290
-- [Core helpers, constants and types](#core-helpers-constants-and-types) — 232
+- [Core helpers, constants and types](#core-helpers-constants-and-types) — 233
 - [AOBPRINTER (the desktop print channel)](#aobprinter-the-desktop-print-channel-) — 163
 
 ## Web components
@@ -786,6 +786,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `detailTypeForPatientField` | domain:tablet-session.ts |  | **4** · core:arrivals/arrivals.service.ts, core:patients/patients.service.ts, core:tablet-sessions/tablet-sessions.service.ts, +1 more |
 | `isValidAhpraNumberFormat` | domain:enrolment-ceremony.ts |  | **4** · core:affiliations/affiliations.service.ts, core:organisations/organisations.service.ts, web:practice/practitioners/PractitionersView.tsx, +1 more |
 | `kioskIdleTimeoutOrDefault` | domain:kiosk.ts | WHAT THE TABLET USES when the server said nothing it can believe. | **4** · core:kiosk/kiosk.service.ts, web:kiosk/Ceremony.tsx, web:kiosk/useInactivityReset.ts, +1 more |
+| `mayBeProviderOnAgreement` | domain:billing-roles.ts | MAY THIS PERSON BE THE PROVIDER ON AN AGREEMENT AT THIS LOCATION? | **4** · core:arrivals/arrivals.service.ts, core:dev-seed/dev-seed.controller.ts, core:tablet-sessions/tablet-sessions.service.ts, +1 more |
 | `normalisePhone` | domain:contacts.ts | Reduce an Australian telephone number to a comparable form. | **4** · core:agreements/agreements.service.ts, domain:agreement-copy.ts, domain:assignor.ts, +1 more |
 | `practiceDayOf` | domain:practice-day.ts | `YYYY-MM-DD` FOR AN INSTANT, IN THE ZONE THE PRACTICE CHOSE (D-2026-10-10-03). | **4** · core:arrivals/arrivals.service.ts, core:practices/practice-day.ts, core:practitioner-queue/practitioner-queue.service.ts, +1 more |
 | `profileAllows` | domain:practice-surfaces.ts | May a practice on this profile open this console page? | **4** · web:AccessGuard.tsx, web:MainMenu.tsx, web:practice/setup/SetupHub.tsx, +1 more |
@@ -803,7 +804,6 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `isTheServiceRenderedSignal` | domain:visit-states.ts | Setting this is the service-rendered signal (§3a rule 3). | **3** · core:practitioner-queue/practitioner-queue.service.ts, web:practice/frontdesk/dayRails.ts, web:practice/frontdesk/visitChecklist.ts |
 | `latestVisitState` | domain:visit-states.ts | WHERE A VISIT HAS GOT TO — the newest record, or the starting state. | **3** · core:arrivals/arrivals.service.ts, core:practitioner-queue/practitioner-queue.service.ts, core:tablet-sessions/tablet-sessions.service.ts |
 | `matrix` | domain:reporting.ts | Months down the side, positions within the month across the top. | **3** · core:outbound/outbound.service.ts, web:practice/reports/ReportsView.tsx, web:practitioner/messages/MessagesView.tsx |
-| `mayBeProviderOnAgreement` | domain:billing-roles.ts | MAY THIS PERSON BE THE PROVIDER ON AN AGREEMENT AT THIS LOCATION? | **3** · core:arrivals/arrivals.service.ts, core:tablet-sessions/tablet-sessions.service.ts, domain:guards.ts |
 | `normaliseEmail` | domain:contacts.ts | One mailbox, case-insensitively. | **3** · core:agreements/agreements.service.ts, domain:agreement-copy.ts, domain:assignor.ts |
 | `practiceDisplayLabel` | domain:account-naming.ts | The practice's half of that label. | **3** · core:identity/identity.service.ts, core:identity/practice-admin.service.ts, core:practices/practice-users.service.ts |
 | `practiceToday` | domain:practice-day.ts | Today's calendar day in the practice's zone — never `toISOString().slice(0, 10)`. | **3** · core:agreements/closed-unsigned-guard.ts, core:unsigned-drafts/unsigned-draft-closure.sweep.ts, domain:pre-agreement-association.ts |
@@ -2228,7 +2228,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Core helpers, constants and types
 
-232 exports.
+233 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -2354,6 +2354,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `ABN_LOOKUP_WINDOW_MS` | core:organisations/abn-lookup-rate-limit.ts |  | 0 |
 | `AGREEMENT_CLOSED_UNSIGNED` | core:agreements/closed-unsigned-guard.ts | The refusal code a tablet echoes and the console words (`SIGNATURE_REFUSAL_REASONS`). | 0 |
 | `AGREEMENT_RENDERER` | core:render/renderer.ts |  | 0 |
+| `AOBPRINTER_TEST_PATIENTS` | core:dev-seed/dev-seed.controller.ts | THE FIVE, matched by PMS patient ID. | 0 |
 | `ASSOCIATION_CHOICE_REASONS` | core:reconciliation/reconciliation.service.ts | WHY A SERVICE IS LISTED FOR A PERSON TO CHOOSE (D-2026-10-10-09). | 0 |
 | `AbrProbe` | core:organisations/abr.ts | WHY THERE ARE TWO ANSWERS AND NOT ONE. | 0 |
 | `AbrReason` | core:organisations/abr.ts |  | 0 |

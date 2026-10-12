@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Body,
+  ConflictException,
   Controller,
   ForbiddenException,
   Headers,
@@ -14,6 +15,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { DevicesService } from '../devices/devices.service';
 import { ServiceDescriptionsService } from '../service-descriptions/service-descriptions.service';
 import { SetServiceDescriptionDto } from '../service-descriptions/service-descriptions.controller';
+import { mayBeProviderOnAgreement } from '@aobplatform/domain';
 import type { Actor } from '../auth/actor.decorator';
 
 /** Named honestly: nobody reviewed or composed these rows — a seed wrote them. */
@@ -875,4 +877,135 @@ export class DevSeedController {
       };
     });
   }
+
+  /**
+   * THE PATIENTS THE AOBPRINTER TEST TOOL'S "LOAD TEST AGREEMENTS" BUTTON
+   * PRINTS AGAINST (Carl, 12 October 2026: *"put a button at the top of the
+   * test tool for me to load test agreements"*). Dev only.
+   *
+   * WHY CORE HAS TO DO THIS PART. A DB4 matches a patient already on file by
+   * its PMS patient ID and never creates one (`unknown_chart_number` in
+   * `db4-assignment.handler.ts`), and it names its servicing provider by a
+   * number the practice must already know. The tool can compose a form; it
+   * cannot conjure the patient the form is about. So this ensures the
+   * patients exist and says which servicing provider numbers would place —
+   * and NOTHING ELSE. It writes no agreement, no service record and no print
+   * job: every agreement the button makes still arrives through
+   * `POST /inbound/print-jobs`, the same door as a real driver's.
+   *
+   * IDEMPOTENT ON THE PMS PATIENT ID. A second press finds the five and
+   * creates nothing, so the desk gains agreements per press, never patients.
+   *
+   * OBVIOUSLY FAKE, and no Medicare-format number is stored on any of them
+   * (CLAUDE.md §7c; hard rule 1). No contact details either, so nothing the
+   * desk does with these agreements can reach a real phone or inbox.
+   */
+  @Post('aobprinter-test-patients')
+  async aobPrinterTestPatients(@Headers('x-practice-id') headerPracticeId: string | undefined) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new ForbiddenException('Dev seeding does not exist in production.');
+    }
+    const practiceId = (headerPracticeId ?? '').trim();
+    if (!practiceId) throw new BadRequestException('x-practice-id header is required.');
+
+    return this.prisma.withPractice(practiceId, async (tx) => {
+      // RLS is fail-closed, so a wrong id reads as "no practice" rather than as somebody else's.
+      const practice = await tx.practice.findFirst({ where: { id: practiceId }, select: { id: true } });
+      if (!practice) {
+        throw new BadRequestException({
+          reason: 'practice_not_found',
+          message: `No practice with id ${practiceId} is visible in this scope, so no test patients were created.`,
+        });
+      }
+
+      /*
+       * WHAT A DB4 CAN NAME AS ITS SERVICING PROVIDER — asked BEFORE a patient
+       * is written, so a refusal leaves the practice exactly as it was. The
+       * two refusals say different things because they are different facts
+       * (wow.md §13): no number at all, versus numbers only in roles that may
+       * not be the provider on an agreement.
+       */
+      const affiliations = await tx.affiliation.findMany({
+        where: { practiceId, status: 'active', providerNumber: { not: null } },
+        select: { providerNumber: true, billingRole: true },
+      });
+      const numbered = affiliations.filter((a) => (a.providerNumber ?? '').trim() !== '');
+      if (numbered.length === 0) {
+        throw new ConflictException({
+          reason: 'no_active_affiliation_with_provider_number',
+          message:
+            'This practice has no active affiliation with a provider number, so a DB4 could name no ' +
+            'servicing provider it knows. No test patients were created.',
+        });
+      }
+      const servicingProviderNumbers = [
+        ...new Set(
+          numbered
+            .filter((a) => mayBeProviderOnAgreement(a.billingRole))
+            .map((a) => (a.providerNumber as string).trim()),
+        ),
+      ].sort();
+      if (servicingProviderNumbers.length === 0) {
+        const roles = [...new Set(numbered.map((a) => a.billingRole))].sort().join(', ');
+        throw new ConflictException({
+          reason: 'no_active_affiliation_may_be_provider',
+          message:
+            `This practice has ${numbered.length} active affiliation(s) with a provider number, but their ` +
+            `billing roles (${roles}) may not be the provider on an agreement, so a DB4 naming them would ` +
+            'be refused. No test patients were created.',
+        });
+      }
+
+      const wanted = AOBPRINTER_TEST_PATIENTS.map((p) => p.patientRecordNumber);
+      const onFile = await tx.patient.findMany({
+        where: { practiceId, patientRecordNumber: { in: wanted } },
+        select: { patientRecordNumber: true },
+      });
+      const have = new Set(onFile.map((p) => p.patientRecordNumber));
+      let created = 0;
+      for (const person of AOBPRINTER_TEST_PATIENTS) {
+        if (have.has(person.patientRecordNumber)) continue;
+        await tx.patient.create({
+          data: {
+            id: devId(practiceId, `aobprinter-test:${person.patientRecordNumber}`),
+            practiceId,
+            patientRecordNumber: person.patientRecordNumber,
+            givenNames: person.givenNames,
+            familyName: person.familyName,
+            dateOfBirth: new Date(person.dateOfBirth),
+            genderAsIdentified: 'unspecified',
+            address: '3 Example Street, Sampletown NSW 2000',
+          },
+        });
+        created += 1;
+      }
+
+      return {
+        practiceId,
+        created,
+        patients: AOBPRINTER_TEST_PATIENTS.map((p) => ({ ...p })),
+        servicingProviderNumbers,
+        seededBy: DEV_SEED_AUTHOR,
+      };
+    });
+  }
 }
+
+/**
+ * THE FIVE, matched by PMS patient ID. Fictional names in the presets' style,
+ * dates of birth that make each one an adult self-assignor. Fixed, so a second
+ * press finds them rather than adding five more.
+ */
+export const AOBPRINTER_TEST_PATIENTS: ReadonlyArray<{
+  readonly patientRecordNumber: string;
+  readonly givenNames: string;
+  readonly familyName: string;
+  /** YYYY-MM-DD, as the tool's Date of birth field takes it. */
+  readonly dateOfBirth: string;
+}> = [
+  { patientRecordNumber: 'DB4TEST-01', givenNames: 'Ada', familyName: 'Fakeworth', dateOfBirth: '1961-04-03' },
+  { patientRecordNumber: 'DB4TEST-02', givenNames: 'Bram', familyName: 'Notanyone', dateOfBirth: '1974-09-18' },
+  { patientRecordNumber: 'DB4TEST-03', givenNames: 'Cleo', familyName: 'Madeupson', dateOfBirth: '1988-12-01' },
+  { patientRecordNumber: 'DB4TEST-04', givenNames: 'Dov', familyName: 'Placeholderly', dateOfBirth: '1952-06-27' },
+  { patientRecordNumber: 'DB4TEST-05', givenNames: 'Esme', familyName: 'Fictitia', dateOfBirth: '1999-02-14' },
+];
