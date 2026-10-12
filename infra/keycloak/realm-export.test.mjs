@@ -77,6 +77,41 @@ for (const clientId of ['web', 'console']) {
   );
 }
 
+/*
+ * NO PASSWORD GRANT, ON ANY CLIENT, BY EITHER ROUTE (rule 15; D-2026-10-11-01).
+ *
+ * Everything above is about the BROWSER flow. The token endpoint has a second
+ * door: an OAuth password grant runs the realm's DIRECT GRANT flow instead,
+ * which by default is Keycloak's stock `direct grant` - a username and a
+ * password, and nothing else. `web` shipped with direct grants on, so a staff
+ * token was one POST away for anybody holding a password, and the passkey
+ * REQUIRED above was never asked for. Found by review on 10 Oct 2026.
+ *
+ * Two halves, because either alone is one setting from false:
+ *   - no client in this export allows a direct grant at all, stated explicitly;
+ *   - the realm's direct grant flow, which every client falls back to -
+ *     including Keycloak's own `admin-cli`, created in every realm and not in
+ *     this file - denies before it reads a credential.
+ */
+for (const client of realm.clients ?? []) {
+  check(
+    `no_client_allows_a_password_direct_grant: ${client.clientId}`,
+    client.directAccessGrantsEnabled === false,
+  );
+  check(
+    `no client overrides the realm's direct grant flow: ${client.clientId}`,
+    !client.authenticationFlowBindingOverrides?.direct_grant,
+  );
+}
+const directGrant = (realm.authenticationFlows ?? []).find((f) => f.alias === realm.directGrantFlow);
+check(
+  'the_realm_direct_grant_flow_always_denies',
+  directGrant?.topLevel === true &&
+    directGrant.authenticationExecutions?.length === 1 &&
+    directGrant.authenticationExecutions[0].authenticator === 'deny-access-authenticator' &&
+    directGrant.authenticationExecutions[0].requirement === 'REQUIRED',
+);
+
 // WebAuthn policy present at realm level.
 check('WebAuthn passwordless policy configured', Boolean(realm.webAuthnPolicyPasswordlessRpEntityName));
 

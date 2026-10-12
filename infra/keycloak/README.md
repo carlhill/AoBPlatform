@@ -183,6 +183,39 @@ node infra/keycloak/apply-amr.mjs
 It adds what is missing, changes no requirement and binds no flow, and is safe
 to re-run. Then sign out of the console and sign in again.
 
+## No password grant at the token endpoint (D-2026-10-11-01)
+
+The passkey requirement lives in the BROWSER flow. An OAuth password grant
+(`grant_type=password`) never runs it: it runs the realm's DIRECT GRANT flow,
+which by default is Keycloak's stock `direct grant`, a username and a password
+and nothing else. `web` shipped with direct grants on, so a staff token was one
+POST away for anybody holding a password. Both realms are now closed twice over:
+
+- **no client in the export allows direct grants** (`directAccessGrantsEnabled:
+  false`, stated on every client);
+- **the realm's direct grant flow is `no-direct-grant`**, one step, Deny access,
+  REQUIRED. Every client falls back to it, including Keycloak's own
+  `admin-cli`, which exists in every realm and is not in the export.
+
+`realm-export.test.mjs` and `tier2-realm.test.mjs` assert both. The scripts in
+this folder are not affected: they mint their admin token in `master`.
+
+An existing realm needs the script:
+
+```bash
+node infra/keycloak/backup-keycloak.mjs
+node infra/keycloak/apply-no-direct-grant.mjs
+KEYCLOAK_REALM=aobplatform-tier2 node infra/keycloak/apply-no-direct-grant.mjs
+```
+
+It adds the flow, binds it, and switches direct grants off on the export's
+clients. A drifted `no-direct-grant` flow is reported, left alone and not
+bound. A per-client direct grant override is reported and left in place, and
+that client's direct grants are still switched off. It finishes by asking the token endpoint for a token with an
+invented username through `web` and `admin-cli`, and exits 1 if either answer
+is "Invalid user credentials", because that answer means the grant reached a
+password check.
+
 ## Passkeys have TWO names, and they never match
 
 This confuses everybody once, so it is written down.
