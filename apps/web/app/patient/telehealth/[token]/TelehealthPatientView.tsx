@@ -263,7 +263,10 @@ export function TelehealthPatientView({ token }: { token: string }) {
         {page.state === 'code_checked' && (
           <section className={styles.card} aria-labelledby="telehealth-with">
             <h2 id="telehealth-with" className={styles.heading}>
-              {t.withProvider(provider)}
+              {/* The provider's name on a line of its own (Carl, 12 Oct 2026). */}
+              {t.withProviderLead}
+              <br />
+              {provider}
             </h2>
             {ahpraLine}
             {agreeError && <Notice tone="warn">{agreeError}</Notice>}
@@ -330,7 +333,7 @@ export function TelehealthPatientView({ token }: { token: string }) {
         )}
         {page.state === 'agreed' && (
           <section className={`${styles.card} ${styles.started}`} data-testid="telehealth-waiting" aria-live="polite">
-            <h2 className={styles.heading}>{t.started}</h2>
+            <h2 className={styles.heading}>{t.started(page.greetingName)}</h2>
             <p>{t.waitingBody}</p>
             {ahpraLine}
           </section>
@@ -342,7 +345,7 @@ export function TelehealthPatientView({ token }: { token: string }) {
         )}
         {page.state === 'went_ahead' && (
           <section className={`${styles.card} ${styles.started}`} data-testid="telehealth-complete" aria-live="polite">
-            <h2 className={styles.heading}>{t.completeTitle}</h2>
+            <h2 className={styles.heading}>{t.completeTitle(page.greetingName)}</h2>
             <p>{t.completeBody}</p>
             {ahpraLine}
           </section>

@@ -128,6 +128,12 @@ function recordOf(patient: {
   };
 }
 
+/** The first of a person's names, to greet them by. A title typed into the name is skipped. */
+function firstName(names: string | null | undefined): string | null {
+  const parts = (names ?? '').trim().split(/\s+/).filter((part) => part && !/^(dr|mr|mrs|ms|miss|mx|prof)\.?$/i.test(part));
+  return parts[0] ?? null;
+}
+
 /** The states a practitioner records that close the link: the page says which (Carl, 12 Oct 2026). */
 const TELEHEALTH_OUTCOME_STATES: readonly string[] = ['went_ahead', 'did_not_proceed', 'not_done'];
 
@@ -964,6 +970,7 @@ export class TelehealthService {
       consenterIsPatient,
       consenterRelationship: consenterIsPatient ? null : session.consenterRelationship,
       patientGivenNames: consenterIsPatient ? null : (patient?.givenNames ?? null),
+      greetingName: firstName(consenterIsPatient ? patient?.givenNames : session.consenterName),
       agreedAt: session.agreedAt?.toISOString() ?? null,
     };
   }

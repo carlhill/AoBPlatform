@@ -5705,7 +5705,8 @@ export const strings = {
       unreachableTitle: 'We could not reach the server',
       unreachableBody: 'Check your internet connection and try again. Your consultation can still go ahead.',
       withProvider: (provider: string) => `Your telehealth consultation with ${provider}`,
-      started: 'Your telehealth consultation has started',
+      started: (name: string | null) => (name ? `${name}, your telehealth consultation has started` : 'Your telehealth consultation has started'),
+      withProviderLead: 'Your telehealth consultation with',
       ahpraLine: (provider: string, number: string) =>
         `${provider} is registered with Ahpra, registration number ${number}. You can check this yourself on the public register at`,
       ahpraSite: 'www.ahpra.gov.au',
@@ -5716,7 +5717,7 @@ export const strings = {
       waitingBody: 'You can go back to your call now. Keep this page open; your practitioner may send you something to it later.',
       notDoneTitle: 'Nothing more to do here',
       notDoneBody: 'Your practitioner has noted that this step is not needed. Your consultation goes ahead.',
-      completeTitle: 'Your telehealth consultation is complete',
+      completeTitle: (name: string | null) => (name ? `${name}, your telehealth consultation is complete` : 'Your telehealth consultation is complete'),
       completeBody: 'You can close this page.',
       didNotProceedTitle: 'This consultation did not go ahead',
       didNotProceedBody: 'If that is not right, contact your practice.',

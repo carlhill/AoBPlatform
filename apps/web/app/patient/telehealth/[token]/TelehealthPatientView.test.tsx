@@ -32,6 +32,7 @@ const page = (state: string) => ({
   consenterIsPatient: true,
   consenterRelationship: null,
   patientGivenNames: null,
+  greetingName: 'Testy',
   statement: STATEMENT,
   consentKey: 'telehealth_consult_v3',
   contentVersion: 'telehealth-test',
@@ -79,7 +80,8 @@ describe('TelehealthPatientView', () => {
     expect(screen.queryByTestId('telehealth-agree')).toBeNull();
     fireEvent.click(tick);
 
-    expect((await screen.findByTestId('telehealth-waiting')).textContent).toContain(t.started);
+    // Greeted by first name (Carl, 12 Oct 2026).
+    expect((await screen.findByTestId('telehealth-waiting')).textContent).toContain('Testy, your telehealth consultation has started');
     // The reference to quote to the practice, at the foot of the page (D-2026-10-12-03 item 11).
     expect(screen.getByTestId('telehealth-consultation-id').textContent).toBe(t.consultationId('TH-AB12-CD34'));
 

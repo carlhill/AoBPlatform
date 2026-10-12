@@ -149,6 +149,8 @@ export interface TelehealthPageView {
   /** For someone acting for the patient: the relationship key the provider chose, and the patient's given names, for "You are the carer for Juno". Null for the patient. */
   readonly consenterRelationship: string | null;
   readonly patientGivenNames: string | null;
+  /** The first name of whoever is on the page, to greet them (Carl, 12 Oct 2026): the patient's, or the name a carer typed once they agreed. */
+  readonly greetingName: string | null;
   /** The one statement, from versioned content, as it will be recorded. */
   readonly statement: string;
   readonly consentKey: string;
