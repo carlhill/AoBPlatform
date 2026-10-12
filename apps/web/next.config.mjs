@@ -26,7 +26,18 @@
  */
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  allowedDevOrigins: ['127.0.0.1'],
+  /*
+   * DEV_LAN_HOSTS adds the hosts a real tablet on the same Wi-Fi uses to reach
+   * this dev server (10 Oct 2026), e.g. the PC's own IP. Read from the
+   * environment so nobody's home address is committed.
+   */
+  allowedDevOrigins: [
+    '127.0.0.1',
+    ...(process.env.DEV_LAN_HOSTS ?? '')
+      .split(',')
+      .map((host) => host.trim())
+      .filter(Boolean),
+  ],
 };
 
 export default nextConfig;

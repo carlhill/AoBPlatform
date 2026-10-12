@@ -7,6 +7,7 @@
  * feature adds, not a retrofit of coverage for the rest of the file.
  */
 import assert from 'node:assert/strict';
+import { AOBPRINTER_HEARTBEAT_INTERVAL } from '@aobplatform/contracts';
 import { DEFAULT_RETENTION_CONFIG, RETENTION_HARD_CAP_MS, parseConfig } from './config';
 
 const PATH = 'aobprinter.config.json';
@@ -75,6 +76,21 @@ describe('retention_is_off_by_default', () => {
   it('only turns on when a config explicitly says so', () => {
     const config = parseConfig(minimalDoc({ retention: { enabled: true } }), PATH);
     expect(config.retention.enabled).toBe(true);
+  });
+});
+
+describe('the_pdf_archive_keeps_seven_days_by_default_and_never_more_than_thirty', () => {
+  // D-2026-09-29-03: seven is Carl's number; thirty is the ceiling so a typo cannot keep patient PDFs for years.
+  it('keeps seven days when the config says nothing, with retention off', () => {
+    expect(parseConfig(minimalDoc(), PATH).retention.archiveDays).toBe(7);
+  });
+
+  it('takes a number of days in range', () => {
+    expect(parseConfig(minimalDoc({ retention: { archiveDays: 14 } }), PATH).retention.archiveDays).toBe(14);
+  });
+
+  it.each([0, 31, 1.5, '7'])('refuses %p, and says it wanted days', (archiveDays) => {
+    expect(() => parseConfig(minimalDoc({ retention: { archiveDays } }), PATH)).toThrow(/archiveDays.*days from 1 to 30/);
   });
 });
 
@@ -179,5 +195,36 @@ describe('the_queue_label_is_never_a_patient_identifier', () => {
       config.queues.map((q) => q.label),
       ['Room 3', 'Front desk'],
     );
+  });
+});
+
+describe('the heartbeat (D-2026-10-10-02, decisions 1 and 11)', () => {
+  it('heartbeat_is_on_by_default_every_minute', () => {
+    /*
+     * ON FOR AN UPGRADE TOO. Unlike collection it writes nothing into a PMS
+     * folder, so an existing install that says nothing about it beats.
+     */
+    const config = parseConfig(minimalDoc(), PATH);
+    expect(config.heartbeat).toEqual({
+      enabled: true,
+      intervalMs: AOBPRINTER_HEARTBEAT_INTERVAL.defaultMs,
+      firstDelayMs: AOBPRINTER_HEARTBEAT_INTERVAL.firstDelayMs,
+    });
+    expect(config.heartbeat.intervalMs).toBe(60_000);
+    expect(config.heartbeat.firstDelayMs).toBe(5_000);
+    // Switched off only by saying so.
+    expect(parseConfig(minimalDoc({ heartbeat: { enabled: false } }), PATH).heartbeat.enabled).toBe(false);
+  });
+
+  it('a_heartbeat_interval_outside_15s_to_10min_refuses_to_start', () => {
+    for (const intervalMs of [14_999, 600_001, 1_000, 3_600_000]) {
+      expect(() => parseConfig(minimalDoc({ heartbeat: { intervalMs } }), PATH)).toThrow(/heartbeat\.intervalMs/);
+    }
+    // The bounds themselves are allowed.
+    expect(parseConfig(minimalDoc({ heartbeat: { intervalMs: 15_000 } }), PATH).heartbeat.intervalMs).toBe(15_000);
+    expect(parseConfig(minimalDoc({ heartbeat: { intervalMs: 600_000 } }), PATH).heartbeat.intervalMs).toBe(600_000);
+    // And a half-shaped section is refused like every other one.
+    expect(() => parseConfig(minimalDoc({ heartbeat: 'on' }), PATH)).toThrow(/"heartbeat" must be a JSON object/);
+    expect(() => parseConfig(minimalDoc({ heartbeat: { enabled: 'yes' } }), PATH)).toThrow(/heartbeat\.enabled/);
   });
 });

@@ -111,6 +111,8 @@ export function MainMenu() {
         { path: '/practice/queuebyOrgLocDepartment', label: strings.nav.outboundByPlace },
         { path: '/platform/acting-as', label: strings.nav.actingAsRegister },
         { path: '/platform/acting-as/history', label: strings.nav.actingAsHistory },
+        // Every practice's AOBPRINTER host, worst first (PRINTER-HEARTBEAT.md §4).
+        { path: '/platform/aobprinter-hosts', label: strings.aobprinterHost.overview.navLabel },
       ],
     },
     {

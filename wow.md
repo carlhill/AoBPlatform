@@ -418,6 +418,60 @@ went missing is not known.
 **Enforced by:** nothing yet. A check in `validate:inventory` that fails when a
 workspace holds `*.test.ts` and has no `test` script would be cheap.
 
+## 15. A worktree inside the repo borrows the repo's `node_modules` (10 Oct 2026)
+
+**What happened.** Agents ran in git worktrees under `.claude/worktrees/`,
+which sit inside the main checkout. One worktree ran `prisma generate` before
+its own `npm ci` had installed anything. Node resolved `@prisma/client` upward,
+into the MAIN checkout's `node_modules`, and the generate overwrote the main
+checkout's client with a different branch's schema. The `AobPrinterHost` model
+disappeared from it. Another agent's 22 heartbeat tests then failed with
+`tx.aobPrinterHost` undefined, and Carl's running dev core read the same client.
+
+**The rule.**
+- A worktree runs `npm ci` at its own root before anything that writes into
+  `node_modules`: `prisma generate`, a package build, an install.
+- Before `prisma generate` in a worktree, run
+  `node -e "console.log(require.resolve('@prisma/client'))"` and check that the
+  path is inside the worktree. If it points at the main checkout, stop.
+- After any session in which a worktree may have written into the main
+  checkout, run `npx prisma generate` in the main checkout's `apps/core` and
+  restart dev core.
+
+## 16. Every e2e run has a database of its own (Carl, 11 Oct 2026)
+
+**What happened.** On 11 October two agents were running
+`db4-assignment.e2e-spec.ts` against the one `aobplatform_test` at the same
+moment. The e2e suites empty whole tables (about 370 unfiltered deletes across
+the spec files), so each run deleted the other's rows mid-flight. `maxWorkers: 1`
+keeps the files of one run serial; it cannot see a run from another worktree.
+Agents had started making private databases by hand (`aobplatform_flakefix_test`,
+`aobplatform_unsigned_test`) to get away from each other.
+
+**Why not a tag on the test data.** Carl asked whether each agent could prefix
+its rows with an id. A prefix protects nothing from an unfiltered delete, some
+suites count whole tables, and the vault outbox is one unscoped table. Every
+spec would need rewriting, and the next unfiltered delete would quietly bring
+the collision back. The id goes on the database instead.
+
+**Why not a lock.** A lock makes runs queue. A clone lets them run side by side.
+
+**The rule.**
+- `apps/core/test/e2e-database.global-setup.ts`, wired in by
+  `jest.e2e.config.js`, clones `aobplatform_e2e_template` into
+  `aobplatform_e2e_<UTC stamp>_<random>_test` before any suite and gives the
+  run its own artefact folder under the OS temp directory. The global teardown
+  drops both after.
+- `scripts/dev/test-db.sh` builds the template from the dev schema. Re-run it
+  after any schema change, as before. It disallows connections to the template
+  once built, because a clone fails while anything is connected to it.
+- An explicit `E2E_DATABASE_URL` is used as given and nothing is cloned. CI
+  works this way.
+- Do not make private test databases by hand any more; the run makes one.
+
+**What would reopen it.** A run that needs data shared with another run, or a
+clone that becomes slow enough to matter.
+
 ## Change log
 | Date | Change |
 |---|---|
@@ -433,3 +487,5 @@ workspace holds `*.test.ts` and has no `test` script would be cheap.
 | 17 Sep 2026 | §5b: check `ListAgents` before telling an agent that no other agent exists — `git log` and `git status` cannot see a write that has not happened yet. Also: the reviewer clause goes last, under its own heading, because twice in one day an agent read "a fresh reviewer reads your diff" as "you are orchestrating". |
 | 28 Sep 2026 | §13: a blocked or refused message never offers a remedy that is not true for that record. Written after a C7 refusal told Carl to record item numbers his form already carried, sending him to his data instead of to our own supersession defect. |
 | 28 Sep 2026 | §14: a test file in a workspace with no `test` script has never run — `packages/contracts` gained a vitest script and its six tests ran for the first time; and "not recognized" means a missing bin shim (`npm rebuild jest`), not a broken runner. |
+| 10 Oct 2026 | §15: a worktree inside the repo resolves the repo's `node_modules` until its own `npm ci` has run. Written after a worktree's `prisma generate` overwrote the main checkout's Prisma client with another branch's schema and failed 22 heartbeat tests. |
+| 11 Oct 2026 | §16: every e2e run clones its own database from `aobplatform_e2e_template` and drops it after. Written after two agents ran the DB4 e2e suite against the shared `aobplatform_test` at the same moment. |

@@ -223,6 +223,24 @@ describe('reaching a page', () => {
     expect(mayReach('/platform/practices/p1/devices', ordinary)).toBe(false);
   });
 
+  it('opens the AOBPRINTER host page to the administrator, the overview to the platform, and the twin by prefix', () => {
+    /*
+     * PRINTER-HEARTBEAT.md §4, D-2026-10-10-02 decision 10. The practice's
+     * own host is the administrator's, like the tablets; the overview of every
+     * host is ours; the platform's view of one practice's host is a twin under
+     * `/platform/practices`, covered by that entry's prefix like every twin.
+     */
+    expect(mayReach('/practice/aobprinter-host', admin)).toBe(true);
+    expect(mayReach('/practice/aobprinter-host', ordinary)).toBe(false);
+    expect(mayReach('/practice/aobprinter-host', operator)).toBe(false);
+
+    expect(mayReach('/platform/aobprinter-hosts', operator)).toBe(true);
+    expect(mayReach('/platform/aobprinter-hosts', admin)).toBe(false);
+
+    expect(mayReach('/platform/practices/p1/aobprinter-host', operator)).toBe(true);
+    expect(mayReach('/platform/practices/p1/aobprinter-host', admin)).toBe(false);
+  });
+
   it('leaves the token-bearing pages reachable without a session', () => {
     // The people answering these are precisely the people who cannot sign in:
     // a practitioner who has not accepted, an applicant with no account,

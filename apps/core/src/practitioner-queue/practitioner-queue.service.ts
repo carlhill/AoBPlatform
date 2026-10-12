@@ -7,6 +7,7 @@ import {
   VISIT_STATE_KEYS,
   isTheServiceRenderedSignal,
   latestVisitState,
+  practiceDayOf,
   maySetVisitState,
   mayBeSetByHand,
   paperworkFor,
@@ -25,6 +26,7 @@ import { AffiliationsService } from '../affiliations/affiliations.service';
 import { ArrivalsService } from '../arrivals/arrivals.service';
 import { idsOf, newestAgreementInChain, receivedArrivalsIn } from '../arrivals/arrival-day';
 import { ReviewTasksService } from '../review-tasks/review-tasks.service';
+import { readPracticeTimeZone } from '../practices/practice-day';
 import type { Actor } from '../auth/actor.decorator';
 
 /**
@@ -490,8 +492,8 @@ export class PractitionerQueueService {
      * THE ARRIVAL'S OWN DAY, BOUNDED AT BOTH ENDS — not "since midnight".
      *
      * A VISIT IS ONE PATIENT ON ONE DAY, and the day is the one they walked in
-     * on (`arrivedAt`, by the practice's clock), not the one the server happens
-     * to be having. An unbounded `gte` would let a `findFirst ... desc` pick a
+     * on (`arrivedAt`, in the practice's own zone), not the one the server
+     * happens to be having. An unbounded `gte` would let a `findFirst ... desc` pick a
      * FUTURE-dated service record, and a window anchored on "now" is a
      * different window from the arrival's for several hours a day wherever the
      * server's clock and the practice's disagree. Both would attach the
@@ -505,12 +507,17 @@ export class PractitionerQueueService {
      * whatever Date it is given, so a bound built with `setHours(0,0,0,0)` in
      * Sydney (UTC+10) becomes the PREVIOUS calendar day the moment it crosses
      * the wire: the window would then match yesterday's invoice and miss
-     * today's, silently. Taking the LOCAL calendar day and stamping it at UTC
-     * midnight asks for the day the practice means.
+     * today's, silently. Taking the PRACTICE's calendar day and stamping it at
+     * UTC midnight asks for the day the practice means.
+     *
+     * THE PRACTICE'S CALENDAR DAY, NOT THE SERVER'S (D-2026-10-10-03). This was
+     * `getFullYear/getMonth/getDate` on `arrivedAt` — the SERVER's local day,
+     * which on Fargate and in CI is UTC's. Before 11am in Sydney under daylight
+     * saving that is yesterday, so a patient with an undecided invoice from
+     * yesterday had today's press raised against yesterday's service: a wrong
+     * D5. `practiceDayOf` in `practices.timezone`, read in the same transaction
+     * as the rows it dates.
      */
-    const day = new Date(arrival.arrivedAt);
-    const dayStart = new Date(Date.UTC(day.getFullYear(), day.getMonth(), day.getDate()));
-    const dayEnd = new Date(Date.UTC(day.getFullYear(), day.getMonth(), day.getDate() + 1));
 
     /*
      * WHAT THE PRACTICE'S SOFTWARE HAS ALREADY TOLD US ABOUT THAT DAY'S SERVICE.
@@ -521,27 +528,31 @@ export class PractitionerQueueService {
      * turning up at the desk is new information about a service the platform
      * already knew about"*).
      */
-    const { record, patient } = await this.prisma.withPractice(practiceId, async (tx) => ({
-      record: await tx.serviceRecord.findFirst({
-        where: { practiceId, patientId, serviceDate: { gte: dayStart, lt: dayEnd } },
-        orderBy: { serviceDate: 'desc' },
-        select: { id: true, pmsInvoiceKey: true, serviceDate: true, mbsItemNumbers: true, visitDecision: true },
-      }),
-      /*
-       * THE RECORD NUMBER OFF THE MIRROR, NOT OFF THE ARRIVAL'S OWN COPY.
-       * `serviceRendered` joins on `Patient.patientRecordNumber` and refuses
-       * outright where it finds nobody — *"a rendered service carries no
-       * patient details and never creates a record from a billing message"*
-       * (REQ-DATA-10). The arrival carries the handle the SENDER used, which
-       * resolved to this patient once and may since have been corrected on the
-       * mirror. Reading the mirror asks the same question of the same row the
-       * `patientId` above already names, so the two cannot disagree.
-       */
-      patient: await tx.patient.findUnique({
-        where: { id: patientId },
-        select: { patientRecordNumber: true },
-      }),
-    }));
+    const { record, patient } = await this.prisma.withPractice(practiceId, async (tx) => {
+      const dayStart = new Date(`${practiceDayOf(arrival.arrivedAt, await readPracticeTimeZone(tx))}T00:00:00Z`);
+      const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
+      return {
+        record: await tx.serviceRecord.findFirst({
+          where: { practiceId, patientId, serviceDate: { gte: dayStart, lt: dayEnd } },
+          orderBy: { serviceDate: 'desc' },
+          select: { id: true, pmsInvoiceKey: true, serviceDate: true, mbsItemNumbers: true, visitDecision: true },
+        }),
+        /*
+         * THE RECORD NUMBER OFF THE MIRROR, NOT OFF THE ARRIVAL'S OWN COPY.
+         * `serviceRendered` joins on `Patient.patientRecordNumber` and refuses
+         * outright where it finds nobody — *"a rendered service carries no
+         * patient details and never creates a record from a billing message"*
+         * (REQ-DATA-10). The arrival carries the handle the SENDER used, which
+         * resolved to this patient once and may since have been corrected on the
+         * mirror. Reading the mirror asks the same question of the same row the
+         * `patientId` above already names, so the two cannot disagree.
+         */
+        patient: await tx.patient.findUnique({
+          where: { id: patientId },
+          select: { patientRecordNumber: true },
+        }),
+      };
+    });
 
     // Already answered. A second press is a retry, not a second visit.
     if (record?.visitDecision) return { outcome: 'already_decided', serviceRecordId: record.id };

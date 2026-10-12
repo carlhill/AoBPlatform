@@ -153,6 +153,36 @@ Issuer note (ReferralPlatform lesson): tokens carry the PUBLIC issuer
 containers must validate against that while fetching JWKS via their internal
 route (`TokenVerifier`'s `jwksUri` override exists for exactly this).
 
+## The token says how the session signed in (10 Oct 2026, D-2026-10-10-06)
+
+Revoking a tablet and re-baselining an AOBPRINTER chain ask for a fresh second
+factor, and core judges it on the token's `amr` claim. This realm had **no amr
+mapper**, so every token said nothing, core read "unknown", and revoke refused
+every passkey session. It also told them they had signed in "with a password
+and nothing else", which nobody had.
+
+The fix has two halves, and Keycloak needs both:
+- **the mapper:** `oidc-amr-mapper` on the `web` and `console` clients;
+- **the value:** an authenticator config on each credential step of
+  `clinician-browser Credential` naming its RFC 8176 value. The passkey step
+  names `hwk`. The disabled password step names `pwd`, so a re-enabled one is
+  reported rather than hidden.
+
+`maxAge` is 36000, the realm's session maximum, so the claim lasts the whole
+session; freshness is judged on `auth_time` in core, not here.
+`realm-export.test.mjs` asserts all of it.
+
+**An existing realm needs the script,** because `--import-realm` only runs on
+an empty database:
+
+```bash
+node infra/keycloak/backup-keycloak.mjs
+node infra/keycloak/apply-amr.mjs
+```
+
+It adds what is missing, changes no requirement and binds no flow, and is safe
+to re-run. Then sign out of the console and sign in again.
+
 ## Passkeys have TWO names, and they never match
 
 This confuses everybody once, so it is written down.

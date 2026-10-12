@@ -1,5 +1,5 @@
 import { BadRequestException, Body, Controller, Get, Headers, Param, ParseUUIDPipe, Post } from '@nestjs/common';
-import { IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsIn, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
 import { ReconciliationService } from './reconciliation.service';
 import { SessionActor, type Actor } from '../auth/actor.decorator';
 
@@ -16,6 +16,12 @@ export class DecideDto {
   @IsString()
   @MaxLength(1000)
   reason?: string;
+}
+
+/** Which unsigned pre-agreement a person chose for a service (D-2026-10-10-09). */
+export class AssociateDto {
+  @IsUUID()
+  agreementId!: string;
 }
 
 function requirePractice(practiceId: string | undefined): string {
@@ -53,6 +59,27 @@ export class ReconciliationController {
     @SessionActor() actor: Actor | undefined,
   ) {
     return this.reconciliation.decide(requirePractice(practiceId), serviceRecordId, dto, actor);
+  }
+
+  /**
+   * Services with unsigned pre-agreements that match them and none associated
+   * (D-2026-10-10-09, option (b)). Declared before `:serviceRecordId` for the
+   * reason given on `detail`.
+   */
+  @Get('association-choices')
+  associationChoices(@Headers('x-practice-id') practiceId: string | undefined) {
+    return this.reconciliation.associationChoices(requirePractice(practiceId));
+  }
+
+  /** A person chose which unsigned pre-agreement was for this service. The chooser comes from the session. */
+  @Post(':serviceRecordId/associate')
+  associate(
+    @Headers('x-practice-id') practiceId: string | undefined,
+    @Param('serviceRecordId', ParseUUIDPipe) serviceRecordId: string,
+    @Body() dto: AssociateDto,
+    @SessionActor() actor: Actor | undefined,
+  ) {
+    return this.reconciliation.associate(requirePractice(practiceId), serviceRecordId, dto.agreementId, actor);
   }
 
   @Get('metrics')

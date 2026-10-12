@@ -52,6 +52,7 @@ import { SessionControl } from '../../SessionControl';
 import { useRefreshable } from '../../refresh';
 import { deviceActivityLine } from '../deviceActivity';
 import styles from '../manage.module.css';
+import { EarlierUnsigned } from './EarlierUnsigned';
 import {
   AgreementRow,
   itemsFact,
@@ -256,6 +257,13 @@ export function TabletView({ practiceId }: { practiceId: string }) {
             </ul>
           </>
         )}
+
+        {/*
+          UNSIGNED FROM EARLIER DAYS (D-2026-10-10-01). What fell off the list
+          above at midnight, counted, and each line linked to where it is dealt
+          with. Its own read and its own component; hidden when there are none.
+        */}
+        <EarlierUnsigned desk={desk} />
       </Section>
 
       <Section number={2} title={strings.tablet.tabletsTitle}>

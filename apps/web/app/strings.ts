@@ -2332,6 +2332,48 @@ export const strings = {
       keep_chasing: 'Keep chasing',
     } as Record<string, string>,
     decideFailed: 'That decision could not be recorded',
+    /** A `?item=` link to a service record the queue does not hold (D-2026-10-10-01). */
+    itemNotOnQueueTitle: 'That item is not on this queue',
+    itemNotOnQueue: (id: string) =>
+      `The link asked for service record ${id}. The queue, as loaded just now, does not list it.`,
+    /*
+     * WHICH UNSIGNED AGREEMENT WAS THIS VISIT'S? (D-2026-10-10-09, option (b)).
+     * A service was recorded and unsigned agreements made for the same visit
+     * were found. Each line says what was found and on what; never why there
+     * are two, which the platform does not know (wow.md §13).
+     */
+    associationChoice: {
+      title: 'Which unsigned agreement was for this visit?',
+      lead:
+        'A service was recorded, and unsigned agreements for the same patient, servicing provider and day were found. ' +
+        'None has been associated with the service yet. Choosing one records which agreement the visit had; ' +
+        'it is associated with the service, not linked to it.',
+      reasons: {
+        unsigned_drafts_match_service: (n: number) =>
+          `${n} unsigned agreement${n === 1 ? '' : 's'} match this service on patient, servicing provider and day. None is associated with it.`,
+      } as Record<string, (n: number) => string>,
+      /** AN UNMAPPED CODE SHOWS ITSELF (CLAUDE.md §7c). */
+      reasonUnknown: (code: string) => `Waiting for a choice (${code})`,
+      /** "Agreement before the service · Draft · for 3 October 2026 · made 3 Oct, 9:12 am". */
+      candidateLine: (type: string, status: string, forDay: string, madeAt: string) =>
+        `${type} · ${status} · for ${forDay} · made ${madeAt}`,
+      types: {
+        episodic_pre: 'Agreement before the service',
+      } as Record<string, string>,
+      statuses: {
+        draft: 'Draft',
+        verification_pending: 'Waiting for an identity check',
+        verification_failed: 'Identity check did not pass',
+        awaiting_signature: 'Ready to sign, not signed',
+      } as Record<string, string>,
+      choose: 'This one was for the visit',
+      choosing: 'Recording…',
+      chosen: 'Recorded. The agreement is associated with the service.',
+      chooseFailed: 'That choice could not be recorded',
+      viewOnly: 'Read only: choosing is done by the practice.',
+      postNotAffected: 'The after-service agreement for this visit is drafted and chased as usual, whichever is chosen.',
+      notLoaded: (status: string) => `Could not check for services waiting for a choice of agreement (${status}).`,
+    },
   },
 
   /*
@@ -3534,6 +3576,19 @@ export const strings = {
       + 'a stranger. Any touch resets the clock, and a quiet warning appears thirty seconds before it happens.',
     idleLabel: 'Minutes of no activity',
     idleHint: 'Between 1 and 30. Five is the default — long enough to read an agreement standing up.',
+    /*
+     * CLOSE UNSIGNED AGREEMENTS NOBODY NEEDED (D-2026-10-10-09, option 3; Carl:
+     * "N is 7 days - make N a configurable setting"). What the sweep does is
+     * said exactly, including what it never closes.
+     */
+    closeTitle: 'Close unsigned agreements when no service was recorded',
+    closeLead:
+      'An agreement nobody signed, for a visit with no service recorded, is closed after this many days as '
+      + '"not needed: no service recorded". It is kept, not deleted, and the closure is recorded. An agreement '
+      + 'linked or associated with a service, matched by one, on a tablet, or with a live link is never closed this way.',
+    closeLabel: 'Days after the visit',
+    closeHint: (min: number, max: number, defaultDays: number, version: string) =>
+      `Between ${min} and ${max}. Leave empty to use the default, ${defaultDays} days (${version}).`,
 
     /**
      * WHICH AGREEMENT THE PRE-STEP OFFERS FIRST (Carl, 4 Sep 2026; GA-PLAN B6).
@@ -3560,6 +3615,34 @@ export const strings = {
       'An ongoing agreement is signed once and covers that provider’s bulk-billed services from that day '
       + 'until the patient or the provider ends it, so there is nothing to sign after each visit. Turn this '
       + 'off and the tablet offers an agreement for the visit every time.',
+
+    /**
+     * --- THE PRACTICE'S TIMEZONE (D-2026-10-10-03).
+     *
+     * WHAT IT DECIDES, IN THE PRACTICE'S WORDS: when "today" starts on the
+     * desk and the tablet, and so which unsigned agreements move to "earlier
+     * days". The zone list is content (`practice-timezones.json`); these are
+     * only its names, keyed by IANA zone, and an unmapped zone shows its key.
+     */
+    timezoneTitle: 'Your practice’s time zone',
+    timezoneLead:
+      'Today’s list on the desk and the tablet starts at midnight in this time zone. Unsigned agreements '
+      + 'from before that midnight move to “Unsigned from earlier days”.',
+    timezoneLabel: 'Time zone',
+    timezoneHint: 'Changing this moves where each day starts. It is recorded, with who changed it.',
+    timezoneNames: {
+      'Australia/Sydney': 'Sydney, Canberra (NSW, ACT)',
+      'Australia/Melbourne': 'Melbourne (VIC)',
+      'Australia/Brisbane': 'Brisbane (QLD)',
+      'Australia/Adelaide': 'Adelaide (SA)',
+      'Australia/Darwin': 'Darwin (NT)',
+      'Australia/Perth': 'Perth (WA)',
+      'Australia/Hobart': 'Hobart (TAS)',
+      'Australia/Broken_Hill': 'Broken Hill (NSW, on South Australian time)',
+      'Australia/Lindeman': 'Whitsunday Islands (QLD)',
+      'Australia/Eucla': 'Eucla (WA, central western time)',
+      'Australia/Lord_Howe': 'Lord Howe Island (NSW)',
+    } as Record<string, string>,
 
     /**
      * --- D6a, THE PRACTICE DEFAULT (Carl, 5 Sep 2026; GA-PLAN B10).
@@ -4286,21 +4369,25 @@ export const strings = {
     stepUpSecondFactorMissing:
       'This account signs in with a password and nothing else, so it cannot revoke a tablet. Add an '
       + 'authenticator app or a passkey to the account, then try again.',
+    stepUpMethodUnrecorded:
+      'The sign-in service did not say how this sign-in was made, so the server cannot confirm a passkey was used, and '
+      + 'revoking a tablet needs that. Nothing was changed.',
     stepUpUnmapped: (code: string) =>
       `The server refused this and gave a reason this screen does not recognise: ${code}. Nothing was changed.`,
 
     /*
      * THE CODE, SHOWN ONCE. The screen says so, because a code that cannot be
      * fetched again is a surprise unless it was announced — and the way out of
-     * having lost it is Rotate, which is named here rather than left to be
-     * discovered.
+     * having lost it is Re-Pair Tablet (the rotate act; renamed by Carl,
+     * 10 Oct 2026, because "Rotate" read as turning the screen), which is named
+     * here rather than left to be discovered.
      */
     codeHeading: 'Type this code into the tablet',
-    codeShownOnce: 'This code is shown once. If it is lost, rotate the tablet for a new one.',
+    codeShownOnce: 'This code is shown once. If it is lost, re-pair the tablet for a new one.',
     codeWhere: 'On the tablet, open /kiosk and enter the code.',
     codeExpires: (minutes: number) =>
       minutes <= 0
-        ? 'This code has expired. Rotate the tablet for a new one.'
+        ? 'This code has expired. Re-pair the tablet for a new one.'
         : minutes === 1
           ? 'Expires in 1 minute'
           : `Expires in ${minutes} minutes`,
@@ -4406,12 +4493,12 @@ export const strings = {
     cancelAction: 'Cancel',
     revoking: 'Revoking…',
 
-    rotateAction: 'Rotate',
+    rotateAction: 'Re-Pair Tablet',
     rotateConfirm: (label: string) =>
-      `Rotate ${label}? Its current credential stops working immediately and you will get a new code to type `
+      `Re-pair ${label}? Its current credential stops working immediately and you will get a new code to type `
       + 'into it.',
-    rotateConfirmAction: 'Rotate and show a new code',
-    rotating: 'Rotating…',
+    rotateConfirmAction: 'Re-pair and show a new code',
+    rotating: 'Re-pairing…',
 
     /*
      * THE BUILD FLOOR — staged rollout with instant rollback. Written for
@@ -4521,6 +4608,255 @@ export const strings = {
       + 'shows “This tablet is not in use”. The credential is untouched, so one press brings it back — '
       + 'unlike Revoke, which needs a new pairing code typed in at the device.',
     outOfUseSince: (who: string, when: string) => `Out of use — ${who}, ${when}`,
+  },
+
+  /*
+   * THE AOBPRINTER HOST PAGE (PRINTER-HEARTBEAT.md §4, D-2026-10-10-02).
+   *
+   * EVERY STATE SAYS WHAT THE PLATFORM OBSERVED, and offers a remedy only
+   * where it is true for that record (CLAUDE.md §7c, wow.md §13). Most of
+   * these states have no remedy a practice can apply, so most of them say
+   * none: a regression is cleared only by a platform operator, and saying
+   * "restart the host" under a failure it would not fix sends somebody to
+   * their computer instead of to our defect. Codes this page has no words for
+   * show the code. Hashes are shown as their first 8 characters, followed by
+   * an ellipsis, so a reader can match them against the host without the
+   * page pretending to show the whole thing.
+   */
+  aobprinterHost: {
+    title: 'AOBPRINTER host',
+    lead:
+      'The program on the practice’s computer that sends printed DB4s to AoB and files the signed ones back. '
+      + 'This page shows whether it is reporting, what it holds at each stage, and whether its audit log still '
+      + 'matches what the platform last saw.',
+    audience: 'Practice',
+    platformAudience: 'Platform',
+    loading: 'Loading…',
+    notLoaded: 'The AOBPRINTER host could not be loaded',
+
+    /* The card on the setup hub. */
+    hubOpen: 'Open the AOBPRINTER host',
+    hubBody: 'Whether this practice’s AOBPRINTER is reporting, and whether its audit log still matches what the platform last saw.',
+
+    /* One position in an audit log: an event number and the first 8 characters of its hash. */
+    point: (seq: number, hash8: string) => `event ${seq} (hash ${hash8}…)`,
+    pointNoHash: (seq: number) => `event ${seq} (no hash)`,
+    hostHeading: (chain8: string) => `Audit log ${chain8}…`,
+
+    liveness: {
+      live: 'Reporting',
+      stale: 'Late',
+      offline: 'Not reporting',
+      never_reported: 'Never reported',
+    },
+
+    /*
+     * 1. REGRESSED. One sentence per kind, each naming what the platform held
+     * and what the host sent. `regressedStays` is true of every regressed
+     * record (decision 4), which is why it may be said under all of them.
+     */
+    regressedTitle: 'The audit log no longer matches what the platform last saw',
+    regression: {
+      went_backwards: (expected: string, received: string, at: string) =>
+        `On ${at} the host reported its audit log ending at ${received}. The platform had already seen it reach ${expected}, so events it had reported are no longer there.`,
+      same_seq_different_hash: (expected: string, received: string, at: string) =>
+        `On ${at} the host reported ${received}. The platform had already seen ${expected}: the same event with a different hash, so an event already reported has changed.`,
+      anchor_mismatch: (expected: string, received: string, at: string) =>
+        `On ${at} the platform asked the host for the event it last verified, ${expected}, and the host answered ${received}. An event the platform had verified has changed or gone.`,
+      chain_replaced: (expected: string, received: string, at: string) =>
+        `On ${at} a host began reporting an audit log the platform has never seen, starting at ${received}. This practice already has an audit log starting at ${expected} that has not been retired, so no replacement has been accepted.`,
+    },
+    regressionUnmapped: (code: string, at: string) =>
+      `On ${at} the platform recorded a regression of a kind this page has no words for: ${code}.`,
+    regressedStays: 'This stays flagged until a platform operator re-baselines it. A practice cannot clear it from this page.',
+
+    /* 2. TWO HOSTS. */
+    secondHostTitle: 'Two audit logs are reporting at the same time for this practice',
+    secondHostBody: (minutes: number) =>
+      `Two different audit logs are both reporting: each has reported since the other first appeared, and both in the last ${minutes} minutes. A practice runs one AOBPRINTER. Each row below says when its log last reported.`,
+
+    /* 3. THE HOST'S OWN CHECK. */
+    localCheckTitle: 'The host’s own check of its audit log failed',
+    localCheck: {
+      link: (seq: number) => `The host checked its audit log and found that event ${seq} does not link to the event before it.`,
+      content: (seq: number) => `The host checked its audit log and found that event ${seq} no longer matches its own hash.`,
+    },
+    localCheckUnmapped: (seq: number, why: string) =>
+      `The host reported that its audit log check failed at event ${seq}, for a reason this page has no words for: ${why}.`,
+
+    /* 4. OFFLINE / STALE. The age comes from `deviceSeenAgo`; the server decides which state applies. */
+    offlineTitle: 'Not reporting',
+    offline: (at: string, ago: string) =>
+      `Not heard from since ${at} (${ago} ago). The last report it sent is kept below.`,
+    staleTitle: 'Reporting late',
+    stale: (at: string, ago: string) =>
+      `Not heard from since ${at} (${ago} ago), longer than three of its own reporting intervals. The last report it sent is kept below.`,
+
+    /* 5. OPEN EXCEPTIONS (decision 13). */
+    exceptionsTitle: (n: number) => (n === 1 ? 'One item is held as an exception on the host' : `${n} items are held as exceptions on the host`),
+    exceptionStage: {
+      parse_exception: 'A print could not be read',
+      send_exception: 'A print could not be sent',
+      received_exception: 'A signed return could not be read',
+      filing_exception: 'A signed return could not be filed',
+    },
+    exceptionReason: {
+      incomplete_pdf: 'the PDF was incomplete',
+      no_text_layer: 'the PDF has no text to read',
+      not_a_db4: 'it is not a DB4',
+      unsafe_name: 'its file name was not safe to use',
+      download_failed: 'the download from AoB failed',
+      hash_mismatch: 'the file did not match its hash',
+      write_failed: 'it could not be written to the folder',
+      write_verify_failed: 'it was written but did not read back the same',
+    },
+    exceptionSince: (at: string) => `Since ${at}.`,
+    printHeld: (hash8: string) =>
+      `Print ${hash8}… is held on the host. No platform page shows a print job, so it is named by the first 8 characters of its hash.`,
+    returnOpenPatient: 'Open the patient',
+    returnNoPatient: 'The platform found no patient for this agreement.',
+
+    /* 6. FILED BUT NOT RECORDED AS CONFIRMED — the platform's verdict, one sentence per case. */
+    filedTitle: (n: number) => (n === 1 ? 'One return is filed on the host but not recorded as confirmed' : `${n} returns are filed on the host but not recorded as confirmed`),
+    filed: {
+      written_back: 'The platform has recorded this return as written back. The host marks it confirmed on its next report.',
+      written_back_different_file:
+        'The platform has recorded a return as written back for this agreement, but its file has a different hash from the one filed on the host. '
+        + 'The host keeps a return filed while the hashes differ, so it will not mark this one confirmed.',
+      offered: 'The platform has not recorded this return as written back, and is still offering it for collection.',
+      not_offered: 'The platform has not recorded this return as written back, and is no longer offering it for collection.',
+    },
+    filedUnmapped: (code: string) => `The platform answered for this return with a verdict this page has no words for: ${code}.`,
+
+    /* 7. OLD QUEUE. `staleQueued` is the host's own count. */
+    oldQueueTitle: 'Prints have waited too long to be sent',
+    oldQueue: (n: number, ago: string) => `${n} queued on the host longer than it expects. The oldest has waited ${ago}.`,
+    oldQueueNoAge: (n: number) => `${n} queued on the host longer than it expects.`,
+
+    /* 8. CLOCK SKEW (decision 15). */
+    skewTitle: 'The host’s clock is out',
+    skewAhead: (minutes: number) => `At its last report the host’s clock was ${minutes} minutes ahead of the platform’s. Times the host records are out by the same amount.`,
+    skewBehind: (minutes: number) => `At its last report the host’s clock was ${minutes} minutes behind the platform’s. Times the host records are out by the same amount.`,
+
+    /* 9. HEALTHY. */
+    healthyTitle: 'Reporting normally',
+    healthy: (ago: string) => `Last reported ${ago} ago, with nothing held and nothing out of step.`,
+
+    /* A retired chain: a quiet line, not a card. Its silence is expected (decision 7). */
+    retired: (chain8: string, at: string) =>
+      `Audit log ${chain8}… was retired on ${at}, when a platform operator accepted another audit log as this practice’s. It has not reported since.`,
+
+    /* 10. NEVER REPORTED — neutral, not an outage. */
+    neverTitle: 'No AOBPRINTER has reported for this practice',
+    never: 'Nothing has reported yet, so there is nothing to be offline. This page fills in after the first report.',
+
+    /* The last report, always kept on screen with its age. */
+    reportTitle: (ago: string) => `As last reported, ${ago} ago`,
+    versionsTitle: 'Versions',
+    printerVersion: 'AOBPRINTER',
+    templateVersion: 'Template',
+    schemaVersion: 'Database schema',
+    runtimeVersion: 'Runtime',
+    startedAt: 'Running since',
+    interval: (seconds: number) => `Reports every ${seconds} s`,
+    collecting: 'Collecting signed returns',
+    retention: 'Keeps copies after sending',
+    queueCount: 'Files waiting in the folder',
+    yes: 'Yes',
+    no: 'No',
+    stagesTitle: 'What the host holds at each stage',
+    stageColumn: 'Stage',
+    countColumn: 'Count',
+    printsHeading: 'Prints',
+    returnsHeading: 'Signed returns',
+    printStages: {
+      received: 'Received',
+      parse_exception: 'Could not be read',
+      queued: 'Queued',
+      sent: 'Sent',
+      send_exception: 'Could not be sent',
+    },
+    returnStages: {
+      received: 'Received',
+      received_exception: 'Could not be read',
+      filed: 'Filed',
+      filing_exception: 'Could not be filed',
+      confirmed: 'Confirmed',
+    },
+    chainTitle: 'Audit log',
+    chainHead: (point: string) => `Head: ${point}.`,
+    chainStatus: {
+      unverified: 'Not verified yet. The platform checks it against each report.',
+      consistent: 'Matches what the platform last saw.',
+      regressed: 'Flagged: no longer matches what the platform last saw.',
+    },
+    anchorVerified: (at: string, seq: number) => `Anchor verified ${at}, at event ${seq}.`,
+    anchorNotVerified: 'The anchor has not been verified yet.',
+
+    /*
+     * RE-BASELINE — the platform's act alone (decision 7), so it is never on
+     * the practice's page. The reason list is versioned content
+     * (`aobprinter-rebaseline-reasons.json`); these are its labels, keyed by
+     * the file's keys and rendered in the file's order.
+     */
+    rebaseline: {
+      title: (chain8: string) => `Re-baseline audit log ${chain8}…`,
+      lead: 'Accepts the host’s audit log as it now stands and clears the flag. Recorded in the vault with the reason chosen here and who chose it.',
+      reasonLabel: 'Reason',
+      reasonPlaceholder: 'Choose a reason',
+      reasons: {
+        reinstalled: 'AOBPRINTER was reinstalled',
+        database_restored: 'The host’s database was restored from a backup',
+        investigated: 'Investigated, and the change is explained',
+      },
+      action: 'Re-baseline',
+      blocked: 'Re-baseline — choose a reason first',
+      busy: 'Re-baselining…',
+      done: 'Re-baselined. The flag is cleared and the next report starts a fresh check.',
+      refused: 'The re-baseline was refused',
+      stepUpTitle: 'Confirm it is you',
+      stepUpReauthenticate:
+        'Re-baselining accepts a practice’s evidence afresh, so it needs a sign-in from the last few minutes. Confirm it is you '
+        + 'and this page comes straight back.',
+      stepUpAction: 'Confirm it is you',
+      stepUpSecondFactorMissing:
+        'This account signs in with a password and nothing else, so it cannot re-baseline. Add an authenticator app or a '
+        + 'passkey to the account, then try again.',
+      stepUpMethodUnrecorded:
+        'The sign-in service did not say how this sign-in was made, so the server cannot confirm a passkey was used, and '
+        + 're-baselining needs that. Nothing was changed.',
+      stepUpUnmapped: (code: string) =>
+        `The server refused this and gave a reason this screen does not recognise: ${code}. Nothing was changed.`,
+    },
+
+    /* `/platform/aobprinter-hosts` — every practice's host, worst first. */
+    overview: {
+      navLabel: 'AOBPRINTER hosts',
+      title: 'AOBPRINTER hosts',
+      lead: 'Every practice’s AOBPRINTER host, worst first. Counts, versions, times and status only; open a row for that practice’s page.',
+      audience: 'Platform',
+      notLoaded: 'The AOBPRINTER hosts could not be loaded',
+      none: 'No practice has an AOBPRINTER host yet.',
+      practiceColumn: 'Practice',
+      stateColumn: 'State',
+      lastSeenColumn: 'Last report',
+      versionColumn: 'Version',
+      lastSeen: (ago: string) => `${ago} ago`,
+      neverSeen: 'Never',
+      states: {
+        regressed: 'Audit log no longer matches',
+        second_host: 'Two audit logs at once',
+        local_check_failed: 'Host’s own check failed',
+        offline: 'Not reporting',
+        stale: 'Reporting late',
+        open_exceptions: 'Exceptions held',
+        filed_unconfirmed: 'Filed, not confirmed',
+        old_queue: 'Prints waiting too long',
+        clock_skew: 'Clock out',
+        healthy: 'Reporting normally',
+        never_reported: 'Never reported',
+      },
+    },
   },
 
   /*
@@ -5601,6 +5937,37 @@ export const strings = {
      */
     coveredReasonUnknown: (code: string) => `Covered (${code})`,
     coveredOpenAgreement: 'Open the agreement that covers it →',
+
+    /*
+     * UNSIGNED FROM EARLIER DAYS (D-2026-10-10-01, option 1). An agreement
+     * still unsigned at midnight used to drop off this page with no word.
+     *
+     * EACH LINE SAYS WHAT THE PLATFORM OBSERVED AND NOTHING MORE (wow.md §13):
+     * whether a service record names the agreement and, if so, whether it is on
+     * the Reconciliation queue. No "please follow up": what to do depends on the
+     * visit, and the link goes to the place where that is decided.
+     */
+    earlierSummary: (n: number) => `Unsigned from earlier days: ${n}`,
+    earlierLead: 'Not signed on the day they were for. Each line says what the platform found about its service.',
+    /** The day it was for, and the provider — "3 October 2026 · Dr Example Provider". */
+    earlierFor: (day: string, provider: string | null) => (provider ? `${day} · ${provider}` : day),
+    earlierReason: {
+      service_in_reconciliation: 'Service recorded, in Reconciliation',
+      /* D-2026-10-10-09, option (b): associated with the visit's service, never linked to it. */
+      service_associated:
+        'Service recorded for this visit; this agreement was not signed before it and is associated with that service',
+      service_choice_needed: 'Service recorded for this visit; waiting for someone to choose its agreement in Reconciliation',
+      service_associated_other: 'Service recorded for this visit; a different agreement is associated with it',
+      no_service_recorded: 'No service recorded',
+    } as Record<string, string>,
+    /** A service record names it, and a Reconciliation decision took it off the queue. */
+    earlierDecided: (decision: string) => `Service recorded; Reconciliation decision: ${decision}`,
+    /** AN UNMAPPED CODE SHOWS ITSELF (CLAUDE.md §7c). */
+    earlierReasonUnknown: (code: string) => `Unsigned (${code})`,
+    earlierToReconciliation: 'Open it in Reconciliation →',
+    earlierCapped: (shown: number, total: number) => `Showing the oldest ${shown} of ${total}.`,
+    earlierUnreachable: 'the service could not be reached',
+    earlierNotLoaded: (status: string) => `Could not check for unsigned agreements from earlier days (${status}).`,
     /*
      * WHO IS SIGNING, SAID ON THE ROW (Carl, 7 Sep 2026, twice: "it does not
      * ask me who is approving", "no who is signing").
@@ -5822,7 +6189,7 @@ export const strings = {
     tabletsNone: 'No tablet is paired to this practice yet.',
     tabletsNoneHint: 'Pair one under Tablets, then it will appear here.',
     tabletIdle: 'Ready',
-    tabletRevoked: 'Revoked — rotate it under Tablets to bring it back',
+    tabletRevoked: 'Revoked — re-pair it under Tablets to bring it back',
     /** Reception's own switch. One press on Tablets brings it back — no code, no walk. */
     tabletOutOfUse: 'Not in use — put it back in use under Tablets',
     tabletUnpaired: 'Waiting to be paired',
@@ -5916,6 +6283,10 @@ export const strings = {
       not_awaiting_signature:
         'This agreement is not at the signing step — it may have been declined, superseded or expired. '
         + 'Check the agreement before sending anything again.',
+      /* D-2026-10-10-09 option 3: what was recorded, and no remedy this screen cannot know is true. */
+      agreement_closed_unsigned:
+        'This agreement was closed as not needed: no service was recorded for its visit within the practice’s '
+        + 'set number of days. Nothing was signed.',
       signature_capture_invalid:
         'The signature did not arrive with the tablet’s request. Send it again, and offer '
         + '“approve by tapping” if the pad is not responding.',
@@ -6197,6 +6568,13 @@ export const strings = {
       device_busySomeone: 'another patient',
       agreement_not_found: 'That agreement is no longer available.',
       agreement_not_pushable: 'This agreement has moved on and cannot be sent to a tablet.',
+      /*
+       * D-2026-10-10-09 option 3, at the desk: the closure sweep closed it between
+       * the list being drawn and Send. What was recorded, and nothing sent.
+       */
+      agreement_closed_unsigned:
+        'This agreement was closed as not needed: no service was recorded for its visit within the practice’s '
+        + 'set number of days. Nothing was sent to the tablet.',
       service_description_missing:
         'This agreement still needs a description of the service, chosen from the current list — the tablet '
         + 'never asks a patient for it.',
@@ -6457,6 +6835,51 @@ export const strings = {
      * diagnosable rather than a shrug.
      */
     printRecordCheckOther: (code: string) => `Another detail we could not read (${code}) — please tell support this code.`,
+
+    /**
+     * THE NAME PRINTED ON THE DB4 IS NOT THE PATIENT RECORD'S NAME
+     * (D-2026-10-10-11; Carl, 10 October 2026: *"B and tell the user to
+     * resend to AOBPrinter from PMS"*).
+     *
+     * A WARNING, NOT A REFUSAL: Send to tablet stays live (hard rule 8). A
+     * staff-only band, so it shows both names; never on a tablet.
+     *
+     * THE OBSERVATION FIRST, THEN THE REMEDY, AND THE REMEDY'S LIMIT (wow.md
+     * §13). Reprinting changes only the PRINTED name: the patient record here
+     * is not updated from a DB4 (it comes from the arrival, or a correction
+     * typed in this console). So "this notice clears" is promised only for
+     * the case where it is true — the reprinted name matches the record — and
+     * the other case is stated as what it is, without a guessed remedy.
+     */
+    printedName: {
+      title: 'Name on the DB4 differs from the patient record',
+      observed:
+        'The patient name printed on this DB4 is not the name in the practice’s patient record. '
+        + 'The DB4 was matched to this patient by chart number.',
+      printedLabel: 'Printed on the DB4',
+      recordedLabel: 'In the patient record',
+      notPrinted: '(not printed)',
+      parts: {
+        given_names: 'given names',
+        family_name: 'family name',
+      } as Record<string, string>,
+      differs: (list: string) => `What differs: ${list}`,
+      /** Only on a row that can be sent: on a blocked row it would contradict the blocked band. */
+      stillSends: 'Send to tablet still works.',
+      /** On a blocked row: this note is not the reason it cannot be sent. */
+      notTheBlock: 'This note on its own does not stop Send to tablet.',
+      patientSees:
+        'The patient will see the printed name on their DB4 and the patient-record name everywhere else.',
+      fix:
+        'If PracSoft shows the name printed here, correct it in PracSoft, then print the DB4 again from '
+        + 'PracSoft. AOBPrinter sends the reprint, and this notice clears once the newly printed name '
+        + 'matches the patient record.',
+      limit:
+        'Printing again changes only the name on the DB4 — the patient record here is not updated from a '
+        + 'DB4. If PracSoft already shows the right name, printing again will not clear this notice.',
+      /** A notice code this build has not met. Shown, never swallowed. */
+      other: (code: string) => `A note about this form (${code}) — please tell support this code.`,
+    },
 
     /**
      * WHY "WHO IS SIGNING?" IS DEAD ON THIS ROW (Carl, 28 September 2026:

@@ -14,6 +14,384 @@ being decided.
 
 ---
 
+## The kiosk for patients with a physical impairment (Carl, 10 Oct 2026)
+
+**Carl asked for** the kiosk to work for physically impaired patients, with
+Claude's recommendation and plan, because the rules were unclear to him. This
+entry is that plan. Nothing in it is built yet.
+
+**The rules we already hold:**
+- **REQ-NFR-05: WCAG 2.2 AA on every patient surface.** The requirement adds
+  that the AoB regime is criticised for disadvantaging disabled patients, so a
+  product that handles them well has a real advantage.
+- **REQ-VUL-08:** read-aloud, large text and high contrast.
+- **REQ-VUL-01/-02:** someone else may sign as assignor, on a self-declared
+  authority basis (reg 65CB(5)).
+- **REQ-VUL-05:** the system never asks staff to assess capacity.
+- **The old "patient unable to sign" annotation was abolished by the 2025
+  regulations** (`aob-addendum-v2.md` §2.1). There is no annotation route to
+  fall back on.
+- **General law, as background only:** the Disability Discrimination Act 1992
+  (Cth) applies to the practice's services. Legal advice should confirm what it
+  requires of the practice and of us. Do not cite it in the product.
+
+**The WCAG 2.2 criteria that matter most for motor impairment** (AA unless
+marked), each to be checked on every kiosk screen:
+- **2.5.8 Target Size (Minimum):** at least 24 CSS px. We should aim for 44 px
+  or more on the tablet. Tremor and limited dexterity are the common case, not
+  the edge case.
+- **2.5.7 Dragging Movements** and **2.5.1 Pointer Gestures (A).** A drawn
+  signature is a path gesture and may count as "essential". Even so, a
+  single-tap alternative must be one obvious step away. Tap-to-approve already
+  exists on the tablet (`SignatureEvent.method = tap_to_approve`; kiosk README
+  K-4); see question 1.
+- **2.5.2 Pointer Cancellation (A):** controls act on release, not on touch, so
+  a tremor that lands on Sign and slides off does not sign.
+- **2.2.1 Timing Adjustable (A):** the idle reset ("return to the start when
+  nobody is there") must warn first and offer "I need more time" with one large
+  tap. A slow signer must never be reset mid-ceremony.
+- **2.1.1 Keyboard (A)** and switch access: the whole ceremony must work with
+  Android Switch Access or a paired switch or keyboard. No pad-only dead ends.
+- **2.4.11 Focus Not Obscured (Minimum):** a pinned action bar, like the one
+  added by `fix/kiosk-tablet-fit`, must never cover the focused control.
+- **1.3.4 Orientation:** never lock the orientation. A tablet in a wheelchair
+  user's lap may be portrait.
+- **3.3.7 Redundant Entry (A):** never make a patient re-enter what they have
+  already given.
+- **No scrolling to reach a control.** Strictly this is a usability point, not
+  a criterion, but scrolling is a motor burden. This is what
+  `fix/kiosk-tablet-fit` fixes for steps 2 and 3.
+
+**Recommendation and plan:**
+1. **Audit.** Two passes:
+   - automated: axe, plus the kiosk Playwright fit test, extended to target
+     sizes and to release-not-press activation;
+   - manual, on the real Galaxy Tab S10 with Android Switch Access and
+     TalkBack switched on.
+
+   Output: one finding per criterion per screen, written into this entry.
+2. **Fix the motor basics first.** Target sizes, pointer cancellation, the
+   "need more time" prompt before the idle reset, and tap-to-approve offered as
+   a visible equal beside the signature pad rather than hidden.
+3. **Assisted paths, written down.** Who may help, and how:
+   - another person signing as assignor for the patient (the existing
+     REQ-VUL-01/-02 path; 18 or over; never a staff member, hard rule 10);
+   - the tablet handed to the patient, or brought to them, in a stand at a
+     reachable height.
+
+   These go into the practice onboarding guide.
+4. **Practice setup guidance.** Covers how the tablet is mounted or held, the
+   stand and its angle, wheelchair reach, and the case for a stylus with a
+   thick grip. Hardware advice, not product code.
+5. **Test with real users before GA.** At least one session with people who
+   have motor impairments, arranged through a disability organisation. The
+   automated checks prove conformance, not usability.
+
+**Questions to settle before building (do not assume the answers):**
+1. **Regulatory.** May a patient who can consent but cannot physically draw
+   approve on the IN-PRACTICE tablet with tap-to-approve? REQ-SIG-01 names
+   tap-to-approve for the remote link and a drawn signature for the tablet, yet
+   the tablet already offers both. Confirm against the 2025 regulations and the
+   ETA reasoning in `aob-faq-reconciliation.md`.
+2. **Staff help.** May a staff member operate the device at the patient's spoken
+   direction, for example turning pages or holding it, while the patient gives
+   the approval? Staff can never be the assignor (REQ-VUL-04, hard rule 10).
+   Where helping ends and signing begins needs a decided line.
+3. **Read-aloud (REQ-VUL-08)** is still outstanding (kiosk README). It mainly
+   serves vision and literacy, but it also helps patients who cannot hold the
+   tablet steady enough to read it.
+
+**Why deferred rather than done:** questions 1 and 2 are regulatory and need an
+answer before the UI changes, and the audit has to come first so the fixes are
+targeted. The scrolling fix (`fix/kiosk-tablet-fit`) is already under way.
+
+---
+
+## Translate the DB4 into Australia's main community languages, and Pacific languages (Carl, 10 Oct 2026)
+
+**What Carl asked for:** the DB4 in the main languages spoken in Australia,
+plus smaller communities, Pacific Island languages such as Samoan and Fijian
+among them.
+
+**The requirements already say how; this entry says what and when.**
+REQ-LANG-01..11 (`aob-addendum-v2.md`) and GA-PLAN C9 ("English + Arabic + 2
+languages") are the spec:
+- **Bilingual artefact, one hash.** English is the canonical text and the
+  target language sits beside it. Both are part of the signed artefact and both
+  are covered by the signature hash (REQ-LANG-02).
+- **Human translation only.** Every translation is a human, NAATI-credentialed
+  one. No machine translation ever appears in the legal artefact (REQ-LANG-03).
+  Hard rule 13 (one deterministic render) rules out translating at render time
+  in any case; `VERSION-2.md` §3 explains why.
+- **The assignor's language, not the patient's** (REQ-LANG-09).
+- **Translations are versioned with the rule set.** When the template changes,
+  every translation that has not caught up is marked stale (REQ-LANG-11, hard
+  rule 14).
+- **Plain English first.** The English is written at roughly a Year 6–8
+  reading level before any translation is commissioned (REQ-LANG-08).
+- **Scripts and sound.** Full RTL rendering (REQ-LANG-04). Correct Unicode for
+  Polynesian macrons and the ʻokina, U+02BB (REQ-LANG-05). Read-aloud in
+  language, which matters more than text for several Pacific communities
+  (REQ-LANG-06). The TIS National interpreter workflow (REQ-LANG-07).
+
+**Candidate languages (to be confirmed, not decided).**
+- **Largest home languages:** Mandarin, Arabic, Vietnamese, Cantonese, Punjabi,
+  Greek, Italian, Hindi, Filipino/Tagalog, Spanish, Nepali. Confirm the order
+  against the ABS 2021 Census before commissioning anything.
+- **Pacific:** Samoan, Tongan, Fijian (iTaukei), Fiji Hindi, Cook Islands
+  Māori, Tok Pisin.
+- **Torres Strait and Aboriginal:** Yumplatok (Torres Strait Creole) and
+  Kriol. These are candidates worth asking about; they are not in the
+  requirements.
+- **The practice decides the order, not national totals.** What decides it is
+  each practice's own preferred-language data from the PMS (REQ-LANG-01).
+  Powell Street's spread is the first real input.
+
+**Why deferred rather than done:**
+1. **It is the government's form.** Whether a bilingual reproduction of the
+   DB4 is acceptable to Services Australia is an open regulatory question. Do
+   not assume it; ask before commissioning a translation (CLAUDE.md §7c,
+   "never invent regulatory facts").
+2. **It needs a translator vendor and budget** (GA-PLAN C9).
+3. **The plain-English rewrite (REQ-LANG-08) comes first,** otherwise every
+   translation is paid for twice.
+
+**Language to watch.** Copy about our forms must never call them "certified",
+"approved", "accredited" or "government-approved" (hard rule 12). A
+translator's NAATI credential is something we may state; the form's status
+never is.
+
+**Depends on:** the Services Australia answer, the vendor, and the
+plain-English text. `tautala_ai.md` (the TAUTALA entry, further down) is the related speech design.
+
+---
+
+## Reconcile the PMS, AOBPRINTER and AoBPlatform against each other (Carl, 10 Oct 2026)
+
+**Carl:** *"we will need to come back to this so that we can reconcile between
+the PMS, AOBPrinter and AOBPlatform"*, when choosing option (b) for unsigned
+drafts (D-2026-10-10-09).
+
+**The problem.** Three systems each hold part of what happened at a visit, and
+nothing checks them against each other:
+- **the PMS (PracSoft):** appointments, arrivals, invoices and claims;
+- **AOBPRINTER:** every DB4 printed, captured and filed back (its own audit
+  chain, PRINTER-HEARTBEAT.md);
+- **AoBPlatform:** agreements (pre and post, signed or not), service records,
+  tablet sessions and vault events.
+
+Today an unsigned pre-agreement is only *associated* with its visit's service
+(option b). A DB4 printed but never captured, an invoice with no agreement, or a
+signed agreement with no claim are each visible in one system at most.
+
+**What the reconciliation should answer, per practice and per day:**
+- every PMS invoice has a signed agreement covering it, or a named reason it
+  does not (private, forgone, chased, and so on);
+- every DB4 AOBPRINTER captured became an agreement, or was refused with a
+  reason, and every signed one was filed back;
+- every agreement is either signed and matched to a claim, closed with a
+  reason, or still open on a named list;
+- associated pre-agreements (option b) are settled: superseded by the signed
+  post-service agreement, or closed.
+
+**Depends on:** D-01 (Medtech write-back) for Medtech practices; the AOBPRINTER
+heartbeat (PR #4) for capture completeness; a decision on when an associated
+pre-agreement can close.
+
+---
+
+## ~~The signature step on screens smaller than 1280×800 (10 Oct 2026)~~ - decided: (a), accepted below 1280×800 (D-2026-10-10-10)
+
+The kiosk's no-scroll rule holds from 1280×800 up (D-2026-10-10-10). The
+signature step (pad, Back, Clear, Sign) fits at every size from there,
+including the 14" tablet both ways. Below it, it falls short: **25px at
+1024×600 and 52px at 960×600**, with Edge's bars showing. There the page
+scrolls as a whole (never a box) and every control can be scrolled into view;
+the fit spec lists these two sizes in `SIGNATURE_SHORTFALL`.
+
+**Carl to choose:**
+- **(a)** accept it below 1280×800, and change the decision's wording from
+  "fits at every size" to "fits at 1280×800 and up"; or
+- **(b)** make it fit by shrinking the kiosk's three-line footer (build,
+  device and audit ids) to one line on short screens.
+
+---
+
+## Tablet lockdown by an installed app: allow one install for automatic lockdown? (Carl, 10 Oct 2026)
+
+**Not decided; zero-footprint stays** (D-2026-10-10-10). Carl asked for this to
+be on the list.
+
+**The question.** No web page can lock a tablet: Android lets only an
+installed app or device management start a lock. Today the kiosk goes full
+screen on the first tap, and the patient can always swipe out of it. Android
+screen pinning, done by hand on each tablet, is optional (D-2026-10-10-05).
+Automatic lockdown needs something on the device, which reopens the
+zero-footprint decision (Carl, 3 Sep 2026).
+
+**The two routes, if Carl allows one install:**
+1. **A small Android app** that opens the kiosk page in a full-screen web view
+   and calls Android's lock-task mode at start-up. One install per tablet;
+   updates through the Play Store or a private channel. The kiosk page itself
+   stays cloud-served.
+2. **Device management** (Samsung Knox, or Android Enterprise "dedicated
+   device"). The tablet is enrolled once and boots straight into the locked
+   kiosk with no taps. Usually a per-device subscription; the practice or we
+   manage the enrolment.
+
+**What to weigh:**
+- What gets installed, and whether anything is persisted besides the one
+  pairing credential (the `kiosk_persists_nothing_but_pairing` rule must still
+  hold for patient data);
+- who installs and updates it, and the support cost per practice;
+- cost per tablet (device management);
+- whether practices actually see patients leaving the kiosk once full screen
+  is live.
+
+**Depends on:** Carl's decision, and ideally evidence from real practices
+first.
+
+---
+
+## The rest of core still measures "today" on UTC or the server's clock (10 Oct 2026) - D-2026-10-10-03
+
+D-2026-10-10-03 moved every day boundary in `tablet-sessions.service.ts` onto
+`practices.timezone` (`practiceDayOf` / `startOfPracticeDay`). **Deferred, not
+done, because the brief was the desk only and each of these is a behaviour
+change for another screen.** The same two shapes remain in `apps/core/src`:
+
+- ~~`agreements/agreements.service.ts` ~2212: `lockParticulars` defaults D2 to
+  `new Date().toISOString().slice(0, 10)` when the caller passes none. A
+  statutory particular on the UTC date (D-2026-09-12-17 item 2).~~ **Fixed
+  10 Oct 2026 (`fix/d2-practice-date`)**: the practice's date, via
+  `readPracticeDay` (`apps/core/src/practices/practice-day.ts`).
+- ~~`agreements/agreements.service.ts` ~1872: a superseding draft's D5 falls back
+  to the UTC date.~~ **Fixed 10 Oct 2026**, same helper.
+- ~~`service-descriptions/service-descriptions.service.ts` ~343: D2 on the UTC
+  date.~~ **Fixed 10 Oct 2026**, D2 and its D5 fallback both.
+- ~~`auto-capture/auto-capture.service.ts` ~260: the default day is the UTC
+  date.~~ **Fixed 10 Oct 2026.** All four pinned in
+  `apps/core/test/practice-date-particulars.e2e-spec.ts`.
+- ~~`arrivals/arrivals.service.ts` ~847 (an arrival's D5 when the caller sends
+  no `serviceDate`) and ~1974 (D5 on the draft a practitioner move makes) both
+  write D5 as `arrivedAt`'s UTC date: a statutory date, not a day window.~~
+  **Fixed 10 Oct 2026**: both are `practiceDayOf(arrivedAt, zone)` with the zone
+  from `readPracticeTimeZone` in the same transaction; an explicit
+  `serviceDate` still wins. Pinned by the four arrival tests in
+  `practice-date-particulars.e2e-spec.ts`.
+- **Still open:** `arrivals/arrivals.service.ts` ~3005, the coverage prefill's
+  `agreement.createdAt` UTC-date fallback (used only for an agreement with no
+  D5), should move to the practice's day so it stays comparable with the D5
+  above. Not a statutory particular; left out of the D5 fix's brief.
+- ~~`practitioner-queue/practitioner-queue.service.ts` ~511-513 and ~565 (review
+  of `fix/d2-practice-date`, 10 Oct 2026). The "service rendered" window picked
+  its day with `getFullYear/getMonth/getDate` on `arrivedAt`, which is the UTC
+  day on a UTC server. The service record it selects supplies the agreement's
+  D5. Before 11am Sydney time, a patient with an undecided service record from
+  yesterday got today's "service rendered" press raised as a post-agreement
+  against YESTERDAY's service: a wrong statutory date.~~ **Fixed 10 Oct 2026**:
+  the window is `practiceDayOf(arrivedAt, zone)` with the zone from
+  `readPracticeTimeZone` in the same transaction. Pinned by
+  `service_rendered_before_11am_sydney_picks_todays_service_not_yesterdays`
+  (catches it on a UTC host: CI, or `TZ=UTC`) and
+  `a_perth_service_rendered_uses_the_perth_day` (catches it on any host) in
+  `practice-date-particulars.e2e-spec.ts`.
+- **Still open, ordering (pre-existing):** an arrival moves its draft to
+  `awaiting_signature` BEFORE `lockParticulars` runs. If the lock fails (e.g. a
+  rule such as C5, D5 on or after D2, for an arrival that straddles local midnight
+  or a connector backlog delivered next morning), `POST /arrivals` errors with
+  the draft already at `awaiting_signature` and unlocked. Signing stays blocked,
+  so hard rule 2 holds, but the state should not be reachable. Same shape as the
+  per-visit offer item on `fix/tablet-day-boundary`; Carl's call.
+- `arrivals/arrivals.service.ts` ~1409: the front desk's day starts at the
+  server's `setHours(0, 0, 0, 0)`.
+- `practitioner-queue/practitioner-queue.service.ts` ~686: the waiting list's
+  day starts at the server's `setHours(0, 0, 0, 0)`. **Display only, checked
+  10 Oct 2026**: it chooses which arrivals are LISTED, never which service
+  supplies D5 (a press on any listed arrival dates by that arrival's own
+  `arrivedAt` in the practice's zone). But on a UTC server it is visibly wrong:
+  before 11am Sydney the list still shows yesterday afternoon's patients, and
+  after 11am it drops everyone who arrived between local midnight and 11am.
+- `arrivals/arrivals.service.ts` ~623 and ~1512: `practiceDayWindow` is right
+  wherever it runs but uses the one `PRACTICE_TIMEZONE` constant, not the
+  practice's own zone.
+- `retention/retention-sweep.service.ts` ~59: `today` is the UTC date. Probably
+  harmless for retention arithmetic; check before changing.
+- D-2026-09-12-17's LOCATION zone is not built; when it is, it should win over
+  the practice zone for a desk at that location.
+
+**Depends on:** nothing; each is the same substitution, with an e2e that pins
+the clock the way `practice-day-boundary.e2e-spec.ts` does.
+
+## Per-practice timezone: follow-ups from the Opus review (10 Oct 2026) - D-2026-10-10-03
+
+Recorded from the review of `fix/tablet-day-boundary`; no code change on that
+branch for any of these.
+
+- **(a) Every existing practice was defaulted to `Australia/Sydney` and nobody
+  confirmed it.** The migration gave the column a default so the desk would
+  keep working, but D-2026-09-12-17 says the state proposes a zone and a person
+  confirms it. Two things follow: onboarding should propose a zone from the
+  practice's state and ask for it to be confirmed rather than taking the
+  default silently; and any existing practice outside NSW/VIC/ACT/TAS needs its
+  zone checked on `/practice/channels` before its desk's day boundary can be
+  trusted (a Perth practice on Sydney time turns its day two or three hours
+  early; Brisbane, Adelaide and Darwin by up to an hour and a half).
+- **(b) PRE-EXISTING, NOT INTRODUCED HERE - touches hard rule 2 (REQ-REG-06).**
+  `offerEpisodicInstead` in `apps/core/src/tablet-sessions/tablet-sessions.service.ts`
+  (~1104-1113, from 50373f8, 5 Sep 2026) moves the new agreement to
+  `awaiting_signature` and THEN calls `lockParticulars`, in separate
+  transactions. If the lock throws (rules service down, render failure), the
+  agreement is left at `awaiting_signature` with unlocked particulars. Nothing
+  can be signed in that state - the push re-locks before any signature
+  (`prepareLockOrRefuse` runs whenever `particularsLockedAt` is null) - but the
+  state itself should be unreachable. **For Carl to decide; deliberately not
+  fixed on the timezone branch.** The obvious shape is to lock first and
+  transition after, or both in one transaction the way the push does.
+- **(c) Rebuild the vault container before shipping.** The branch adds the
+  `practice.timezone_set` event type (`packages/contracts/src/vault.ts`); a
+  vault image built before it will not know the type.
+
+## Agreements left unsigned past their day (10 Oct 2026) - D-2026-10-10-01
+
+**Being built now:** option 1, the tablet's "Unsigned from earlier days: N"
+notice, and option 4, the post-service chase switched on in development (sandbox
+gateways only; production off until Carl says live).
+
+**Options 2 and 3 are being built (Carl, 10 Oct 2026, D-2026-10-10-09):**
+*"do option 2 first, N is 7 days - make N a configurable setting"*. Strike
+each one through when it lands.
+- ~~**Paused at the measurement step, waiting on Carl.**~~ Carl chose option
+  (b), associate not link. **Built 11 Oct 2026** on branch
+  `feat/unsigned-drafts-link-and-close`; the build's own choices are listed
+  under D-2026-10-10-09 for Carl to confirm.
+
+**Originally deferred, decided by Carl to be on this list:**
+
+2. ~~**Link the unsigned draft to the service.**~~ Built as an ASSOCIATION, not
+   a link (option (b), D-2026-10-10-09). When an invoice arrives for the
+   same patient, provider and day, pms-sync should link the unsigned draft to the
+   service record, so the draft reaches Reconciliation instead of being orphaned.
+   Today `pms-sync.service.ts` links only an agreement with `status: 'stored'`.
+   - *Why deferred:* it changes which agreement a claim is reconciled against,
+     and auto-capture may already have opened a second draft for the same visit.
+     How often that happens has not been measured, and the two drafts must not
+     both end up linked.
+   - *Depends on:* that measurement, and a rule for which draft wins.
+3. ~~**Close drafts with no service after N days.**~~ Built: N = 7 in
+   `content/unsigned-draft-closure.json`, settable per practice on
+   `/practice/channels` (D-2026-10-10-09). Close them as "not needed: no
+   service recorded", with a vault event.
+   - N belongs in the versioned rule set (hard rule 14); it is never hardcoded.
+   - *Why deferred:* closing an agreement is a state change with evidence
+     consequences. N is a regulatory-adjacent threshold that is not in the
+     requirements docs, and §7c says never to invent one.
+   - *Depends on:* ~~Carl choosing N~~ (chosen: 7 days by default, settable
+     per practice; D-2026-10-10-09). Option 2 should come first, so that
+     nothing a service could still claim gets closed.
+
+---
+
 ## A patient on "Needs a look" has no control that restarts their paperwork
 
 Built 12 September 2026: `/practice/frontdesk`'s rails now partition the day, so
@@ -4449,9 +4827,39 @@ asks. See `GA-PLAN` B13.
   state is in `writtenBackAt`, the `agreement.written_back` events and
   AOBPRINTER's log. See the next item.
 
-### AOBPRINTER state moves to SQLite, with its own Node.js (28 Sep 2026) - D-2026-09-28-04
+### ~~AOBPRINTER state moves to SQLite, with its own Node.js (28 Sep 2026)~~ - STORAGE BUILT 29 Sep 2026 (D-2026-09-28-04, D-2026-09-29-01..03)
 
-Decided, not started. Carl: *"go with sqlite and ship our own node."*
+**Built on `feat/aobprinter-sqlite`:** `apps/aobprinter/src/store.ts` (prints,
+returns, receipts, append-only hash-chained `audit_events`), `archive.ts` (7-day
+encrypted PDF archive), the outbox, watcher, collector and reconciler writing
+every stage change with its event, the one-time folder-outbox import, and the
+network-path refusal. 179 tests. Reviewed by a fresh Opus reviewer; its nine
+findings are fixed and tested.
+
+**Still open from this item, in order:**
+1. **The heartbeat** — PLANNED 10 Oct 2026, items 1–3 together: `PRINTER-HEARTBEAT.md`,
+   D-2026-10-10-02. (Carl, 29 Sep): a no-PII status every minute or so — waiting,
+   exceptions, version, and the AUDIT CHAIN HEAD, so a rewritten local log cannot
+   match what the platform holds. Its reply can carry "processed by AoB" per job.
+2. **The console page** on the platform: each practice's AOBPRINTER host,
+   last-seen, and the stages.
+3. **A return filed but never recorded as confirmed** (`collect.confirmed_not_recorded`)
+   has no automatic repair: the platform stops listing it once confirmed. The
+   heartbeat can carry per-agreement written-back status to reconcile it.
+4. **`unparsed/` still keeps an unreadable print as PLAINTEXT** with no expiry — a
+   pre-existing gap now named (D-2026-09-29-03). Close it when the support screen
+   can open an encrypted archive: park encrypted, like the archive.
+5. **Key-management review** (`CLAUDE.md` §7c): `retention.ts` now loads the key
+   on every start (D-2026-09-29-02). `keystore.ts` itself is unchanged. Carl to
+   review before any practice runs it.
+6. **The bundled Node.js runtime** in the installer (>= 22.5; 24.x measured).
+7. **The heartbeat inherits the transport gap** (D-2026-10-10-02 decision 12).
+   Like print ingest and collection, it is authenticated only by `x-practice-id`
+   until mutual TLS lands, so a forged heartbeat could raise a false chain
+   regression or hide a host that has gone silent. Accepted by Carl on 10 Oct.
+   Close it with the AOBPRINTER mTLS work, not separately.
+
+The original plan, as written on 28 Sep: Carl: *"go with sqlite and ship our own node."*
 
 - **Storage.** One `node:sqlite` database under the data folder replaces
   `outbox/pending|sent|poison/` and `receipts.jsonl`: a jobs table keyed on

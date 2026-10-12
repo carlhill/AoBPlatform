@@ -1,19 +1,25 @@
 /**
- * Wires the outbox's retention pieces together: the receipts ledger, always;
- * the key and the cipher, only when `retention.enabled` is true.
+ * Wires the outbox's retention pieces together: the key, the cipher and the
+ * receipts writer.
  *
- * THE ONE THING THIS FILE GUARANTEES: with retention disabled (the shipped
- * default — `config.ts`'s `DEFAULT_RETENTION_CONFIG`), nothing here touches
- * DPAPI or shells to PowerShell. That is what keeps every existing install
- * working unchanged, and it is what keeps this suite runnable on the Linux CI
- * runner that has neither.
+ * THE KEY ALWAYS EXISTS (D-2026-09-29-02, 29 Sep 2026). Until then this file
+ * guaranteed the opposite — with retention off, nothing here touched DPAPI or
+ * PowerShell. Carl reversed it: audit locations and archived PDFs are
+ * encrypted from day one, so the key cannot wait for `retention.enabled`.
+ * What that flag still decides is the outbox PAYLOAD: plaintext and kept
+ * (off), or encrypted and destroyed on acknowledgement (on).
+ *
+ * KEY MANAGEMENT IS A HUMAN-AUTHORED ZONE (`CLAUDE.md` §7c). `keystore.ts` is
+ * unchanged; only when it is called moved. Flagged for Carl's review before
+ * any practice runs it. Tests inject a stand-in wrapper, which is what keeps
+ * the suite runnable on the Linux CI runner that has no DPAPI.
  */
 import type { RetentionConfig } from './config';
 import { dpapiKeyWrapper, decryptPayload, encryptPayload, loadOrCreateKey, type EncryptedPayload, type KeyWrapper } from './keystore';
 import type { Logger } from './log';
-import { makeFileReceiptsWriter, type ReceiptsWriter } from './receipts';
+import type { ReceiptsWriter } from './receipts';
 
-/** What the outbox needs to encrypt and decrypt a payload, without knowing how the key is held. */
+/** What the outbox and the store need to encrypt and decrypt, without knowing how the key is held. */
 export interface Cipher {
   encrypt(plaintext: Buffer): EncryptedPayload;
   decrypt(payload: EncryptedPayload): Buffer;
@@ -22,31 +28,28 @@ export interface Cipher {
 export interface RetentionDeps {
   readonly config: RetentionConfig;
   readonly receipts: ReceiptsWriter;
-  /** Present only when `config.enabled` — a job may not be written unencrypted while this is absent. */
+  /**
+   * Always present from `buildRetentionDeps`. Optional in the type only so a
+   * test can prove the guard: a job is never written unencrypted while
+   * retention is on and this is absent.
+   */
   readonly cipher?: Cipher;
 }
 
 /**
- * Build what `Outbox` needs. Throws (refusing to start the program) if
- * retention is enabled and the key cannot be loaded or created — see
+ * Load the key, creating it on first run, and wrap it as a cipher. Throws —
+ * refusing to start the program — if a key on disk cannot be unwrapped; see
  * `keystore.ts`'s `loadOrCreateKey` for why that is the right failure mode.
  */
-export function buildRetentionDeps(
-  dataDir: string,
-  config: RetentionConfig,
-  logger: Logger,
-  wrapper: KeyWrapper = dpapiKeyWrapper(),
-): RetentionDeps {
-  const receipts = makeFileReceiptsWriter(dataDir);
-  if (!config.enabled) return { config, receipts };
-
+export function loadCipher(dataDir: string, logger: Logger, wrapper: KeyWrapper = dpapiKeyWrapper()): Cipher {
   const key = loadOrCreateKey(dataDir, wrapper, logger);
   return {
-    config,
-    receipts,
-    cipher: {
-      encrypt: (plaintext) => encryptPayload(key, plaintext),
-      decrypt: (payload) => decryptPayload(key, payload),
-    },
+    encrypt: (plaintext) => encryptPayload(key, plaintext),
+    decrypt: (payload) => decryptPayload(key, payload),
   };
+}
+
+/** What `Outbox` needs. The receipts writer is the database (`store.ts`) since 29 Sep 2026. */
+export function buildRetentionDeps(config: RetentionConfig, receipts: ReceiptsWriter, cipher: Cipher): RetentionDeps {
+  return { config, receipts, cipher };
 }

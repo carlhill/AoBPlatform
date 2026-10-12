@@ -39,7 +39,8 @@ export { makeLogger, consoleLogger, looksLikeAnIdentifier, redact, redactError }
 export type { Logger, LogSink } from './log';
 export { start } from './main';
 export type { RunHandles, StartDeps } from './main';
-export { OUTBOX_FORMAT_VERSION, Outbox, outboxPaths, sha256Hex } from './outbox';
+export { OUTBOX_FORMAT_VERSION, Outbox, sha256Hex } from './outbox';
+export { AobPrinterStore, DB_FILE_NAME, SCHEMA_VERSION, assertLocalDataDir, dbPath, openStore } from './store';
 export type { PostResult, Poster } from './outbox';
 export {
   DEFAULT_RECONCILE_INTERVAL_MS,
@@ -54,7 +55,7 @@ export type { ParseInput } from './parser';
 export { readPdfText } from './pdf-text';
 export type { PdfText } from './pdf-text';
 export { makeHttpPoster } from './poster';
-export { buildReceipt, appendReceipt, makeFileReceiptsWriter, receiptsPath } from './receipts';
+export { buildReceipt } from './receipts';
 export type { Receipt, ReceiptOutcome, ReceiptsWriter, ReceiptState } from './receipts';
 export { buildRetentionDeps } from './retention';
 export type { Cipher, RetentionDeps } from './retention';

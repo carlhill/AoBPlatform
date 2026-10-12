@@ -1,25 +1,31 @@
 /**
- * The outbox: a folder that must never lose a form and never send one twice.
+ * The outbox: a table that must never lose a form and never send one twice.
  *
- * WHY A FOLDER AND NOT A QUEUE IN MEMORY. The practice prints, the receptionist
+ * WHY STORED AND NOT A QUEUE IN MEMORY. The practice prints, the receptionist
  * hands the patient a tablet, and somewhere in between this program can be
  * killed by a reboot, an antivirus update, or somebody closing a window. A form
  * that existed only in a process is gone, and what is lost is not a message —
  * it is the practice's record that a service was rendered and consent is due.
- * The record is written to disk BEFORE the first attempt, and only moved once
- * the server has said 202.
+ * The record is committed to the database BEFORE the first attempt, and only
+ * moved on once the server has said 202.
  *
- * WHY THE FILENAME IS THE HASH. `sourceSha256` — the hash of the spool bytes
- * the driver saw — is the idempotency key end to end: it names the file here,
+ * WHY A TABLE AND NOT THE FOLDERS THIS USED TO BE (D-2026-09-28-04). Until 29
+ * September 2026 this was `outbox/pending|sent|poison/<sha>.json`. The rules
+ * are unchanged; what changed is that a state transition is now one
+ * transaction instead of a write, a rename and an unlink — so the crash
+ * windows between them, which the folder version had to detect and repair,
+ * no longer exist. `store.ts` imports any folder outbox on first start.
+ *
+ * WHY THE KEY IS THE HASH. `sourceSha256` — the hash of the spool bytes the
+ * driver saw — is the idempotency key end to end: it is the primary key here,
  * it is what the server dedups on, and it is what a dispute uses to tie this
- * record to that printing. Two claims of the same bytes collapse to one file
- * without a lock, and a re-post of a form already sent cannot happen because
- * its name is already in `sent/`. It is also the one key that is safe in a
- * filename: a hash of a page is not the page (hard rule 9).
+ * record to that printing. Two claims of the same bytes collapse to one row,
+ * and a re-post of a form already sent cannot happen because its row already
+ * says so. It is also safe to log: a hash of a page is not the page (hard rule 9).
  *
  * EXACTLY-ONCE IS NOT AVAILABLE, AND THE HONEST VERSION IS SAID HERE. If the
- * process dies after the server has accepted a job and before this renames the
- * file, the next run posts it again. That is why the server dedups on
+ * process dies after the server has accepted a job and before this commits
+ * that, the next run posts it again. That is why the server dedups on
  * (practice, documentType, sourceSha256) and answers `duplicate: true` rather
  * than erroring — the desktop's at-least-once and the server's idempotency are
  * one design, not two. What this file guarantees is that it never posts twice
@@ -34,65 +40,16 @@
  * still prints and still bills (hard rule 8); the evidence is late, never lost.
  */
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { backoffFor } from '@aobplatform/domain';
 import { DEFAULT_RETENTION_CONFIG } from './config';
 import type { Db4PrintRecord } from './db4-record';
-import type { EncryptedPayload } from './keystore';
 import { redactError, type Logger } from './log';
 import { buildReceipt } from './receipts';
 import type { RetentionDeps } from './retention';
+import type { OutboxStore, StoredJob } from './store';
 import { readPackageVersion } from './version';
 
-/**
- * The on-disk shape of everything under `outbox/`.
- *
- * WHAT THIS NUMBER IS FOR, AND IT IS NOT UPGRADES. Going forward is easy: a
- * later build reading an earlier file knows what it is looking at. The danger
- * is going BACKWARD — an older binary put back on a desktop (a technician
- * with last visit's USB stick, a rolled-back service) opening a `pending/`
- * job that a newer one wrote. JSON is forgiving, which is the problem: the
- * old code would read the fields it recognises, ignore the ones it does not,
- * and post a form with a piece missing rather than fail. A record that is
- * quietly three-quarters of a form is the worst outcome this program has, so
- * a file from the future is a refusal to start, not a best effort.
- *
- * BUMP IT when the meaning of what is written changes in a way an earlier
- * build would misread — a field moved, a field's units changed, a payload
- * encoded differently. Not for a purely additive field an older build would
- * correctly ignore.
- */
-export const OUTBOX_FORMAT_VERSION = 1;
-
-/**
- * What a queued job looks like on disk.
- *
- * EXACTLY ONE OF `record` / `encrypted` IS SET, NEVER BOTH. `record` is the
- * plaintext DB4 Print Record and is what every job has always looked like;
- * `encrypted` is the same record under `retention.ts`'s cipher, present only
- * once `retention.enabled` is true (`config.ts`). A job is never written with
- * `record` set while retention is enabled — see `encode` below.
- */
-interface QueuedJob {
-  /**
-   * OPTIONAL IN THE TYPE BECAUSE IT IS OPTIONAL ON DISK. Every file this
-   * build writes carries it (`writeAtomic` stamps it), but files written
-   * before this field existed do not, and typing it as required would be a
-   * claim about the folder that is false on every desktop already installed.
-   * Absent reads as version 1 — see `assertReadableFormat`.
-   */
-  readonly formatVersion?: number;
-  readonly record?: Db4PrintRecord;
-  readonly encrypted?: EncryptedPayload;
-  readonly enqueuedAt: string;
-  readonly attempts: number;
-  /** ISO instant; the job is not tried before this. */
-  readonly nextAttemptAt: string;
-  readonly lastError?: string;
-  /** Set only in `poison/`: when the job was classified unrecoverable, for the TTL sweep. */
-  readonly poisonedAt?: string;
-}
+export { OUTBOX_FORMAT_VERSION } from './store';
 
 export interface PostResult {
   readonly ok: boolean;
@@ -105,10 +62,10 @@ export interface PostResult {
   /**
    * Set when `ok` is false: `false` means the server will never accept this
    * job as it stands (a non-408/429 4xx) and, once retention is enabled, it is
-   * classified into `poison/` rather than retried forever. `true` or absent
-   * means keep retrying in `pending/` on the usual backoff — the default when
-   * a poster does not say, so nothing is poisoned by a caller that has not
-   * been told about the distinction.
+   * classified as poisoned rather than retried forever. `true` or absent
+   * means keep retrying on the usual backoff — the default when a poster does
+   * not say, so nothing is poisoned by a caller that has not been told about
+   * the distinction.
    */
   readonly retryable?: boolean;
 }
@@ -116,24 +73,7 @@ export interface PostResult {
 /** What actually talks to AoB. Injected so the outbox can be tested without a server. */
 export type Poster = (record: Db4PrintRecord) => Promise<PostResult>;
 
-export interface OutboxPaths {
-  readonly pending: string;
-  readonly sent: string;
-  readonly tmp: string;
-  /** Parsed and posted, but rejected outright by the server. Destroyed after `retention.poisonTtlMs`, only once retention is enabled. */
-  readonly poison: string;
-}
-
-export function outboxPaths(dataDir: string): OutboxPaths {
-  return {
-    pending: join(dataDir, 'outbox', 'pending'),
-    sent: join(dataDir, 'outbox', 'sent'),
-    tmp: join(dataDir, 'outbox', 'tmp'),
-    poison: join(dataDir, 'outbox', 'poison'),
-  };
-}
-
-/** A hex sha256 and nothing else may name a file here. */
+/** A hex sha256 and nothing else may key a job. */
 const SHA256 = /^[0-9a-f]{64}$/;
 
 export function sha256Hex(bytes: Uint8Array): string {
@@ -141,149 +81,37 @@ export function sha256Hex(bytes: Uint8Array): string {
 }
 
 export class Outbox {
-  private readonly paths: OutboxPaths;
   /** Jobs being posted right now, so two timers cannot both take one. */
   private readonly inFlight = new Set<string>();
 
   constructor(
-    private readonly dataDir: string,
+    private readonly store: OutboxStore,
     private readonly post: Poster,
     private readonly logger: Logger,
     private readonly now: () => Date = () => new Date(),
     // Absent retention deps behave exactly as this file did before retention
-    // existed: plaintext, `sent/` kept forever. A default rather than a
-    // required constructor argument so every existing caller and test still
-    // compiles and still gets that behaviour without being told to.
+    // existed: plaintext, sent rows kept forever. A default rather than a
+    // required constructor argument so every caller that has not been told
+    // about retention still gets that behaviour without being told to.
     private readonly retention: RetentionDeps = { config: DEFAULT_RETENTION_CONFIG, receipts: { record: () => undefined } },
     /**
-     * Stamped onto every receipt. Defaulted rather than required so every
-     * existing caller and test still compiles, and read from `package.json`
-     * rather than passed around as a string nobody can trace back.
+     * Stamped onto every receipt. Defaulted rather than required, and read
+     * from `package.json` rather than passed around as a string nobody can
+     * trace back.
      */
     private readonly printerVersion: string = readPackageVersion(),
   ) {
-    this.paths = outboxPaths(dataDir);
-    for (const dir of [this.paths.pending, this.paths.sent, this.paths.tmp, this.paths.poison]) mkdirSync(dir, { recursive: true });
-    /*
-     * BEFORE ANYTHING ELSE TOUCHES THE FOLDER. `recoverTmp` deletes, the
-     * migration rewrites, and `flush` posts — none of those may run against a
-     * folder this build does not fully understand.
-     */
-    this.assertReadableFormat();
-    this.recoverTmp();
     if (this.retention.config.enabled) this.migrateLegacyPayloads();
   }
 
   /**
-   * Refuse to start on a file written by a later build.
-   *
-   * ONLY THE `formatVersion` FIELD IS READ, and it sits beside `record` /
-   * `encrypted` in the same JSON object precisely so this check costs one
-   * parse and no decryption — the guard must not need the key to decide
-   * whether it is allowed to read the payload.
-   *
-   * AN UNPARSEABLE FILE IS NOT A REASON TO REFUSE. It is already handled
-   * where it matters (`readFrom` logs it and leaves it for a human); treating
-   * it as "from the future" would let one corrupt byte stop a practice's
-   * capture entirely, which is the opposite of hard rule 8.
+   * Everything a stored job needs to carry — plaintext when retention is off,
+   * encrypted when it is on. Never both, and never plaintext while
+   * `config.enabled` is true: if the cipher is somehow missing this throws
+   * rather than falling back to writing the form unencrypted (rule 3 of this
+   * feature).
    */
-  private assertReadableFormat(): void {
-    for (const dir of [this.paths.pending, this.paths.sent, this.paths.poison]) {
-      for (const name of readdirSync(dir).filter((n) => n.endsWith('.json'))) {
-        const file = join(dir, name);
-        let parsed: unknown;
-        try {
-          parsed = JSON.parse(readFileSync(file, 'utf8'));
-        } catch {
-          continue;
-        }
-        if (typeof parsed !== 'object' || parsed === null) continue;
-        const onDisk = (parsed as { formatVersion?: unknown }).formatVersion;
-        // Absent means "written before this field existed", which is version 1.
-        if (typeof onDisk !== 'number' || onDisk <= OUTBOX_FORMAT_VERSION) continue;
-
-        throw new Error(
-          `AOBPRINTER refuses to start: ${file} is outbox format version ${onDisk} but this build only ` +
-            `understands format version ${OUTBOX_FORMAT_VERSION}. A newer build wrote this folder. A downgrade ` +
-            'must never half-read a payload written by a later version — install that build again, or move this ' +
-            'folder aside once somebody has decided what to do with the forms in it.',
-        );
-      }
-    }
-  }
-
-  /**
-   * A half-written job file from a process that died mid-write.
-   *
-   * It is DELETED, not recovered. A `tmp` file is by definition one whose
-   * rename never happened, so nothing has been promised about it and the spool
-   * PDF it came from is still in `jobs/` waiting to be parsed again. Keeping a
-   * truncated JSON would be keeping a record that might be half a form.
-   */
-  private recoverTmp(): void {
-    for (const name of readdirSync(this.paths.tmp)) {
-      try {
-        unlinkSync(join(this.paths.tmp, name));
-      } catch {
-        // Locked by something else; the next start will get it.
-      }
-    }
-  }
-
-  /**
-   * Write a file by writing it somewhere else first. A reader never sees a
-   * partial job.
-   *
-   * THE FORMAT VERSION IS STAMPED HERE, IN ONE PLACE, and last so it wins
-   * over whatever a job read off disk was carrying: every write is this
-   * build's write, whoever wrote the file before. Stamping it at each call
-   * site instead would mean one forgotten spread is a file that looks older
-   * than it is — the single failure the guard exists to catch.
-   */
-  private writeAtomic(target: string, job: QueuedJob): void {
-    const staging = join(this.paths.tmp, `${createHash('sha256').update(target).digest('hex').slice(0, 16)}.json`);
-    writeFileSync(staging, JSON.stringify({ ...job, formatVersion: OUTBOX_FORMAT_VERSION }, null, 2), 'utf8');
-    renameSync(staging, target);
-  }
-
-  private pendingPath(sha: string): string {
-    return join(this.paths.pending, `${sha}.json`);
-  }
-
-  /**
-   * The sent marker.
-   *
-   * RETENTION OFF (the shipped default): still holds the WHOLE record, as
-   * this file always has. Measured 17 September 2026, the server's envelope
-   * DTO whitelists five fields and strips the rest at the door, so a DB4
-   * posted today is accepted, stored as its envelope, and its content
-   * discarded — and the claimed spool PDF is already gone by then, so this is
-   * the only complete copy of the form anywhere (TODO.md, "AOBPRINTER
-   * landed", item 3). Deleting it before that server-side piece lands would
-   * acknowledge a form and then lose it.
-   *
-   * RETENTION ON: this file is never written. `flush()` deletes the pending
-   * job immediately on ack instead, after handing the receipt to
-   * `retention.receipts`. See `config.ts`'s `RetentionConfig` for what flips
-   * this.
-   */
-  private sentPath(sha: string): string {
-    return join(this.paths.sent, `${sha}.json`);
-  }
-
-  /** A job the server has rejected outright, waiting out `retention.poisonTtlMs` before it is destroyed. Only used when retention is enabled. */
-  private poisonPath(sha: string): string {
-    return join(this.paths.poison, `${sha}.json`);
-  }
-
-  /**
-   * Everything a stored job needs to carry, shaped for whichever tier is
-   * writing it — plaintext when retention is off, encrypted when it is on.
-   * Never both, and never plaintext while `config.enabled` is true: if the
-   * cipher is somehow missing this throws rather than falling back to writing
-   * the form unencrypted (rule 3 of this feature).
-   */
-  private encodeForStorage(record: Db4PrintRecord): Pick<QueuedJob, 'record' | 'encrypted'> {
+  private encodeForStorage(record: Db4PrintRecord): Pick<StoredJob, 'record' | 'encrypted'> {
     if (!this.retention.config.enabled) return { record };
     if (!this.retention.cipher) {
       throw new Error('Retention is enabled but no cipher is configured; refusing to write a form to disk unencrypted.');
@@ -292,7 +120,7 @@ export class Outbox {
   }
 
   /** The record a stored job carries, decrypting it first if that is how it is held. */
-  private recordOf(job: QueuedJob): Db4PrintRecord {
+  private recordOf(job: StoredJob): Db4PrintRecord {
     if (job.record) return job.record;
     if (job.encrypted) {
       if (!this.retention.cipher) throw new Error('This job is encrypted and no cipher is configured to read it back.');
@@ -309,23 +137,21 @@ export class Outbox {
    * poison TTL, and a record already queued is not restarted either (which
    * would reset its backoff and hammer a server that is already struggling).
    *
-   * ONE GAP, HONESTLY STATED: with retention enabled, `sent/` no longer keeps
-   * a marker (it is deleted, not shrunk — see `sentPath`), so a reprint of
-   * bytes already fully delivered and purged is queued and posted again
-   * rather than short-circuited here. That is safe, not silent: the server
-   * dedups on `sourceSha256` and answers `duplicate: true`, which `flush()`
-   * treats as delivered, so nothing doubles up where it would be seen — only
-   * an extra request and an extra receipt line, on the rarest of paths.
+   * THE GAP THE FOLDER VERSION HAD IS CLOSED. It deleted a delivered job's
+   * file once retention was on, so a reprint of bytes already delivered was
+   * posted again (safely — the server dedups). Rows are never deleted now
+   * (D-2026-09-29-01); only the payload is, so a reprint is `already_sent`.
    */
   enqueue(record: Db4PrintRecord): 'queued' | 'already_queued' | 'already_sent' | 'already_poisoned' {
     const sha = record.sourceSha256;
     if (!SHA256.test(sha)) throw new Error('A job must be keyed by a 64-character hex sha256 of its source bytes.');
 
-    if (existsSync(this.sentPath(sha))) {
+    const stage = this.store.jobState(sha);
+    if (stage === 'sent') {
       this.logger.info('outbox.already_sent', { sha });
       return 'already_sent';
     }
-    if (existsSync(this.poisonPath(sha))) {
+    if (stage === 'send_exception') {
       // The server has already said "never" about these exact bytes. Queuing
       // it again would re-attempt (pointlessly — the payload has not
       // changed) and reset the poison TTL on every reprint, which is the same
@@ -333,76 +159,73 @@ export class Outbox {
       this.logger.info('outbox.already_poisoned', { sha });
       return 'already_poisoned';
     }
-    if (existsSync(this.pendingPath(sha))) {
+    if (stage === 'queued') {
       this.logger.info('outbox.already_queued', { sha });
       return 'already_queued';
     }
 
+    // `received` and `parse_exception` move on; a row the watcher never saw is created.
     const at = this.now().toISOString();
-    this.writeAtomic(this.pendingPath(sha), { ...this.encodeForStorage(record), enqueuedAt: at, attempts: 0, nextAttemptAt: at });
+    this.store.queue({
+      sha,
+      ...this.encodeForStorage(record),
+      enqueuedAt: at,
+      attempts: 0,
+      nextAttemptAt: at,
+      formReference: record.form?.formReference,
+      queueName: record.queueName,
+      queueLabel: record.queueLabel,
+      parserTemplateVersion: record.parserTemplateVersion,
+    });
     this.logger.info('outbox.queued', { sha, template: record.parserTemplateVersion, depth: this.depth() });
     return 'queued';
   }
 
   /** How many forms are waiting. The number that matters when AoB is unreachable. */
   depth(): number {
-    return readdirSync(this.paths.pending).filter((n) => n.endsWith('.json')).length;
+    return this.store.pendingCount();
   }
 
-  private readFrom(dir: string, sha: string): QueuedJob | null {
+  /**
+   * One job, or null if it cannot be read. Unreadable rather than absent is
+   * left where it is: a job we cannot parse is a job for a human, and
+   * deleting it would be the one unrecoverable act.
+   */
+  private read(sha: string): StoredJob | null {
     try {
-      return JSON.parse(readFileSync(join(dir, `${sha}.json`), 'utf8')) as QueuedJob;
+      return this.store.getJob(sha) ?? null;
     } catch (err) {
-      // Unreadable rather than absent. Left where it is: a job we cannot parse
-      // is a job for a human, and deleting it would be the one unrecoverable act.
       this.logger.error('outbox.unreadable', { sha, error: redactError(err) });
       return null;
     }
-  }
-
-  private read(sha: string): QueuedJob | null {
-    return this.readFrom(this.paths.pending, sha);
   }
 
   /**
    * Try everything that is due. Returns how many were accepted.
    *
    * ONE PASS, NO PARALLELISM. A practice prints one form at a time and the
-   * server answers in milliseconds; posting in sequence keeps the ordering the
-   * practice printed in, which is the order a receptionist expects to see them.
+   * server answers in milliseconds; posting in sequence, oldest first, keeps
+   * the order the practice printed in, which is the order a receptionist
+   * expects to see them.
    */
   async flush(): Promise<{ sent: number; failed: number; waiting: number }> {
     const now = this.now();
     let sent = 0;
     let failed = 0;
 
-    const names = readdirSync(this.paths.pending)
-      .filter((n) => n.endsWith('.json'))
-      .sort();
-
-    for (const name of names) {
-      const sha = name.replace(/\.json$/, '');
+    for (const sha of this.store.shas('queued')) {
       if (!SHA256.test(sha) || this.inFlight.has(sha)) continue;
 
-      /*
-       * THE SECOND HALF OF "NEVER TWICE", and it is checked BEFORE the backoff
-       * rather than after. A job that has already been delivered is finished
-       * whatever its schedule says, and a stale pending file left by a crash
-       * between the sent marker and the unlink must be cleared on the next pass
-       * — not sat on until its backoff expires, where it is one clock change
-       * away from being posted a second time.
-       */
-      if (existsSync(this.sentPath(sha))) {
-        try {
-          unlinkSync(this.pendingPath(sha));
-        } catch {
-          /* it will be tidied next pass */
-        }
-        continue;
-      }
-
       const job = this.read(sha);
-      if (!job) continue;
+      /*
+       * THE SECOND HALF OF "NEVER TWICE". A row is in exactly one state, and
+       * the state changes in one transaction, so a job already delivered is
+       * never in this list — the folder version's "stale pending file beside
+       * a sent marker" cannot happen. The check stays because a job can
+       * change state between the list being read and this line (a second
+       * timer), and "already delivered" outranks any schedule.
+       */
+      if (!job || job.stage !== 'queued') continue;
       if (new Date(job.nextAttemptAt).getTime() > now.getTime()) continue;
 
       let record: Db4PrintRecord;
@@ -410,8 +233,8 @@ export class Outbox {
         record = this.recordOf(job);
       } catch (err) {
         // A corrupt or undecryptable job is a job for a human, not a reason to
-        // abort every other job due this pass. It stays in `pending/` (rule 1
-        // of this feature still holds: never deleted) and alarms via `sweep()`
+        // abort every other job due this pass. It stays pending (rule 1 of
+        // this feature still holds: never deleted) and alarms via `sweep()`
         // once it is old enough.
         this.logger.error('outbox.unreadable', { sha, error: redactError(err) });
         continue;
@@ -424,41 +247,32 @@ export class Outbox {
 
         if (result.ok) {
           const postedAt = now.toISOString();
-          // Written for every job that lands, on or off: it carries no PII, so
-          // there is no reason to wait on the flag that gates the payload
-          // itself (rule 5 of this feature).
-          this.retention.receipts.record(
-            buildReceipt(record, {
-              postedAt,
-              attempts,
-              byteCount: Buffer.byteLength(JSON.stringify(record), 'utf8'),
-              state: 'sent',
-              jobId: result.jobId,
-              printerVersion: this.printerVersion,
-            }),
-          );
-
-          if (this.retention.config.enabled) {
-            // No marker: the receipt just written is the durable trace, and it
-            // carries no PII. See `sentPath`'s comment and `enqueue`'s note on
-            // the one gap this leaves (a rare re-post the server dedups).
-            try {
-              unlinkSync(this.pendingPath(sha));
-            } catch {
-              /* tidied next pass */
+          /*
+           * THE RECEIPT AND THE STATE CHANGE ARE ONE TRANSACTION. The receipt
+           * is written for every job that lands, on or off — it carries no
+           * PII, so there is no reason to wait on the flag that gates the
+           * payload itself (rule 5 of this feature) — and a crash can no
+           * longer leave a delivered job with no receipt, or a receipt for a
+           * job still marked pending.
+           */
+          this.store.transaction(() => {
+            this.retention.receipts.record(
+              buildReceipt(record, {
+                postedAt,
+                attempts,
+                byteCount: Buffer.byteLength(JSON.stringify(record), 'utf8'),
+                state: 'sent',
+                jobId: result.jobId,
+                printerVersion: this.printerVersion,
+              }),
+            );
+            this.store.markSent(sha, { attempts, nextAttemptAt: postedAt });
+            if (this.retention.config.enabled) {
+              // The patient data goes on acknowledgement; the row stays as the
+              // audit subject and the receipt just written is its trace.
+              this.store.destroyPayload(sha, 'acknowledged');
             }
-          } else {
-            // The marker goes down BEFORE the pending file comes up, so a crash
-            // between the two leaves a sent marker and a stale pending file —
-            // which the check above resolves — rather than a job with no record
-            // of having been sent.
-            this.writeAtomic(this.sentPath(sha), { ...job, attempts, nextAttemptAt: postedAt });
-            try {
-              unlinkSync(this.pendingPath(sha));
-            } catch {
-              /* the sent marker is authoritative; a leftover is skipped above */
-            }
-          }
+          });
           sent += 1;
           this.logger.info('outbox.sent', { sha, status: result.status, duplicate: result.duplicate === true });
         } else {
@@ -466,34 +280,31 @@ export class Outbox {
 
           if (this.retention.config.enabled && result.retryable === false) {
             // The server has said, in effect, "never" — a practice id it does
-            // not know, a payload it will not take (see `poster.ts`). Left in
-            // `pending/` it would sit forever under NO TTL, EVER, which is
-            // right for a form that might yet succeed and wrong for one that
-            // cannot. `poison/` is the honest place for it: bounded, logged,
-            // and its receipt is already written so its existence is not lost
-            // when the payload is destroyed.
+            // not know, a payload it will not take (see `poster.ts`). Left
+            // pending it would sit forever under NO TTL, EVER, which is right
+            // for a form that might yet succeed and wrong for one that cannot.
+            // Poisoned is the honest state for it: bounded, logged, and its
+            // receipt is written in the same transaction so its existence is
+            // not lost when the payload is destroyed.
             const poisonedAt = now.toISOString();
-            this.retention.receipts.record(
-              buildReceipt(record, {
-                postedAt: poisonedAt,
+            this.store.transaction(() => {
+              this.retention.receipts.record(
+                buildReceipt(record, {
+                  postedAt: poisonedAt,
+                  attempts,
+                  byteCount: Buffer.byteLength(JSON.stringify(record), 'utf8'),
+                  state: 'poisoned',
+                  printerVersion: this.printerVersion,
+                }),
+              );
+              this.store.markPoisoned(sha, {
                 attempts,
-                byteCount: Buffer.byteLength(JSON.stringify(record), 'utf8'),
-                state: 'poisoned',
-                printerVersion: this.printerVersion,
-              }),
-            );
-            this.writeAtomic(this.poisonPath(sha), {
-              ...job,
-              attempts,
-              nextAttemptAt: poisonedAt,
-              lastError: result.error ?? `HTTP ${result.status}`,
-              poisonedAt,
+                nextAttemptAt: poisonedAt,
+                lastError: result.error ?? `HTTP ${result.status}`,
+                poisonedAt,
+                status: result.status,
+              });
             });
-            try {
-              unlinkSync(this.pendingPath(sha));
-            } catch {
-              /* tidied next pass */
-            }
             this.logger.error('outbox.poisoned', {
               sha,
               formReference: record.form?.formReference,
@@ -503,8 +314,7 @@ export class Outbox {
             });
           } else {
             const waitSeconds = backoffFor(job.attempts);
-            this.writeAtomic(this.pendingPath(sha), {
-              ...job,
+            this.store.reschedule(sha, {
               attempts,
               nextAttemptAt: new Date(now.getTime() + waitSeconds * 1000).toISOString(),
               lastError: result.error ?? `HTTP ${result.status}`,
@@ -540,13 +350,14 @@ export class Outbox {
     const now = this.now();
     let alarmed = 0;
 
-    for (const name of readdirSync(this.paths.pending).filter((n) => n.endsWith('.json'))) {
-      const sha = name.replace(/\.json$/, '');
+    for (const sha of this.store.shas('queued')) {
       const job = this.read(sha);
       if (!job) continue;
       const ageMs = now.getTime() - new Date(job.enqueuedAt).getTime();
       if (ageMs <= this.retention.config.pendingAlarmMs) continue;
       alarmed += 1;
+      // Logged every sweep; recorded in the audit once.
+      this.store.markStale(sha, ageMs);
       this.logger.error('outbox.pending_stale', {
         sha,
         ageMs: Math.round(ageMs),
@@ -557,9 +368,8 @@ export class Outbox {
 
     let expired = 0;
     if (this.retention.config.enabled) {
-      for (const name of readdirSync(this.paths.poison).filter((n) => n.endsWith('.json'))) {
-        const sha = name.replace(/\.json$/, '');
-        const job = this.readFrom(this.paths.poison, sha);
+      for (const sha of this.store.shas('send_exception', { withPayload: true })) {
+        const job = this.read(sha);
         if (!job?.poisonedAt) continue;
         const ageMs = now.getTime() - new Date(job.poisonedAt).getTime();
         if (ageMs <= this.retention.config.poisonTtlMs) continue;
@@ -570,11 +380,7 @@ export class Outbox {
         } catch {
           /* undecryptable is still destroyed; its receipt was written when it was poisoned */
         }
-        try {
-          unlinkSync(this.poisonPath(sha));
-        } catch {
-          /* tidied next pass */
-        }
+        this.store.destroyPayload(sha, 'poison_ttl');
         expired += 1;
         this.logger.error('outbox.poison_expired', {
           sha,
@@ -590,30 +396,29 @@ export class Outbox {
 
   /**
    * Run once, only when retention turns on, before anything else in this
-   * class looks at `pending/` or `sent/`: a full `sent/` record from before
-   * piece 1 landed (see `sentPath`) is reduced to what it should always have
-   * been — a receipt — with the record itself deleted, and a plaintext job
-   * left in `pending/` from a run before retention existed is encrypted in
-   * place.
+   * class reads a job: a full sent row from before retention (see `flush`)
+   * is reduced to what it should always have been — a receipt — with the
+   * record itself destroyed and the row kept, and a plaintext job still
+   * queued from a run before retention existed is encrypted in place.
    *
-   * `sent/` FIRST, DELIBERATELY. A crash between writing a `sent/` marker and
-   * unlinking the matching `pending/` file (the ordinary case `flush()`
-   * already guards against — see its check at the top of the loop) can leave
-   * the same sha in both places. Migrating `pending/` first would encrypt
-   * that stale copy as if it still needed sending; migrating `sent/` first
-   * and clearing its matching `pending/` file the same way `flush()` does
-   * means a sha already delivered is never re-queued, re-posted, or given a
-   * second receipt line.
+   * SENT FIRST, AS THE FOLDER VERSION DID. With one state per row a sha can
+   * no longer be both sent and pending, so the order no longer guards a
+   * crash; it is kept because it is the order that reads correctly.
    */
   private migrateLegacyPayloads(): void {
-    if (existsSync(this.paths.sent)) {
-      for (const name of readdirSync(this.paths.sent).filter((n) => n.endsWith('.json'))) {
-        const sha = name.replace(/\.json$/, '');
-        const job = this.readFrom(this.paths.sent, sha);
+    this.migrateLegacyRows();
+    // The plaintext is out of the tables; this takes it out of the write-ahead log too.
+    this.store.checkpoint();
+  }
+
+  private migrateLegacyRows(): void {
+    for (const sha of this.store.shas('sent', { withPayload: true })) {
+      const job = this.read(sha);
+      this.store.transaction(() => {
         if (job?.record) {
           this.retention.receipts.record(
             buildReceipt(job.record, {
-              postedAt: job.nextAttemptAt ?? job.enqueuedAt,
+              postedAt: job.nextAttemptAt || job.enqueuedAt,
               attempts: job.attempts,
               byteCount: Buffer.byteLength(JSON.stringify(job.record), 'utf8'),
               state: 'sent',
@@ -624,34 +429,16 @@ export class Outbox {
             }),
           );
         }
-        try {
-          unlinkSync(join(this.paths.sent, name));
-        } catch {
-          /* tidied next pass */
-        }
-        // The same dedup `flush()` already does for a marker/pending crash:
-        // a sha that is in `sent/` is finished, whatever is left in `pending/`.
-        try {
-          unlinkSync(this.pendingPath(sha));
-        } catch {
-          /* nothing pending under this sha, or already gone */
-        }
-        this.logger.info('outbox.migrated_sent', { sha });
-      }
+        this.store.destroyPayload(sha, 'retention_migration');
+      });
+      this.logger.info('outbox.migrated_sent', { sha });
     }
 
-    for (const name of readdirSync(this.paths.pending).filter((n) => n.endsWith('.json'))) {
-      const sha = name.replace(/\.json$/, '');
+    if (!this.retention.cipher) return;
+    for (const sha of this.store.plaintextShas('queued')) {
       const job = this.read(sha);
-      if (!job || !job.record || !this.retention.cipher) continue;
-      const encrypted = this.retention.cipher.encrypt(Buffer.from(JSON.stringify(job.record), 'utf8'));
-      this.writeAtomic(this.pendingPath(sha), {
-        enqueuedAt: job.enqueuedAt,
-        attempts: job.attempts,
-        nextAttemptAt: job.nextAttemptAt,
-        lastError: job.lastError,
-        encrypted,
-      });
+      if (!job?.record) continue;
+      this.store.replaceWithEncrypted(sha, this.retention.cipher.encrypt(Buffer.from(JSON.stringify(job.record), 'utf8')));
       this.logger.info('outbox.migrated_pending', { sha });
     }
   }

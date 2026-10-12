@@ -47,6 +47,7 @@ const TWINS: readonly string[] = [
    */
   '/correspondence',
   '/devices',
+  '/aobprinter-host',
   '/tablet',
   '/patients',
 ];

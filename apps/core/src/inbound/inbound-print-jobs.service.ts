@@ -1,6 +1,6 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import type { PrintJobAccepted, PrintJobEnvelope } from '@aobplatform/contracts';
+import type { AobPrinterJobOutcome, AobPrinterJobState, Db4PlacementReason, PrintJobAccepted, PrintJobEnvelope } from '@aobplatform/contracts';
 import {
   LEASE_SECONDS,
   afterFailure,
@@ -307,6 +307,59 @@ export class InboundPrintJobsService {
         select: { id: true, payload: true },
       });
       return row ?? null;
+    });
+  }
+
+  /**
+   * WHAT BECAME OF THE PRINTS THE HOST ASKED ABOUT (PRINTER-HEARTBEAT.md §3,
+   * D-2026-10-10-02 decision 8). The AOBPRINTER heartbeat names the source
+   * hashes of prints it sent and has no outcome for; this answers each, in the
+   * order asked:
+   *
+   *  - `pending`, `leased`, `failed` → `waiting` (still on its lane);
+   *  - `done` → `done`, with the DB4 placement the handler recorded, in codes;
+   *  - `dead` → `dead`;
+   *  - no row → `unknown`: the platform never had it.
+   *
+   * CODES AND IDS ONLY, read from `outcome.db4` exactly as `status` would —
+   * never the stored envelope.
+   */
+  async outcomesForHost(practiceId: string, sourceSha256s: readonly string[]): Promise<AobPrinterJobOutcome[]> {
+    if (sourceSha256s.length === 0) return [];
+    const asked = sourceSha256s.map((s) => s.toLowerCase());
+    const rows = await this.prisma.withPractice(practiceId, (tx) =>
+      tx.inboundPrintJob.findMany({
+        where: { sourceSha256: { in: [...new Set(asked)] } },
+        select: { sourceSha256: true, documentType: true, state: true, outcome: true },
+      }),
+    );
+    // One print is one job; should a hash ever have two document types, the DB4 answers.
+    const bySha = new Map<string, (typeof rows)[number]>();
+    for (const row of rows) {
+      const held = bySha.get(row.sourceSha256);
+      if (!held || row.documentType === 'db4_assignment') bySha.set(row.sourceSha256, row);
+    }
+    return asked.map((sourceSha256) => {
+      const row = bySha.get(sourceSha256);
+      const state: AobPrinterJobState = !row
+        ? 'unknown'
+        : row.state === 'done'
+          ? 'done'
+          : row.state === 'dead'
+            ? 'dead'
+            : 'waiting';
+      const db4 =
+        state === 'done'
+          ? ((row?.outcome as { db4?: { placed?: boolean; reason?: string | null; agreementId?: string | null } } | null)
+              ?.db4 ?? null)
+          : null;
+      return {
+        sourceSha256,
+        state,
+        placed: typeof db4?.placed === 'boolean' ? db4.placed : null,
+        reason: (db4?.reason ?? null) as Db4PlacementReason | null,
+        agreementId: db4?.agreementId ?? null,
+      };
     });
   }
 

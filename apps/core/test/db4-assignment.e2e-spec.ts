@@ -756,17 +756,24 @@ describe('the DB4 print record (e2e, real Postgres)', () => {
        * "the one agreement this form made", not "whatever is still pointing at
        * the first spool of it".
        *
-       * THROUGH THE SERVICE RECORD, as the Signed-DB4 block below does. By now
-       * the rules refusal above has made a second `episodic_post` for this
-       * patient, so a `findFirst` on patient and type returned whichever row
-       * the planner chose and failed five tests at random. `pmsInvoiceKey` is
-       * the form's own idempotency key; no reprint or supersession moves it.
+       * AND NARROWED TO THAT ONE. By the end of this block the patient has
+       * THREE `episodic_post` agreements: the rules refusal above leaves an
+       * unlocked one with no print job, and the carer test below supersedes
+       * this one with a draft carrying the same print job. A bare `findFirst`
+       * returned whichever one Postgres's heap order put first (10 October 2026:
+       * five of these failed when it picked the refusal). Made from a print,
+       * and not a restatement of another agreement, is this form's own
+       * agreement and nothing else.
+       *
+       * NOT THROUGH THE SERVICE RECORD, as the Signed-DB4 block finds it: the
+       * record follows the carer's supersession, and the hard-rule-13 test
+       * below would then compare a draft's null hash and null lock with
+       * themselves instead of a real hash and a real lock.
        */
-      const record = await prisma.withPractice(practiceId, (tx) =>
-        tx.serviceRecord.findFirst({ where: { pmsInvoiceKey: IDEMPOTENCY_KEY } }),
-      );
       const agreement = await prisma.withPractice(practiceId, (tx) =>
-        tx.agreement.findFirst({ where: { id: record!.agreementId!, type: 'episodic_post', patientId } }),
+        tx.agreement.findFirst({
+          where: { type: 'episodic_post', patientId, sourcePrintJobId: { not: null }, supersedesAgreementId: null },
+        }),
       );
       return {
         agreement: agreement!,
@@ -1461,12 +1468,11 @@ describe('the DB4 print record (e2e, real Postgres)', () => {
       const reprint = db4Outcome(job).db4.reprint;
       expect(reprint?.action).toBe('supersede');
       // TYPES, NEVER VALUES (hard rule 9) — no item number in the answer.
+      // `supersededBy` is left out of the scan: it is a random UUID, which
+      // contains "36" about one run in ten, and it is proved below to be the
+      // replacement's id and nothing else.
       expect(reprint?.changed).toEqual(['service_items']);
-      // UUIDS OUT FIRST. `reprint` carries the replacement's id, and a random
-      // UUID contains "36" about one run in ten; the item number must still
-      // appear nowhere else in the answer.
-      const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
-      expect(JSON.stringify(reprint).replace(UUID, '<id>')).not.toContain('36');
+      expect(JSON.stringify({ ...reprint, supersededBy: undefined })).not.toContain('36');
 
       // A REPLACEMENT, and it points at the CORRECTED page — not the stale
       // one every other supersession carries forward.

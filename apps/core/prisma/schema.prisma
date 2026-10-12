@@ -74,6 +74,17 @@ model Practice {
    */
   kioskIdleTimeoutSeconds   Int      @default(300)
   /**
+   * HOW MANY PRACTICE-LOCAL DAYS AN UNSIGNED AGREEMENT WAITS, WITH NO SERVICE
+   * RECORDED FOR ITS VISIT, BEFORE THE SWEEP CLOSES IT (D-2026-10-10-09,
+   * option 3; Carl: "N is 7 days - make N a configurable setting").
+   * NULL MEANS "THE VERSIONED DEFAULT" (`content/unsigned-draft-closure.json`),
+   * deliberately unlike `kioskIdleTimeoutSeconds`: a practice that never chose
+   * follows the content, so a change to the default reaches it, and every
+   * closure records which N it applied and where that came from. Bounded by
+   * the content's `minDays`..`maxDays` in the DTO and by a CHECK.
+   */
+  unsignedDraftClosureDays  Int?
+  /**
    * WHICH AGREEMENT THE PRE-STEP OFFERS FIRST (Carl, 4 Sep 2026; GA-PLAN B6).
    * For a GP practice the strongest answer at the desk is an ONGOING
    * agreement: sign once and there is nothing post-service ever, because the
@@ -154,6 +165,17 @@ model Practice {
   /// by decision. A practice that answers something else is a conversation,
   /// not a string.
   documentFolderKey         String?
+  /// THE ZONE THIS PRACTICE'S DAY IS MEASURED IN (D-2026-10-10-03). An IANA
+  /// name, never an offset (D-2026-09-12-17). Every desk day boundary —
+  /// the tablet's waiting list, "Unsigned from earlier days", covered today —
+  /// turns at midnight in this zone, read through `practiceDayOf` /
+  /// `startOfPracticeDay` in the domain.
+  ///
+  /// NOT NULL, DEFAULT `Australia/Sydney`: "no zone" must never mean UTC, which
+  /// is the defect this column replaces. The CHECK copies
+  /// `packages/domain/content/practice-timezones.json`; the DTO reads the same
+  /// list through `PRACTICE_TIMEZONE_KEYS`.
+  timezone                  String   @default("Australia/Sydney")
   createdAt                 DateTime @default(now())
 
   /// THE PRACTICE HALF OF EVERY ACCOUNT NAME (PRACTICE-SCOPED-LOGIN.md §3b/§5;
@@ -1497,8 +1519,25 @@ model Agreement {
    */
   signedDb4RenderPayload   Json?
   signedDb4RenderedAt      DateTime?   @db.Timestamptz(3)
+  /**
+   * CLOSED AS NOT NEEDED (D-2026-10-10-09, option 3) -- set only by the
+   * closure sweep, together, in the transaction that moves the status to
+   * `expired`. The reason code (`UNSIGNED_DRAFT_CLOSURE_REASONS`), when, the
+   * content version and the N applied, and whether N was the practice's own
+   * (`practice`) or the default (`content_default`). All NULL on every
+   * agreement nobody closed, and the database insists on all-or-none.
+   */
+  closedReason             String?
+  closedAt                 DateTime?   @db.Timestamptz(3)
+  closureRuleVersion       String?
+  closureDays              Int?
+  closureDaysSource        String?
   createdAt               DateTime     @default(now())
   updatedAt               DateTime     @updatedAt
+
+  /// THE VISIT'S SERVICE THIS UNSIGNED PRE-AGREEMENT WAS ASSOCIATED WITH, if
+  /// any (D-2026-10-10-09, option (b)). Never `service_records.agreementId`.
+  serviceAssociation      PreAgreementAssociation?
 
   @@index([practiceId])
   @@index([patientId])
@@ -1908,12 +1947,54 @@ model ServiceRecord {
   chaseStartedAt          DateTime?
 
   decisions ReconciliationDecision[]
+  /// The unsigned pre-agreement associated with this service, if any (D-2026-10-10-09).
+  preAgreementAssociation PreAgreementAssociation?
 
   @@unique([practiceId, pmsInvoiceKey])
   @@index([practiceId])
   @@index([serviceDate])
   @@index([practiceId, serviceRenderedAt])
   @@map("service_records")
+}
+
+/**
+ * AN UNSIGNED PRE-AGREEMENT, ASSOCIATED WITH THE SERVICE ITS VISIT BECAME
+ * (D-2026-10-10-09; Carl, 10 Oct 2026: option (b), "associate, do not link").
+ *
+ * WHY NOT `service_records.agreementId`. That column is the agreement a claim
+ * is reconciled against, and the post-service cascade reads a non-null value
+ * as "already covered". An `episodic_pre` nobody signed before the service
+ * assigns nothing, so linking it there would stop the post-service agreement
+ * being drafted and chased. This row says only: this unsigned draft was for
+ * the visit this service record records.
+ *
+ * WHY A TABLE AND NOT A COLUMN ON `agreements`. The association has facts of
+ * its own -- how it was made (`automatic` or `chosen`), who chose, how many
+ * drafts matched -- that are not particulars of a contract and do not belong
+ * on the row the HARD-01/HARD-02 triggers guard. And both sides are unique:
+ * one service per draft and one draft per service, which two UNIQUE indexes
+ * say and a column could only say for one side.
+ *
+ * Practice-scoped by RLS, FORCEd, like its neighbours. The vault event
+ * `agreement.service_associated` is written in the same transaction.
+ */
+model PreAgreementAssociation {
+  id                      String        @id @default(uuid()) @db.Uuid
+  practiceId              String        @db.Uuid
+  agreementId             String        @unique @db.Uuid
+  agreement               Agreement     @relation(fields: [agreementId], references: [id], onDelete: Restrict)
+  serviceRecordId         String        @unique @db.Uuid
+  serviceRecord           ServiceRecord @relation(fields: [serviceRecordId], references: [id], onDelete: Restrict)
+  /// `automatic` | `chosen` (PRE_AGREEMENT_ASSOCIATION_HOW in the domain).
+  how                     String
+  /// How many unsigned drafts matched when it was made. 1 for `automatic`.
+  candidateCount          Int
+  /// The person who chose, by token subject; NULL for `automatic`, and the database insists.
+  associatedByPrincipalId String?
+  createdAt               DateTime      @default(now()) @db.Timestamptz(3)
+
+  @@index([practiceId])
+  @@map("pre_agreement_associations")
 }
 
 /**
@@ -3463,4 +3544,82 @@ model VisitState {
   @@index([practiceId, arrivalId, setAt])
   @@index([practiceId, setAt])
   @@map("visit_states")
+}
+
+/// THE AOBPRINTER HOST, AS THE PLATFORM LAST HEARD FROM IT (PRINTER-HEARTBEAT.md
+/// §3, D-2026-10-10-02). One row per audit chain a practice's host has
+/// reported — the chain id is the hash of the host's audit event seq 1 — so a
+/// rewritten log or a second host is a second row, never an overwrite of the
+/// first.
+///
+/// COUNTS, HASHES, CODES, VERSIONS AND TIMES. No name, no chart number, no
+/// form reference, no path (hard rule 9). The JSON columns hold the
+/// heartbeat's own whitelisted shapes, with the patient id resolved on the
+/// server for a return's exception or filed-but-unconfirmed row.
+///
+/// TELEMETRY, NOT EVIDENCE — except where it says otherwise. A beat updates
+/// this row in place, and that is deliberate: the evidence about the chain
+/// goes to the vault through the outbox in the same transaction
+/// (`aobprinter.chain_anchored` hourly, `aobprinter.chain_regressed` on the
+/// transition, `aobprinter.chain_rebaselined` on the operator's act), so a
+/// DBA editing this row cannot rewrite what the vault holds.
+model AobPrinterHost {
+  id         String @id @default(uuid()) @db.Uuid
+  practiceId String @db.Uuid
+  /// The hash of the host's audit event seq 1.
+  chainId    String
+
+  /// By the server's clock: when the last beat arrived.
+  lastSeenAt       DateTime
+  /// The host's clock when it sent that beat. Skew is `hostSentAt - lastSeenAt`.
+  hostSentAt       DateTime
+  intervalMs       Int
+  printerVersion   String
+  templateVersion  String
+  schemaVersion    Int
+  runtimeVersion   String
+  startedAt        DateTime
+  collecting       Boolean
+  retentionEnabled Boolean
+  queueCount       Int
+
+  counts           Json
+  openExceptions   Json
+  filedUnconfirmed Json
+  localCheck       Json
+
+  /// 32-bit: 2.1 billion events per host (decision 15).
+  headSeq          Int
+  headHash         String?
+  /// When `headSeq` last moved forward. The hourly vault anchor needs it to have moved.
+  headAdvancedAt   DateTime?
+  anchorSeq        Int
+  anchorHash       String?
+  /// When a beat last answered the anchor correctly.
+  anchorVerifiedAt DateTime?
+  /// When `aobprinter.chain_anchored` last went to the vault (at most hourly).
+  vaultAnchoredAt  DateTime?
+  /// unverified | consistent | regressed — `AOBPRINTER_CHAIN_STATUSES` (domain); the CHECK copies it.
+  chainStatus      String
+
+  /// One of `AOBPRINTER_CHAIN_REGRESSIONS` (domain); set exactly when `chainStatus` is `regressed`.
+  regressionKind   String?
+  regressionAt     DateTime?
+  /// `{ expected: {seq, hash}, received: {seq, hash} }` — seqs and hashes only.
+  regressionDetail Json?
+  rebaselinedAt    DateTime?
+  /// A principal id from the token, never a name.
+  rebaselinedBy    String?
+  /// Set when an operator re-baselined ANOTHER chain's `chain_replaced`
+  /// regression, accepting that chain as the practice's. Rule 1 ignores a
+  /// retired chain; re-baselining alone retires nothing (it accepts a head).
+  retiredAt        DateTime?
+  /// The operator who re-baselined the replacement: a principal id, never a name.
+  retiredBy        String?
+
+  createdAt DateTime @default(now())
+
+  @@unique([practiceId, chainId])
+  @@index([practiceId, lastSeenAt])
+  @@map("aobprinter_hosts")
 }

@@ -46,7 +46,8 @@ import {
   UserSquare,
   UserRound,
   Send,
- FileText,} from 'lucide-react';
+ FileText,
+  Printer,} from 'lucide-react';
 import { audiencesOf, mayReach, profileAllows, type Audience, type CardState, type DeviceRow } from '@aobplatform/domain';
 import { Chip, Notice, Shell, ui, type Tone } from '../../ui';
 import { useRefreshable } from '../../refresh';
@@ -624,6 +625,36 @@ export function SetupHub({
             </Link>
           )}
         </section>
+
+        {/*
+          THE AOBPRINTER HOST (PRINTER-HEARTBEAT.md §4, D-2026-10-10-02). The
+          program on the practice's computer that carries DB4s to AoB and the
+          signed ones back. An administrator's card on the `db4` surface: the
+          same `canOpen` the page applies, so the card and the page cannot
+          disagree about who may open it. No fetch here — the page itself says
+          whether the host is reporting, and a second, staler copy of that on
+          the hub would be a second place for it to be wrong.
+        */}
+        {canOpen('/practice/aobprinter-host') && (
+          <section className={styles.card} aria-label={strings.aobprinterHost.title} data-testid="card-aobprinter-host">
+            <div className={styles.cardHead}>
+              <span className={styles.cardIcon}>
+                <Printer size={16} aria-hidden="true" />
+              </span>
+              <h2 className={styles.cardTitle}>{strings.aobprinterHost.title}</h2>
+            </div>
+            <p className={ui.hint}>{strings.aobprinterHost.hubBody}</p>
+            <Link
+              href={viewOnly ? toViewPath('/practice/aobprinter-host', practiceId) : '/practice/aobprinter-host'}
+              className={styles.cardLink}
+              data-testid="hub-to-aobprinter-host"
+            >
+              <Printer size={14} aria-hidden="true" />
+              {strings.aobprinterHost.hubOpen}
+              <ArrowRight size={14} aria-hidden="true" />
+            </Link>
+          </section>
+        )}
 
         {/*
           THE AGREEMENT DOCUMENT (W1, 5 Sep 2026; Carl, 7 Sep: "is
