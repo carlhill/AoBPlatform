@@ -25,6 +25,8 @@ const REVIEWER_PRINCIPAL = {
   sub: '00000000-0000-4000-8000-00000000ab01',
   principalType: 'staff',
   roles: ['platform_admin'],
+  // A passkey session: core refuses an operator whose token names no method (D-2026-10-11-02).
+  amr: ['hwk'],
   preferredUsername: 'robin.reviewer',
   raw: {},
 };

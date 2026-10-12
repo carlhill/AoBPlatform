@@ -47,6 +47,19 @@ const passingRules = {
 const D6A = 'General practitioner attendance';
 const today = () => new Date().toISOString().slice(0, 10);
 
+/**
+ * Generated ids and hashes out, so "the card number is not in the answer"
+ * means what it says. A random UUID or a SHA-256 contains "2999" now and then
+ * (a run on 12 Oct 2026 failed on agreement id `9bc29998-…`), and an
+ * assertion a re-run can flip is worse than no assertion (wow.md §2 item 6).
+ * The card number is neither shape, so a leak in any spacing still fails.
+ */
+function withoutIdsAndHashes(said: string): string {
+  return said
+    .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, '<id>')
+    .replace(/\b[0-9a-f]{64}\b/gi, '<sha256>');
+}
+
 const RECEPTIONIST = {
   sub: '00000000-0000-4000-8000-0000000p0501',
   principalType: 'staff',
@@ -642,7 +655,7 @@ describe('the post-service second push (e2e, real Postgres)', () => {
      */
     expect(refused.text).not.toContain('Postvisit');
     expect(refused.text).not.toContain('POST-PRINTED');
-    expect(refused.text).not.toContain('2999');
+    expect(withoutIdsAndHashes(refused.text)).not.toContain('2999');
     expect(refused.text).not.toContain(gpProviderNumber);
     // HARD RULE 4 — no amount in the refusal either, in any direction.
     expect(refused.text).not.toMatch(/\d+\.\d{2}/);
@@ -702,7 +715,7 @@ describe('the post-service second push (e2e, real Postgres)', () => {
     expect(refused.body.checks).toEqual(['print_record_irn_missing']);
     // HARD RULE 9 — a field is named, never a value. The card number that WAS
     // read must not travel in the refusal that says its IRN did not.
-    expect(refused.text).not.toContain('2999');
+    expect(withoutIdsAndHashes(refused.text)).not.toContain('2999');
     expect(refused.text).not.toContain('Postvisit');
 
     // HARD RULE 8 — a screen was stopped, not a patient. Nothing moved.
@@ -788,7 +801,7 @@ describe('the post-service second push (e2e, real Postgres)', () => {
     expect(blocked.printRecord?.print.sourceSha256).toHaveLength(64);
 
     // HARD RULE 9 — the list names fields, never values off the form.
-    expect(list.text).not.toContain('2999');
+    expect(withoutIdsAndHashes(list.text)).not.toContain('2999');
     // HARD RULE 4 — and no amount reaches the desk list in any direction.
     expect(JSON.stringify(blocked.printRecord)).not.toMatch(/\d+\.\d{2}/);
 

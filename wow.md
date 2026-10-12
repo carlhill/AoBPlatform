@@ -472,6 +472,56 @@ the collision back. The id goes on the database instead.
 **What would reopen it.** A run that needs data shared with another run, or a
 clone that becomes slow enough to matter.
 
+## 17. Merge what is finished, before building more on top of it (Carl, 12 Oct 2026)
+
+**What happened.** On 12 October a whole day went on closing work that was
+already done. About twenty branches had been built over 10 and 11 October as a
+stack, each on the one before, and left open. Every time something reached
+`main` (the checkpoint merge 26ca60c, then #17 and #19) each branch behind it
+had to merge `main` again, rebuild and retest. `DECISIONS.md`, `INVENTORY.md`
+and `TODO.md` change in nearly every PR, so every one of those merges
+conflicted; #22 conflicted in `DECISIONS.md` three times in one day, each time
+over two new entries that only needed keeping. Two sessions were merging the
+same PR at once, a half-finished merge sat in the main checkout, and
+`dev/tablet-test` ran as a second trunk beside `main`. Each re-merge also
+paid the worktree setup cost (§15), and a stale Prisma client gave false test
+failures twice. The throwaway Playwright stack was rebuilt from the
+transcript, because its seed scripts had been deleted after the last run.
+Carl asked whether the way of working wasted the time. It did: we built
+faster than we merged, so the gap compounded.
+
+**The rule.**
+- **A PR that is green is merged that day.** Finished work does not wait
+  behind work still in progress.
+- **Branch from `main`, never from another open branch.** If a change truly
+  needs one that is not merged yet, merge that one first. No stacks.
+- **One integration branch: `main`.** No second trunk; `dev/tablet-test` is a
+  working branch that fast-forwards to `main`, not a place PRs land.
+- **One session merges.** Agents open PRs; the orchestrating session merges
+  them, in order, re-checking each against the `main` the previous merge
+  produced. Before merging in a checkout, look for a merge in progress
+  (`.git/MERGE_HEAD`) and for another session's work.
+- **`DECISIONS.md` merges by union** (`.gitattributes`: `DECISIONS.md
+  merge=union`). It is append-only, so two branches adding entries keep both
+  without a conflict. Union keeps both sides of an edited line too, so after a
+  merge that touched an EXISTING entry, read it. `TODO.md` is edited in place
+  and is not union-merged.
+  Two limits found the same day: **git applies the rule only on a branch
+  whose own tree already has the `.gitattributes` line** (a branch cut before
+  it still conflicts, so resolve that once by hand), and **GitHub ignores it**,
+  so a PR can show CONFLICTING on `DECISIONS.md` while a local merge is clean.
+  The merging session merges `main` into the branch locally, pushes, and
+  merges once CI is green.
+- **`INVENTORY.md` conflicts are never hand-merged:** take either side and run
+  `npm run inventory`, then `npm run validate:inventory`.
+- **Read `wow.md` before writing an agent's brief,** not only at the start of
+  a session. On 12 October a brief told agents to make test databases by hand,
+  which §16 had retired the day before.
+
+**What would reopen it.** A change too large to land in one PR that cannot
+be split behind a feature flag. Then stack at most one deep and merge
+bottom-up the same day each piece goes green.
+
 ## Change log
 | Date | Change |
 |---|---|
@@ -489,3 +539,4 @@ clone that becomes slow enough to matter.
 | 28 Sep 2026 | §14: a test file in a workspace with no `test` script has never run — `packages/contracts` gained a vitest script and its six tests ran for the first time; and "not recognized" means a missing bin shim (`npm rebuild jest`), not a broken runner. |
 | 10 Oct 2026 | §15: a worktree inside the repo resolves the repo's `node_modules` until its own `npm ci` has run. Written after a worktree's `prisma generate` overwrote the main checkout's Prisma client with another branch's schema and failed 22 heartbeat tests. |
 | 11 Oct 2026 | §16: every e2e run clones its own database from `aobplatform_e2e_template` and drops it after. Written after two agents ran the DB4 e2e suite against the shared `aobplatform_test` at the same moment. |
+| 12 Oct 2026 | §17: merge what is finished before building on top of it. Green PRs merge the same day; branch from `main`, no stacks; one trunk; one session merges; `DECISIONS.md` merges by union; `INVENTORY.md` conflicts are regenerated; read `wow.md` before writing a brief. Written after a day spent re-merging some twenty stacked branches. |

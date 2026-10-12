@@ -1,0 +1,2 @@
+# DECISIONS.md is append-only: two branches adding entries keep both (wow.md §17).
+DECISIONS.md merge=union

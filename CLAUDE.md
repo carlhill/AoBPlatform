@@ -101,6 +101,8 @@ Regulatory whipsaw is the top project risk (the rules changed twice and reversed
 6. **Never commit secrets, `.env` files, logs or large generated files.**
 7. **`git log` / `git blame` before changing unfamiliar code.** The commit usually names a decision; `DECISIONS.md` says why.
 8. **PRs with `gh`:** summary, changes, tests run, risks. One concern per PR.
+9. **Merge a green PR the same day, and branch from `main`, never from an open branch.** No stacks, one trunk (`main`), and one session merges, re-checking each PR against the `main` the last merge produced (wow.md §17).
+10. **Merge conflicts in shared logs:** `DECISIONS.md` merges by union (`.gitattributes`), so read any EXISTING entry the merge touched; `INVENTORY.md` is regenerated with `npm run inventory`, never hand-merged.
 
 Rules 1, 4 and 6 are enforced by `.claude/hooks/git-commit-guard.mjs`, which runs before every `git commit`.
 
