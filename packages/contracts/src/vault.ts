@@ -983,6 +983,10 @@ export const VAULT_EVENT_TYPES = [
    * `telehealth.did_not_proceed` (practitioner) — fromState, consultationAt,
    * recordedAt.
    *
+   * `telehealth.consultation_held` (practitioner) — fromState, consultationAt,
+   * recordedAt. APPROVED by Carl, 12 Oct 2026 (D-2026-10-12-03 item 6): the
+   * provider recorded the consultation as complete after the patient agreed.
+   *
    * IDS, TYPES, CODES, COUNTS AND TIMES ONLY. Never the 6-digit code, a
    * contact, a name or the `other` note — only whether there was one
    * (hard rule 9, REQ-LOG-08).
@@ -995,6 +999,7 @@ export const VAULT_EVENT_TYPES = [
   'telehealth.consent_recorded',
   'telehealth.not_done',
   'telehealth.did_not_proceed',
+  'telehealth.consultation_held',
 ] as const;
 
 export type VaultEventType = (typeof VAULT_EVENT_TYPES)[number];

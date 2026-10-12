@@ -56,7 +56,7 @@ describe('the telehealth consent wording is versioned and neutral', () => {
 
   it('renders_the_statement_for_the_patient_and_for_a_carer', () => {
     expect(telehealthConsentStatement({ providerName: 'Dr Sample Chen', consenterIsPatient: true })).toBe(
-      'Yes, start my telehealth consultation with Dr Sample Chen',
+      'I want to start my telehealth consultation with Dr Sample Chen now.',
     );
     expect(
       telehealthConsentStatement({ providerName: 'Dr Sample Chen', consenterIsPatient: false, patientGivenNames: 'Testy' }),

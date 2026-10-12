@@ -31,13 +31,15 @@ import { useCallback, useEffect, useState } from 'react';
 import { ShieldCheck } from 'lucide-react';
 import { TELEHEALTH_CONTENT } from '@aobplatform/domain';
 import type { TelehealthLinkLanding, TelehealthPageView } from '@aobplatform/contracts';
-import { Button, Field, Notice, Shell, TextInput, ui } from '../../../ui';
+import { Button, Checkbox, Field, Notice, Shell, TextInput, ui } from '../../../ui';
 import { strings } from '../../../strings';
 import { useLiveRefresh } from '../../../useLiveRefresh';
 import styles from './telehealth.module.css';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
 const t = strings.telehealth.patient;
+/** Ahpra's public register search page, where anyone can look up a registration number. */
+const AHPRA_REGISTER_URL = 'https://www.ahpra.gov.au/Registration/Registers-of-Practitioners.aspx';
 /** From versioned content (hard rule 14), never a literal. */
 const DIGITS = TELEHEALTH_CONTENT.code.digits;
 
@@ -112,6 +114,8 @@ export function TelehealthPatientView({ token }: { token: string }) {
   const [pageKey, setPageKey] = useState<string | null>(null);
   const [page, setPage] = useState<TelehealthPageView | null>(null);
   const [agreeError, setAgreeError] = useState<string | null>(null);
+  /** The patient's own tick beside the statement; Start stays off until it is ticked. */
+  const [ticked, setTicked] = useState(false);
 
   useEffect(() => {
     void (async () => {
@@ -171,6 +175,7 @@ export function TelehealthPatientView({ token }: { token: string }) {
     if (!pageKey || !page) return;
     setBusy(true);
     setAgreeError(null);
+    let recorded = false;
     try {
       const res = await fetch(`${CORE_URL}/telehealth/page/agree`, {
         method: 'POST',
@@ -186,8 +191,11 @@ export function TelehealthPatientView({ token }: { token: string }) {
         return refuse(res.status, code);
       }
       setPage((await res.json()) as TelehealthPageView);
+      recorded = true;
     } finally {
       setBusy(false);
+      // Any way out but a recorded agreement takes the tick off again.
+      if (!recorded) setTicked(false);
     }
   };
 
@@ -215,6 +223,20 @@ export function TelehealthPatientView({ token }: { token: string }) {
 
   if (page) {
     const provider = page.providerName ?? '';
+    /*
+     * WHO THE PROVIDER IS, AND WHERE TO CHECK (Carl, D-2026-10-12-03 item 10):
+     * only when core says the registration was sighted and is current. The
+     * site is named in the text so a careful reader can type it themselves.
+     */
+    const ahpraLine = page.ahpraNumber ? (
+      <p data-testid="telehealth-ahpra">
+        {t.ahpraLine(provider, page.ahpraNumber)}{' '}
+        <a href={AHPRA_REGISTER_URL} target="_blank" rel="noopener noreferrer">
+          {t.ahpraSite}
+        </a>
+        .
+      </p>
+    ) : null;
     return (
       <Shell title={t.title}>
         {practiceLine(page.practiceName)}
@@ -223,25 +245,49 @@ export function TelehealthPatientView({ token }: { token: string }) {
             <h2 id="telehealth-with" className={styles.heading}>
               {t.withProvider(provider)}
             </h2>
+            {ahpraLine}
             {agreeError && <Notice tone="warn">{agreeError}</Notice>}
-            {/* The Button's own class is fixed, so the size lives on a wrapper. */}
-            <div className={styles.big}>
-              <Button variant="primary" onClick={() => void agree()} disabled={busy} data-testid="telehealth-agree">
-                {busy ? t.sending : page.statement}
-              </Button>
+            {/*
+             * ONE STEP: THE TICK IS THE AGREEMENT (Carl, 12 Oct 2026). The
+             * statement is the tick box's label, from the versioned content;
+             * ticking it sends it, and the page turns into the green "has
+             * started" box. If the send fails the tick comes off again, so the
+             * box never shows agreement that was not recorded.
+             */}
+            <div className={styles.tick}>
+              <Checkbox
+                label={page.statement}
+                checked={ticked}
+                disabled={busy}
+                onCheckedChange={(on) => {
+                  if (!on || busy) return;
+                  setTicked(true);
+                  void agree();
+                }}
+                testId="telehealth-tick"
+              />
             </div>
+            {busy && <p aria-live="polite">{t.sending}</p>}
           </section>
         )}
         {page.state === 'agreed' && (
-          <section className={styles.card} data-testid="telehealth-waiting" aria-live="polite">
-            <h2 className={styles.heading}>{t.waitingTitle(provider)}</h2>
+          <section className={`${styles.card} ${styles.started}`} data-testid="telehealth-waiting" aria-live="polite">
+            <h2 className={styles.heading}>{t.started}</h2>
             <p>{t.waitingBody}</p>
+            {ahpraLine}
           </section>
         )}
         {page.state === 'not_done' && (
           <Notice tone="ok" title={t.notDoneTitle} data-testid="telehealth-not-done">
             {t.notDoneBody}
           </Notice>
+        )}
+        {page.state === 'went_ahead' && (
+          <section className={`${styles.card} ${styles.started}`} data-testid="telehealth-complete" aria-live="polite">
+            <h2 className={styles.heading}>{t.completeTitle}</h2>
+            <p>{t.completeBody}</p>
+            {ahpraLine}
+          </section>
         )}
         {page.state === 'did_not_proceed' && (
           <Notice tone="warn" title={t.didNotProceedTitle} data-testid="telehealth-did-not-proceed">

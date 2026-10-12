@@ -9,7 +9,7 @@ import { strings } from '../../../strings';
 
 const TOKEN = 'cHJhY3RpY2U.secret-example';
 const PAGE_KEY = 'cHJhY3RpY2U.page-key-example';
-const STATEMENT = 'Yes, start my telehealth consultation with Dr Sample Chen';
+const STATEMENT = 'I want to start my telehealth consultation with Dr Sample Chen now.';
 const t = strings.telehealth.patient;
 
 type Reply = { status: number; body: unknown };
@@ -28,7 +28,7 @@ const page = (state: string) => ({
   practiceName: 'Sample Practice',
   providerName: 'Dr Sample Chen',
   statement: STATEMENT,
-  consentKey: 'telehealth_consult_v1',
+  consentKey: 'telehealth_consult_v2',
   contentVersion: 'telehealth-test',
   agreedAt: state === 'agreed' ? '2026-10-12T00:00:00.000Z' : null,
 });
@@ -68,17 +68,18 @@ describe('TelehealthPatientView', () => {
     expect(input.value).toBe('042917');
     fireEvent.click(screen.getByTestId('telehealth-continue'));
 
-    // One statement, one button, from the server's content.
-    const button = await screen.findByTestId('telehealth-agree');
-    expect((button).textContent).toContain(STATEMENT);
-    fireEvent.click(button);
+    // ONE STEP: the statement is the tick box's label, from the server's content, and ticking it agrees. No button.
+    const tick = await screen.findByTestId('telehealth-tick');
+    expect(screen.getByText(STATEMENT)).toBeTruthy();
+    expect(screen.queryByTestId('telehealth-agree')).toBeNull();
+    fireEvent.click(tick);
 
-    expect((await screen.findByTestId('telehealth-waiting')).textContent).toContain(t.waitingTitle('Dr Sample Chen'));
+    expect((await screen.findByTestId('telehealth-waiting')).textContent).toContain(t.started);
 
     const codeCall = fetchMock.mock.calls.find(([u]) => String(u).endsWith('/code'))!;
     expect(JSON.parse(String(codeCall[1]!.body))).toEqual({ code: '042917' });
     const agreeCall = fetchMock.mock.calls.find(([u]) => String(u).endsWith('/page/agree'))!;
-    expect(JSON.parse(String(agreeCall[1]!.body))).toEqual({ consentKey: 'telehealth_consult_v1' });
+    expect(JSON.parse(String(agreeCall[1]!.body))).toEqual({ consentKey: 'telehealth_consult_v2' });
   });
 
   it('telehealth_consent_wording_never_mentions_bulk_billing (on the page itself)', async () => {
@@ -90,7 +91,7 @@ describe('TelehealthPatientView', () => {
     render(<TelehealthPatientView token={TOKEN} />);
     fireEvent.change(await screen.findByLabelText(t.codeLabel), { target: { value: '123456' } });
     fireEvent.click(screen.getByTestId('telehealth-continue'));
-    await screen.findByTestId('telehealth-agree');
+    await screen.findByTestId('telehealth-tick');
     const words = document.body.textContent ?? '';
     expect(words).not.toMatch(/bulk[\s-]*bill|medicare|assign|benefit|\bdb4\b|approv/i);
   });
@@ -198,7 +199,7 @@ describe('TelehealthPatientView', () => {
     render(<TelehealthPatientView token={TOKEN} />);
     fireEvent.change(await screen.findByLabelText(t.codeLabel), { target: { value: '123456' } });
     fireEvent.click(screen.getByTestId('telehealth-continue'));
-    fireEvent.click(await screen.findByTestId('telehealth-agree'));
+    fireEvent.click(await screen.findByTestId('telehealth-tick'));
     expect((await screen.findByTestId('telehealth-not-done')).textContent).toContain(t.notDoneBody);
     expect(document.body.textContent ?? '').not.toContain(t.wordingChanged);
   });
@@ -230,7 +231,7 @@ describe('TelehealthPatientView', () => {
     render(<TelehealthPatientView token={TOKEN} />);
     fireEvent.change(await screen.findByLabelText(t.codeLabel), { target: { value: '123456' } });
     fireEvent.click(screen.getByTestId('telehealth-continue'));
-    fireEvent.click(await screen.findByTestId('telehealth-agree'));
+    fireEvent.click(await screen.findByTestId('telehealth-tick'));
     expect((await screen.findByTestId('telehealth-page-not-open')).textContent).toContain(t.pageNotOpenBody);
   });
 
@@ -244,7 +245,7 @@ describe('TelehealthPatientView', () => {
     render(<TelehealthPatientView token={TOKEN} />);
     fireEvent.change(await screen.findByLabelText(t.codeLabel), { target: { value: '123456' } });
     fireEvent.click(screen.getByTestId('telehealth-continue'));
-    await screen.findByTestId('telehealth-agree');
+    await screen.findByTestId('telehealth-tick');
     expect(setItem).not.toHaveBeenCalled();
     setItem.mockRestore();
   });

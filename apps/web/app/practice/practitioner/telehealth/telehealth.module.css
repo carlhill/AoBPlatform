@@ -1,0 +1,191 @@
+/* The telehealth panel: the steps on the left, the doctor's sessions in a side panel (Carl, D-2026-10-12-03). */
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(16rem, 22rem);
+  gap: var(--s6);
+  align-items: start;
+}
+
+@media (max-width: 960px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s5);
+  min-width: 0;
+}
+
+.aside {
+  position: sticky;
+  top: var(--s4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  padding: var(--s4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.aside h2 {
+  margin: 0;
+  font-size: var(--text-lg);
+}
+
+.sessions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.session {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  padding-bottom: var(--s3);
+  border-bottom: 1px solid var(--line);
+}
+
+.session:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.sessionActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+}
+
+/* The patient picker: the matches drop down under the search box. */
+
+.picker {
+  position: relative;
+  max-width: 40rem;
+}
+
+.searchRow {
+  display: flex;
+  gap: var(--s2);
+  align-items: flex-end;
+}
+
+.searchRow > :first-child {
+  flex: 1;
+}
+
+/* The shared Field carries a bottom margin; inside the row it would sit the box below the button's baseline. */
+.searchRow > * {
+  margin-bottom: 0;
+}
+
+/* Same height as the box beside it, whatever the shared button padding is. */
+.searchRow > button {
+  min-height: calc(var(--text-base) * 1.5 + 2 * var(--s2) + 2px);
+}
+
+.dropdown {
+  margin: var(--s1) 0 0;
+  padding: var(--s1) 0;
+  max-height: 20rem;
+  overflow-y: auto;
+  list-style: none;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: 0 6px 18px rgb(0 0 0 / 0.12);
+}
+
+.option {
+  display: flex;
+  width: 100%;
+  gap: var(--s3);
+  justify-content: space-between;
+  align-items: baseline;
+  padding: var(--s2) var(--s3);
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.option:hover,
+.option:focus-visible {
+  background: var(--surface-sunken);
+  outline: none;
+}
+
+.optionName {
+  font-weight: 600;
+}
+
+.optionMeta {
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+  white-space: nowrap;
+}
+
+.chosen {
+  /* The same width as the search box above it (Carl, 12 Oct 2026). */
+  max-width: 40rem;
+  box-sizing: border-box;
+  margin-top: var(--s2);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  align-items: center;
+  padding: var(--s3);
+  border: 1px solid var(--ok);
+  border-radius: var(--radius);
+  background: var(--ok-wash);
+}
+
+/* Step 2: each detail on the record beside its tick. */
+
+.checkRow {
+  display: grid;
+  grid-template-columns: minmax(12rem, 16rem) minmax(0, 1fr);
+  gap: var(--s3);
+  align-items: center;
+}
+
+.recordValue {
+  font-weight: 600;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.recordNone {
+  color: var(--ink-faint);
+  font-style: italic;
+}
+
+/* The code, large enough to read out without squinting. */
+
+.code {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: calc(var(--text-2xl) * 1.6);
+  font-weight: 700;
+  letter-spacing: 0.35em;
+  color: var(--ink);
+}
+
+/* The goes-ahead line and Start new telehealth consultation, on one row. */
+.newRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s3);
+  align-items: center;
+  justify-content: space-between;
+}

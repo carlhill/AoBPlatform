@@ -181,7 +181,7 @@ describe('telehealth sessions (e2e, real Postgres)', () => {
     const page = await request(app.getHttpServer()).get('/telehealth/page').set('x-telehealth-page-key', pageKey).expect(200);
     expect(page.body.state).toBe('code_checked');
     expect(page.body.providerName).toBe('Dr Sample Chen');
-    expect(page.body.statement).toBe('Yes, start my telehealth consultation with Dr Sample Chen');
+    expect(page.body.statement).toBe('I want to start my telehealth consultation with Dr Sample Chen now.');
     expect(page.body.statement).not.toMatch(TELEHEALTH_NEUTRAL_WORDING_FORBIDDEN);
 
     const listed = await telehealth.list(asPractitioner(gp.practitionerId), practiceId);

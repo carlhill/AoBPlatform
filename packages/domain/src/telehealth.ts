@@ -34,6 +34,8 @@ import { APPROVED_IDENTIFIER_TYPES, type ApprovedIdentifierType } from './identi
  * - `agreed`: they pressed the one button.
  * - `not_done`: the provider recorded the step as not done, with a reason, and
  *   the consultation went ahead (hard rule 8; §4).
+ * - `went_ahead`: after the patient agreed, the provider recorded the consultation as complete (Carl,
+ *   D-2026-10-12-03 item 6).
  * - `did_not_proceed`: the consultation did not happen (scenario C2, not yet
  *   ruled; the state exists so the model can hold it).
  *
@@ -43,7 +45,7 @@ import { APPROVED_IDENTIFIER_TYPES, type ApprovedIdentifierType } from './identi
  * adding them is a change to this list, `TELEHEALTH_SESSION_MOVES` and the
  * migration's CHECK, which is copied from here.
  */
-export const TELEHEALTH_SESSION_STATES = ['opened', 'code_checked', 'agreed', 'not_done', 'did_not_proceed'] as const;
+export const TELEHEALTH_SESSION_STATES = ['opened', 'code_checked', 'agreed', 'not_done', 'did_not_proceed', 'went_ahead'] as const;
 export type TelehealthSessionState = (typeof TELEHEALTH_SESSION_STATES)[number];
 
 /**
@@ -57,9 +59,10 @@ export type TelehealthSessionState = (typeof TELEHEALTH_SESSION_STATES)[number];
 export const TELEHEALTH_SESSION_MOVES: Readonly<Record<TelehealthSessionState, readonly TelehealthSessionState[]>> = {
   opened: ['code_checked', 'not_done', 'did_not_proceed'],
   code_checked: ['agreed', 'not_done', 'did_not_proceed'],
-  agreed: ['did_not_proceed'],
+  agreed: ['went_ahead', 'did_not_proceed'],
   not_done: [],
   did_not_proceed: [],
+  went_ahead: [],
 };
 
 export function isTelehealthSessionState(value: unknown): value is TelehealthSessionState {

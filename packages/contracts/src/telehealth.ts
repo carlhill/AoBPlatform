@@ -19,16 +19,37 @@
  */
 
 /** Mirrors `TELEHEALTH_SESSION_STATES` in `@aobplatform/domain`. */
-export type TelehealthSessionStateWire = 'opened' | 'code_checked' | 'agreed' | 'not_done' | 'did_not_proceed';
+export type TelehealthSessionStateWire = 'opened' | 'code_checked' | 'agreed' | 'not_done' | 'did_not_proceed' | 'went_ahead';
 
 /** Mirrors `TELEHEALTH_CHANNELS` in `@aobplatform/domain`. */
 export type TelehealthChannelWire = 'sms' | 'email' | 'both';
 
-/** The contact on the record, masked. A null means none is held for that transport. */
+/**
+ * The chosen patient's record as the doctor's panel shows it, IN FULL (Carl,
+ * D-2026-10-12-03 item 1), so the doctor can compare what the person on the
+ * call says. Shown, never stored: the session still records identifier TYPES
+ * only (hard rule 9). The masked forms remain for the channel choice. A null
+ * means the record holds no value for that field.
+ */
+export interface TelehealthPatientRecord {
+  readonly givenNames: string;
+  readonly familyName: string;
+  /** YYYY-MM-DD. */
+  readonly dateOfBirth: string;
+  readonly gender: string | null;
+  readonly address: string | null;
+  readonly patientRecordNumber: string | null;
+  readonly ihi: string | null;
+  readonly mobile: string | null;
+  readonly email: string | null;
+}
+
+/** The contact on the record. A null masked value means none is held for that transport. */
 export interface TelehealthMaskedContact {
   readonly patientId: string;
   readonly maskedMobile: string | null;
   readonly maskedEmail: string | null;
+  readonly record: TelehealthPatientRecord;
 }
 
 /** One session as the provider's panel sees it. */
@@ -101,6 +122,8 @@ export interface TelehealthPageView {
   readonly state: TelehealthSessionStateWire;
   readonly practiceName: string | null;
   readonly providerName: string | null;
+  /** The provider's Ahpra number, only when sighted and current; null shows no line (D-2026-10-12-03 item 10). */
+  readonly ahpraNumber: string | null;
   /** The one statement, from versioned content, as it will be recorded. */
   readonly statement: string;
   readonly consentKey: string;
@@ -120,6 +143,7 @@ export const TELEHEALTH_ROUTES = {
   markNotDone: 'POST /telehealth/sessions/:id/not-done',
   recordNotDone: 'POST /telehealth/not-done',
   markDidNotProceed: 'POST /telehealth/sessions/:id/did-not-proceed',
+  markWentAhead: 'POST /telehealth/sessions/:id/went-ahead',
   /** Patient page (public; the token or page key is the only credential). */
   landing: 'GET /telehealth/link/:token',
   enterCode: 'POST /telehealth/link/:token/code',

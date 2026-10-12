@@ -14,6 +14,78 @@ being decided.
 
 ---
 
+## The vault's immudb client: re-login on token expiry, and create its state folder (12 Oct 2026) - DO FRIDAY 16 OCT
+
+**Agreed by Carl, 12 Oct 2026: draft both for his review on Friday 16 Oct.**
+The vault is a human-authored zone (CLAUDE.md §7c), so the agent drafts and
+Carl reviews line by line.
+
+**What happened (dev, 12 Oct 2026).** The vault outbox backed up to 87 rows,
+every one failing with "Evidence Vault service returned 500":
+1. **The immudb session token expired** after about 44 hours of uptime
+   (`7 PERMISSION_DENIED: token has expired`). `ImmudbChainStore.init()` logs in
+   once and never again, so every append fails until the vault restarts.
+2. **After a restart, every write failed with ENOENT** on
+   `/workspace/.immudb-state/root`. `IMMUDB_STATE_PATH` (docker-compose.yml)
+   points into a folder nothing creates, and immudb-node's `State.commit`
+   writes the file without creating its folder.
+
+**Fixed for now by hand:** `docker exec aobplatform-vault mkdir -p /workspace/.immudb-state`
+and a vault restart; the outbox drained to 0. The folder is lost whenever the
+container is recreated, and the token will expire again.
+
+**To draft:**
+- `apps/vault/src/chain/immudb-chain-store.ts`: create the folder of
+  `statePath` in `init()` before `getInstance`; on a PERMISSION_DENIED /
+  token-expired error, log in again (and `useDatabase`) once and retry the
+  call once, inside the `appending` chain so appends stay serial.
+- Decide whether the state file should live on a named volume, so the client's
+  trusted root survives a container recreate (otherwise it re-trusts the
+  server's current root on first use).
+- A test for each: expired token re-logs in; missing folder is created.
+
+**Why deferred:** human-authored zone; Carl chose Friday.
+
+---
+
+## Size both telehealth pages for a mobile phone (12 Oct 2026)
+
+**Agreed by Carl, 12 Oct 2026.** The patient's page
+(`apps/web/app/patient/telehealth/[token]/`) is read on a phone DURING the call,
+and the doctor's panel (`apps/web/app/practice/practitioner/telehealth/`) may be
+used from a phone too. Check both at 375px and 320px wide, portrait and
+landscape, at 200% text zoom (WCAG 2.2 AA 1.4.4, 1.4.10 reflow, 2.5.8 target
+size): the code box and the big tick box on the patient page; on the doctor's
+panel the side panel stacking under the steps, the record-beside-tick rows
+(`.checkRow`, two columns today) stacking, the dropdown of matches, and the
+large code. Verify with the browser pane at the mobile preset, never by eye
+alone. Carl enlarged the patient page's text and tick box on 12 Oct; this is
+the full mobile pass.
+
+**Why deferred:** a full pass across both pages and zoom levels, after the
+telehealth register work.
+
+---
+
+## A retired telehealth link says the wrong thing (12 Oct 2026) - DO FRIDAY 16 OCT
+
+**Agreed by Carl, 12 Oct 2026.** Every "Send" / "Send a new link and code"
+replaces `telehealth_sessions.linkTokenHash`, so an older link's token is no
+longer known and its landing says "This link does not open anything. Check that
+the whole link was copied", which blames the patient for a copying mistake.
+Carl hit this testing with six emails to one patient.
+
+**To do:** keep the retired link hashes (as `retiredPageKeyHash` already does for
+the page; a small array or table, kept until the session closes) and answer a
+retired link with its own state, e.g. `replaced`: "A newer link was sent. Open
+the latest message from the practice." Keep "does not open anything" for a
+token that never existed. Strings in `strings.telehealth.patient`; a named test
+for each state. A migration if the hashes get their own column.
+
+**Why deferred:** Carl chose Friday.
+
+---
+
 ## Read credits and whole-dollar amounts as service rows? (11 Oct 2026) - D-2026-10-11-05
 
 **Open, Carl to decide.** AOBPRINTER now COUNTS the service lines its template

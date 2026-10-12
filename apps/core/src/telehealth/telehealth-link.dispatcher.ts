@@ -8,6 +8,8 @@ import type { EmailBlock } from '../messaging/template';
 
 /** The template the link message is rendered from (versioned content). */
 export const TELEHEALTH_LINK_TEMPLATE_KEY = 'telehealth_link_v1';
+/** Appended only when the provider's Ahpra registration was sighted and is current (D-2026-10-12-03 item 10). */
+export const TELEHEALTH_AHPRA_LINE_TEMPLATE_KEY = 'telehealth_ahpra_line_v1';
 
 /**
  * SENDS THE LINK TO THE ONE PAGE FOR A TELEHEALTH CONSULTATION
@@ -50,6 +52,8 @@ export class TelehealthLinkDispatcher {
       practiceId: string;
       practiceName: string;
       providerName: string;
+      /** The provider's Ahpra number, ONLY when sighted and current; null leaves the line out. */
+      ahpraNumber: string | null;
       sessionId: string;
       /** Which send of this session this is. Each is its own message, never a retry of the last. */
       sendNumber: number;
@@ -66,6 +70,12 @@ export class TelehealthLinkDispatcher {
       telehealthUrl: url,
       expiresOn: input.expiresOn,
     });
+    const ahpra = input.ahpraNumber
+      ? renderPatientMessage(TELEHEALTH_AHPRA_LINE_TEMPLATE_KEY, {
+          providerName: input.providerName,
+          ahpraNumber: input.ahpraNumber,
+        })
+      : null;
     const common = {
       practiceId: input.practiceId,
       subjectType: 'TelehealthSession',
@@ -89,11 +99,16 @@ export class TelehealthLinkDispatcher {
           ...common,
           channel: 'sms',
           destination: input.patient.mobile,
-          payload: { body: message.sms, templateKey: message.templateKey, templateVersion: message.templateVersion },
+          payload: {
+            body: ahpra?.sms ? `${message.sms} ${ahpra.sms}` : message.sms,
+            templateKey: message.templateKey,
+            templateVersion: message.templateVersion,
+          },
         });
       } else {
         const blocks: EmailBlock[] = [
           ...message.paragraphs.map((text) => ({ text })),
+          ...(ahpra?.paragraphs ?? []).map((text) => ({ text })),
           { button: { label: message.actionLabel ?? 'Open the page', url } },
           { url },
           ...message.smallPrint.map((small) => ({ small })),

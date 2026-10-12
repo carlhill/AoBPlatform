@@ -192,6 +192,17 @@ export class TelehealthController {
     return this.telehealth.markDidNotProceed(actor, practiceId, id, dto);
   }
 
+  /** Consultation complete, after the patient agreed (D-2026-10-12-03 item 6). Same body as did-not-proceed. */
+  @Post('sessions/:id/went-ahead')
+  wentAhead(
+    @Headers('x-practice-id') practiceId: string | undefined,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: DidNotProceedDto,
+    @SessionActor() actor: Actor | undefined,
+  ) {
+    return this.telehealth.markWentAhead(actor, practiceId, id, dto);
+  }
+
   /*
    * THE PATIENT'S PAGE — public, because the person holding the link has no
    * account and must never need one (REQ-PORT-08). The token, then the page

@@ -44,7 +44,7 @@ import { VerificationService } from '../verification/verification.service';
 import { PatientsService } from '../patients/patients.service';
 import { ReviewTasksService } from '../review-tasks/review-tasks.service';
 import { PractitionerQueueService } from '../practitioner-queue/practitioner-queue.service';
-import { anchorForAffiliation } from '../affiliations/agreement-anchor';
+import { telehealthProvider } from './telehealth-provider';
 import { mintCaptureToken, parseCaptureToken } from '../capture/capture-token';
 import type { Actor } from '../auth/actor.decorator';
 import { generateTelehealthCode, hashTelehealthCode, telehealthCodeMatches } from './telehealth-code';
@@ -167,7 +167,12 @@ export class TelehealthService {
     return this.patients.search(practiceId, term ?? '');
   }
 
-  /** The contact on the record, masked. The values never leave the server (D-2026-09-11-03). */
+  /**
+   * The chosen patient's record, IN FULL, for the doctor to compare on the
+   * call (Carl, D-2026-10-12-03 item 1), plus the masked contact for the
+   * channel choice. Only the practitioner on the call reaches this (`scope`),
+   * and nothing here is stored: the session records identifier types only.
+   */
   async contact(
     actor: Actor | undefined,
     headerPracticeId: string | undefined,
@@ -175,10 +180,40 @@ export class TelehealthService {
   ): Promise<TelehealthMaskedContact> {
     const { practiceId } = await this.scope(actor, headerPracticeId);
     const patient = await this.prisma.withPractice(practiceId, (tx) =>
-      tx.patient.findFirst({ where: { id: patientId }, select: { id: true, mobile: true, email: true } }),
+      tx.patient.findFirst({
+        where: { id: patientId },
+        select: {
+          id: true,
+          givenNames: true,
+          familyName: true,
+          dateOfBirth: true,
+          genderAsIdentified: true,
+          address: true,
+          patientRecordNumber: true,
+          ihi: true,
+          mobile: true,
+          email: true,
+        },
+      }),
     );
     if (!patient) throw new NotFoundException('That patient is not on this practice’s records.');
-    return { patientId: patient.id, maskedMobile: maskMobile(patient.mobile), maskedEmail: maskEmail(patient.email) };
+    return {
+      patientId: patient.id,
+      maskedMobile: maskMobile(patient.mobile),
+      maskedEmail: maskEmail(patient.email),
+      record: {
+        givenNames: patient.givenNames,
+        familyName: patient.familyName,
+        dateOfBirth: patient.dateOfBirth.toISOString().slice(0, 10),
+        gender: patient.genderAsIdentified,
+        address: patient.address,
+        patientRecordNumber: patient.patientRecordNumber,
+        ihi: patient.ihi,
+        // Only what would be sent to: a value the masker rejects is not a usable contact.
+        mobile: maskMobile(patient.mobile) ? patient.mobile : null,
+        email: maskEmail(patient.email) ? patient.email : null,
+      },
+    };
   }
 
   /** This practitioner's sessions from the last day, newest first — what the live status polls. */
@@ -475,6 +510,42 @@ export class TelehealthService {
     });
   }
 
+  /**
+   * CONSULTATION COMPLETE (Carl, 12 Oct 2026, D-2026-10-12-03 item 6): after
+   * the patient agreed, the provider records that the consultation was held.
+   * The write and its approved vault event `telehealth.consultation_held`
+   * commit together (hard rule 11).
+   */
+  async markWentAhead(
+    actor: Actor | undefined,
+    headerPracticeId: string | undefined,
+    sessionId: string,
+    input: { consultationAt?: string },
+  ): Promise<TelehealthSessionView> {
+    const { practiceId, practitionerId, actorId } = await this.scope(actor, headerPracticeId);
+    const consultationAt = this.consultationAtOf(input.consultationAt);
+    return this.prisma.withPractice(practiceId, async (tx) => {
+      const session = await this.ownSession(tx, sessionId, practitionerId);
+      this.assertMove(session.state, 'went_ahead');
+      const now = new Date();
+      const updated = await tx.telehealthSession.update({
+        where: { id: session.id },
+        data: {
+          state: 'went_ahead',
+          consultationAt,
+          outcomeRecordedAt: now,
+          outcomeRecordedById: actorId,
+        },
+      });
+      await this.record(tx, session.id, { principalType: 'practitioner', id: actorId }, {
+        type: 'telehealth.consultation_held',
+        payload: { fromState: session.state, consultationAt: consultationAt?.toISOString() ?? null, recordedAt: now.toISOString() },
+      });
+      const [view] = await this.views(tx, [updated]);
+      return view!;
+    });
+  }
+
   /* ---------------------------------------------------------------------
    * The patient's page (public: the link token, then the page key)
    * ------------------------------------------------------------------ */
@@ -698,11 +769,12 @@ export class TelehealthService {
     expiresAt: Date,
   ) {
     const practice = await tx.practice.findFirst({ select: { name: true } });
-    const anchor = await anchorForAffiliation(tx, session.affiliationId);
+    const provider = await telehealthProvider(tx, session.practitionerId);
     return this.dispatcher.send(tx, {
       practiceId,
       practiceName: practice?.name ?? 'Your practice',
-      providerName: anchor?.name ?? 'your practitioner',
+      providerName: provider?.name ?? 'your practitioner',
+      ahpraNumber: provider?.ahpraNumber ?? null,
       sessionId: session.id,
       sendNumber: session.linkSentCount,
       patient,
@@ -759,8 +831,8 @@ export class TelehealthService {
 
   private async pageView(tx: Prisma.TransactionClient, session: TelehealthSession): Promise<TelehealthPageView> {
     const practice = await tx.practice.findFirst({ select: { name: true } });
-    const anchor = await anchorForAffiliation(tx, session.affiliationId);
-    const providerName = anchor?.name ?? null;
+    const provider = await telehealthProvider(tx, session.practitionerId);
+    const providerName = provider?.name ?? null;
     const consenterIsPatient = session.consenterIsPatient ?? true;
     const patient = consenterIsPatient
       ? null
@@ -769,6 +841,7 @@ export class TelehealthService {
       state: session.state as TelehealthPageView['state'],
       practiceName: practice?.name ?? null,
       providerName,
+      ahpraNumber: provider?.ahpraNumber ?? null,
       statement: telehealthConsentStatement({
         providerName: providerName ?? 'your practitioner',
         consenterIsPatient,

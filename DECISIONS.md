@@ -4134,3 +4134,65 @@ approved as proposed:
 
 **What would reopen it:** Carl choosing different event names or payloads, or
 the Department's answer to G10 changing what the step before the call records.
+
+## D-2026-10-12-03 - DECIDED by Carl (12 Oct 2026): the telehealth panel shows the record in full, a "went ahead" outcome, a practice Telehealth register, and DB4 matching confirmed by reception
+
+**Date:** 12 October 2026. **Decided by:** Carl, after trying the panel end to end.
+
+1. **The doctor's panel shows the chosen patient's record in full** (name, date of
+   birth, gender, address, patient record number, mobile, email), so the doctor
+   can check it on the call. The wording tells the doctor to ASK the person to
+   say each detail and compare, never to read the record out: reading it to a
+   caller who has not yet been checked hands them the answers. Storage is
+   unchanged (hard rule 9: types and outcomes only, never values). This is the
+   practitioner's own console; D-2026-09-11-03 (masked contact on the TABLET)
+   is not reopened.
+2. **The code is shown in a larger font.**
+3. **Once a session is agreed, "Send a new link and code" is not offered.**
+   Revisit when the DB4 goes to the patient's page (TELEHEALTH-PLAN.md section 8
+   step 3): a patient whose page closed then needs a way back.
+4. **The patient search is a dropdown-style picker, and each hit shows the
+   patient record number,** because several records can share a name and date
+   of birth.
+5. **"In the last day" moves to a right-hand panel.**
+6. **APPROVED vault event type `telehealth.consultation_held`** (actor
+   practitioner; payload fromState, consultationAt, recordedAt: ids and times
+   only), and a session state `went_ahead`, written in the same transaction
+   (hard rule 11). The doctor records "went ahead" or "did not go ahead".
+7. **A practice Telehealth register page** listing every telehealth session,
+   with search. Who sees it: anyone holding the role that grants the Telehealth
+   register page, which reception and the practice manager hold; each doctor
+   sees their own sessions only.
+8. **DB4 matching:** the platform SUGGESTS the next DB4 printed for that patient
+   after the session was agreed (same doctor when the DB4 names one), and
+   reception CONFIRMS it; nothing is matched without a person. The manual route
+   is picking from that patient's unmatched DB4 print jobs, never typing a PMS
+   id. A matched DB4 is marked telehealth and is sent to the patient.
+
+9. **The patient's page: a tick box, then a green Start** (Carl, later the same
+   day: the blue button "does not look like it needs any action"). The
+   statement is now the tick box's label, reworded as content
+   `telehealth-2026-10-12-2`, key `telehealth_consult_v2`: "I want to start my
+   telehealth consultation with {providerName} now." (carer: "...for
+   {patientGivenNames} with {providerName} now."). **Amended the same evening:
+   ONE step.** Ticking the box records the agreement; there is no button. The
+   page then shows a green box, "Your telehealth consultation has started". A
+   failed save takes the tick off again. A page opened under v1 is told the
+   wording changed (existing `wording_changed` path). The doctor's patient
+   search has no Find button: matches come up as you type, and Enter still
+   searches.
+10. **How the provider is named to the patient** (email and patient page):
+   "Dr" only when the registration's profession is Medical Practitioner; a
+   title typed into the given names is dropped. The provider's **Ahpra
+   number** and the public register (named as www.ahpra.gov.au, and linked on
+   the page) are shown only when the registration was sighted and its status
+   is Registered; template `telehealth_ahpra_line_v1`, content
+   `patient-messages-2026-10-12-2`. Never the Medicare provider number. The
+   number says who the provider is; the code read out on the call is what
+   shows the message is genuine. The DB4 agreement anchor is untouched.
+
+**Status:** items 1-5 and 9 build now (display and content only). Items 6-8 build in a fresh
+session from the brief `TELEHEALTH-REGISTER-BRIEF.md`.
+
+**What would reopen it:** a privacy review objecting to full contact on the
+console; the Department's answer to G10.
