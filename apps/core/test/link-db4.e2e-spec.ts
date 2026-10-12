@@ -10,6 +10,7 @@ import { PrismaService } from '../src/prisma/prisma.service';
 import { MESSAGING_GATEWAY, type MessagingGateway } from '../src/messaging/gateway';
 import { RULES_CLIENT } from '../src/rules-client/rules-client.module';
 import { InboundLaneWorkerService } from '../src/inbound/inbound-lane.worker';
+import { CaptureLinkDispatcher } from '../src/auto-capture/capture-link.dispatcher';
 import { createServicingProvider, deleteSeededAnchors } from './anchor';
 
 /**
@@ -63,6 +64,38 @@ const LOCKED_PATIENT = {
   address: '24 Example Street, Sampletown NSW 2000',
   mobile: '+61400000791',
 };
+
+/** A third patient, for the general (non-DB4) agreements: email AND mobile on file. */
+const GENERAL_PATIENT = {
+  familyName: 'Fakename',
+  givenNames: 'General',
+  dob: '1955-05-05',
+  address: '26 Example Street, Sampletown NSW 2000',
+  email: 'general.fakename@example.invalid',
+  mobile: '+61400000792',
+};
+
+const DRAWN = {
+  vector: [{ points: [{ x: 10, y: 40, t: 0 }, { x: 60, y: 80, t: 22, p: 0.35 }] }],
+  rasterPngBase64: TINY_PNG,
+  padWidth: 600,
+  padHeight: 200,
+};
+
+const statedFor = (who: { familyName: string; givenNames: string; dob: string; address: string }) => ({
+  name: `${who.familyName} ${who.givenNames}`,
+  date_of_birth: who.dob,
+  address: who.address,
+});
+
+const WRONG = { name: 'Wrong Person', date_of_birth: '1900-01-01', address: 'Nowhere' };
+
+/** The link, as the PATIENT receives it: out of the queued message, never out of an API response. */
+function tokenFromMessage(payload: unknown): string {
+  const match = /\/patient\/agree\/([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)/.exec(JSON.stringify(payload));
+  if (!match) throw new Error('The queued message carries no link.');
+  return match[1];
+}
 
 const passingRules = {
   validate: async (): Promise<ValidationResponse> => ({
@@ -130,6 +163,11 @@ describe('the link page shows the DB4 sheets (e2e, real Postgres)', () => {
   let prisma: PrismaService;
   let worker: InboundLaneWorkerService;
   const practiceId = randomUUID();
+  const otherPracticeId = randomUUID();
+  let affiliationId: string;
+  let providerId: string;
+  let generalPatientId: string;
+  let assignorId: string;
 
   let agreementId: string;
   let serviceRecordId: string;
@@ -159,6 +197,8 @@ describe('the link page shows the DB4 sheets (e2e, real Postgres)', () => {
         providerType: 'general_practitioner',
         providerNumber: SERVICING_NUMBER,
       });
+      affiliationId = servicing.affiliationId;
+      providerId = servicing.providerId;
       await createServicingProvider(tx, practiceId, {
         name: 'Dr Fake Payee',
         providerType: 'general_practitioner',
@@ -187,12 +227,33 @@ describe('the link page shows the DB4 sheets (e2e, real Postgres)', () => {
           mobile: LOCKED_PATIENT.mobile,
         },
       });
+      generalPatientId = (
+        await tx.patient.create({
+          data: {
+            practiceId,
+            familyName: GENERAL_PATIENT.familyName,
+            givenNames: GENERAL_PATIENT.givenNames,
+            dateOfBirth: new Date(GENERAL_PATIENT.dob),
+            address: GENERAL_PATIENT.address,
+            email: GENERAL_PATIENT.email,
+            mobile: GENERAL_PATIENT.mobile,
+          },
+        })
+      ).id;
+      assignorId = (
+        await tx.assignor.create({ data: { practiceId, name: 'General Fakename', authorityBasis: 'self' } })
+      ).id;
     });
+    await prisma.withPractice(otherPracticeId, (tx) =>
+      tx.practice.create({ data: { id: otherPracticeId, name: 'A Different Practice' } }),
+    );
   });
 
   afterAll(async () => {
+    await prisma.withPractice(otherPracticeId, (tx) => tx.practice.deleteMany({}));
     await prisma.withPractice(practiceId, async (tx) => {
       await tx.inboundPrintJob.deleteMany({});
+      await tx.correspondence.deleteMany({});
       await tx.outboundItem.deleteMany({});
       await tx.captureRequest.deleteMany({});
       await tx.verificationChallenge.deleteMany({});
@@ -229,14 +290,62 @@ describe('the link page shows the DB4 sheets (e2e, real Postgres)', () => {
     return record!;
   }
 
+  /** Reception's resend; the token is read from the message the patient receives. */
   async function resend(recordId: string, channel: 'email_link' | 'sms_link') {
     const res = await request(app.getHttpServer())
       .post(`/reconciliation/${recordId}/resend`)
       .set('x-practice-id', practiceId)
       .send({ channel })
       .expect(201);
-    return res.body as { captureRequestId: string; token: string };
+    const body = res.body as { captureRequestId: string; channel: string; expiresAt: string | null };
+    const message = await prisma.withPractice(practiceId, (tx) =>
+      tx.outboundItem.findFirst({ where: { subjectType: 'CaptureRequest', subjectId: body.captureRequestId } }),
+    );
+    return { ...body, response: res.body as Json, message, token: tokenFromMessage(message?.payload) };
   }
+
+  /**
+   * A GENERAL (non-DB4) post-service agreement with a service record behind
+   * it, and the links asked for — opened staff-side, as the existing link
+   * suite does, because the subject here is the link, not reception's queue.
+   */
+  async function generalAgreement(invoiceKey: string, channels: Array<'email_link' | 'sms_link'>) {
+    const draft = await request(app.getHttpServer())
+      .post('/agreements')
+      .set('x-practice-id', practiceId)
+      .send({ type: 'episodic_post', affiliationId, patientId: generalPatientId, assignorId, assignorIsPatient: true })
+      .expect(201);
+    await prisma.withPractice(practiceId, (tx) =>
+      tx.serviceRecord.create({
+        data: {
+          practiceId,
+          pmsInvoiceKey: invoiceKey,
+          patientId: generalPatientId,
+          providerId,
+          serviceDate: new Date(today()),
+          mbsItemNumbers: ['23'],
+          agreementId: draft.body.id,
+        },
+      }),
+    );
+    const tokens: string[] = [];
+    for (const channel of channels) {
+      const opened = await request(app.getHttpServer())
+        .post('/capture')
+        .set('x-practice-id', practiceId)
+        .send({ agreementId: draft.body.id, channel })
+        .expect(201);
+      tokens.push(opened.body.token);
+      await request(app.getHttpServer()).get(`/capture/link/${opened.body.token}`).expect(200);
+    }
+    return { agreementId: draft.body.id as string, tokens };
+  }
+
+  const statementKeysOf = async (id: string) => {
+    const row = await prisma.withPractice(practiceId, (tx) => tx.agreement.findFirst({ where: { id } }));
+    const document = row?.renderPayload as unknown as { template?: { statements?: { key: string }[] } } | null;
+    return (document?.template?.statements ?? []).map((s) => s.key);
+  };
 
   it('a DB4 Print Record becomes a locked agreement waiting for a signature', async () => {
     const record = await printDb4(PATIENT, 'link-db4-first');
@@ -264,6 +373,8 @@ describe('the link page shows the DB4 sheets (e2e, real Postgres)', () => {
     token = opened.token;
     captureRequestId = opened.captureRequestId;
     expect(token).toBeTruthy();
+    // The console is never handed a working link to a patient's agreement.
+    expect(Object.keys(opened.response).sort()).toEqual(['captureRequestId', 'channel', 'expiresAt']);
 
     const messages = await prisma.withPractice(practiceId, (tx) =>
       tx.outboundItem.findMany({ where: { subjectType: 'CaptureRequest', subjectId: captureRequestId } }),
@@ -291,9 +402,12 @@ describe('the link page shows the DB4 sheets (e2e, real Postgres)', () => {
   });
 
   it('a_db4_link_cannot_be_signed_before_three_identifiers', async () => {
+    // EVERY statement ticked and a real drawing, so the only thing missing is the identity check.
+    const every = await statementKeysOf(agreementId);
+    expect(every.length).toBeGreaterThan(0);
     await request(app.getHttpServer())
       .post(`/agree/${token}/approve`)
-      .send({ method: 'tap_to_approve', affirmations: [] })
+      .send({ method: 'drawn', affirmations: every, signature: DRAWN })
       .expect(409);
     const agreement = await prisma.withPractice(practiceId, (tx) => tx.agreement.findFirst({ where: { id: agreementId } }));
     expect(agreement?.status).toBe('awaiting_signature');
@@ -366,10 +480,72 @@ describe('the link page shows the DB4 sheets (e2e, real Postgres)', () => {
   });
 
   it('link_takes_a_drawing_only_on_a_db4 — and refuses one with nothing drawn in it', async () => {
-    await request(app.getHttpServer())
+    // On the DB4: a `drawn` with no drawing in it is refused by the shared capture rule.
+    const empty = await request(app.getHttpServer())
       .post(`/agree/${token}/approve`)
       .send({ method: 'drawn', affirmations: statementKeys })
       .expect(400);
+    expect(empty.body.reason).toBe('signature_capture_invalid');
+
+    // On a general agreement: a real drawing, every tick, a passed check — and still refused, by name.
+    const general = await generalAgreement('link-db4-general-drawn', ['email_link']);
+    const [generalToken] = general.tokens;
+    await request(app.getHttpServer())
+      .post(`/capture/link/${generalToken}/verify`)
+      .send({ stated: statedFor(GENERAL_PATIENT) })
+      .expect(201);
+    const read = await request(app.getHttpServer()).get(`/agree/${generalToken}`).expect(200);
+    expect(read.body.db4Form).toBeNull();
+    const keys = (read.body.statements as Array<{ key: string }>).map((s) => s.key);
+    const refused = await request(app.getHttpServer())
+      .post(`/agree/${generalToken}/approve`)
+      .send({ method: 'drawn', affirmations: keys, signature: DRAWN })
+      .expect(400);
+    expect(refused.body.reason).toBe('drawn_not_offered_on_this_link');
+    const after = await prisma.withPractice(practiceId, (tx) => tx.agreement.findFirst({ where: { id: general.agreementId } }));
+    expect(after?.signatureEventId).toBeNull();
+  });
+
+  it('link_refuses_a_signature_when_the_desk_replaced_the_links_verification', async () => {
+    /*
+     * A desk re-push after the link passed swaps a staff verification onto the
+     * agreement. Signing from the link then would bind the DESK's check to a
+     * signature made on the phone. Stood in for here by writing a staff
+     * verification event and pointing the agreement at it, which is exactly
+     * the state the re-push leaves.
+     */
+    const linkVerification = (
+      await prisma.withPractice(practiceId, (tx) => tx.agreement.findFirst({ where: { id: agreementId } }))
+    )?.verificationEventId;
+    const agreementRow = await prisma.withPractice(practiceId, (tx) => tx.agreement.findFirst({ where: { id: agreementId } }));
+    const desk = await prisma.withPractice(practiceId, (tx) =>
+      tx.verificationEvent.create({
+        data: {
+          practiceId,
+          patientId: agreementRow!.patientId,
+          challengeId: randomUUID(),
+          identifierTypes: ['name', 'date_of_birth', 'address'],
+          outcome: 'passed',
+          channel: 'in_practice',
+          verifiedByStaffId: 'desk-e2e',
+        },
+      }),
+    );
+    await prisma.withPractice(practiceId, (tx) =>
+      tx.agreement.update({ where: { id: agreementId }, data: { verificationEventId: desk.id } }),
+    );
+    const refused = await request(app.getHttpServer())
+      .post(`/agree/${token}/approve`)
+      .send({ method: 'drawn', affirmations: statementKeys, signature: DRAWN })
+      .expect(409);
+    expect(refused.body.reason).toBe('link_verification_replaced');
+    const unsigned = await prisma.withPractice(practiceId, (tx) => tx.agreement.findFirst({ where: { id: agreementId } }));
+    expect(unsigned?.signatureEventId).toBeNull();
+
+    // Put the link's own verification back for the signing test that follows.
+    await prisma.withPractice(practiceId, (tx) =>
+      tx.agreement.update({ where: { id: agreementId }, data: { verificationEventId: linkVerification } }),
+    );
   });
 
   it('the_link_signs_the_db4_and_the_signed_db4_is_produced_vaulted_and_listed_for_write_back', async () => {
@@ -378,12 +554,7 @@ describe('the link page shows the DB4 sheets (e2e, real Postgres)', () => {
       .send({
         method: 'drawn',
         affirmations: statementKeys,
-        signature: {
-          vector: [{ points: [{ x: 10, y: 40, t: 0 }, { x: 60, y: 80, t: 22, p: 0.35 }] }],
-          rasterPngBase64: TINY_PNG,
-          padWidth: 600,
-          padHeight: 200,
-        },
+        signature: DRAWN,
       })
       .expect(201);
     expect(signed.body.approved).toBe(true);
@@ -445,12 +616,43 @@ describe('the link page shows the DB4 sheets (e2e, real Postgres)', () => {
     for (let i = 0; i < 10 && outcome !== 'locked_out'; i++) {
       const res = await request(app.getHttpServer())
         .post(`/capture/link/${opened.token}/verify`)
-        .send({ stated: { name: 'Wrong Person', date_of_birth: '1900-01-01', address: 'Nowhere' } });
+        .send({ stated: WRONG });
       outcome = res.body.outcome;
     }
     expect(outcome).toBe('locked_out');
 
     await request(app.getHttpServer()).get(`/agree/${opened.token}`).expect(423);
+    // Approve with the locked token: locked, by name — not "already used".
+    const keys = await statementKeysOf(lockedAgreementId);
+    await request(app.getHttpServer())
+      .post(`/agree/${opened.token}/approve`)
+      .send({ method: 'drawn', affirmations: keys, signature: DRAWN })
+      .expect(423);
+
+    // The locked link's request is CANCELLED in the same transaction, with the existing event.
+    const lockedRequest = await prisma.withPractice(practiceId, (tx) =>
+      tx.captureRequest.findFirst({ where: { id: opened.captureRequestId } }),
+    );
+    expect(lockedRequest?.status).toBe('cancelled');
+    const cancelled = await prisma.vaultOutbox.findMany({
+      where: { subjectType: 'CaptureRequest', subjectId: opened.captureRequestId, type: 'capture.cancelled' },
+    });
+    expect(cancelled.map((e) => (e.payload as Json).reason)).toEqual(['verification_locked_out']);
+
+    // Reception's queue shows it, with its reason.
+    const detail = await request(app.getHttpServer())
+      .get(`/reconciliation/${record.id}`)
+      .set('x-practice-id', practiceId)
+      .expect(200);
+    const attempt = (detail.body.attempts as Array<{ captureRequestId: string; status: string; cancelledReason: string | null }>).find(
+      (a) => a.captureRequestId === opened.captureRequestId,
+    );
+    expect(attempt?.status).toBe('cancelled');
+    expect(attempt?.cancelledReason).toBe('verification_locked_out');
+
+    // And a fresh link can be sent: no duplicate-channel refusal.
+    const again = await resend(record.id, 'sms_link');
+    expect(again.captureRequestId).not.toBe(opened.captureRequestId);
     const agreement = await prisma.withPractice(practiceId, (tx) =>
       tx.agreement.findFirst({ where: { id: lockedAgreementId } }),
     );
@@ -460,5 +662,100 @@ describe('the link page shows the DB4 sheets (e2e, real Postgres)', () => {
       tx.captureRequest.findFirst({ where: { agreementId: lockedAgreementId, channel: 'in_practice' } }),
     );
     expect(inPractice?.status).toBe('open');
+  });
+
+  it('a_passed_second_link_never_undoes_the_first_links_lockout (no illegal transition in the vault)', async () => {
+    const general = await generalAgreement('link-db4-two-links', ['email_link', 'sms_link']);
+    const [emailToken, smsToken] = general.tokens;
+
+    let outcome = '';
+    for (let i = 0; i < 10 && outcome !== 'locked_out'; i++) {
+      const res = await request(app.getHttpServer()).post(`/capture/link/${emailToken}/verify`).send({ stated: WRONG });
+      outcome = res.body.outcome;
+    }
+    expect(outcome).toBe('locked_out');
+    const locked = await prisma.withPractice(practiceId, (tx) => tx.agreement.findFirst({ where: { id: general.agreementId } }));
+    expect(locked?.status).toBe('verification_failed');
+
+    // The other link's person types the right details.
+    await request(app.getHttpServer())
+      .post(`/capture/link/${smsToken}/verify`)
+      .send({ stated: statedFor(GENERAL_PATIENT) })
+      .expect(201);
+
+    const after = await prisma.withPractice(practiceId, (tx) => tx.agreement.findFirst({ where: { id: general.agreementId } }));
+    expect(after?.status).toBe('verification_failed');
+    await request(app.getHttpServer()).get(`/agree/${smsToken}`).expect(423);
+    await request(app.getHttpServer())
+      .post(`/agree/${smsToken}/approve`)
+      .send({ method: 'tap_to_approve', affirmations: [] })
+      .expect(423);
+
+    const events = await prisma.vaultOutbox.findMany({
+      where: { subjectType: 'Agreement', subjectId: general.agreementId, type: 'agreement.status_changed' },
+    });
+    expect(events.some((e) => (e.payload as Json).from === 'verification_failed')).toBe(false);
+  });
+
+  it('resend_refuses_a_channel_with_no_contact_on_file, before any link is opened', async () => {
+    const record = await prisma.withPractice(practiceId, (tx) =>
+      tx.serviceRecord.findFirst({ where: { pmsInvoiceKey: `db4:${LOCKED_PATIENT.formReference}` } }),
+    );
+    const before = await prisma.withPractice(practiceId, (tx) =>
+      tx.captureRequest.count({ where: { agreementId: record!.agreementId!, channel: 'email_link' } }),
+    );
+    const res = await request(app.getHttpServer())
+      .post(`/reconciliation/${record!.id}/resend`)
+      .set('x-practice-id', practiceId)
+      .send({ channel: 'email_link' })
+      .expect(400);
+    expect(res.body.reason).toBe('no_contact_for_channel');
+    const after = await prisma.withPractice(practiceId, (tx) =>
+      tx.captureRequest.count({ where: { agreementId: record!.agreementId!, channel: 'email_link' } }),
+    );
+    expect(after).toBe(before);
+  });
+
+  it('resend_opens_nothing_when_the_message_cannot_be_queued', async () => {
+    const record = await printDb4(
+      { ...PATIENT, chart: PATIENT.chart, formReference: 'TST0790012102026120399' },
+      'link-db4-send-fails',
+    );
+    const dispatcher = app.get(CaptureLinkDispatcher);
+    const spy = jest.spyOn(dispatcher, 'sendPostAgreementLink').mockRejectedValueOnce(new Error('queue down'));
+    try {
+      await request(app.getHttpServer())
+        .post(`/reconciliation/${record.id}/resend`)
+        .set('x-practice-id', practiceId)
+        .send({ channel: 'email_link' })
+        .expect(500);
+    } finally {
+      spy.mockRestore();
+    }
+    const open = await prisma.withPractice(practiceId, (tx) =>
+      tx.captureRequest.count({ where: { agreementId: record.agreementId!, channel: 'email_link' } }),
+    );
+    expect(open).toBe(0);
+    // And the retry works: no duplicate-channel refusal left behind.
+    const retried = await resend(record.id, 'email_link');
+    expect(retried.message?.destination).toBe(PATIENT.email);
+  });
+
+  it('resend_from_another_practice_fails_closed', async () => {
+    const record = await prisma.withPractice(practiceId, (tx) =>
+      tx.serviceRecord.findFirst({ where: { pmsInvoiceKey: `db4:${LOCKED_PATIENT.formReference}` } }),
+    );
+    const before = await prisma.withPractice(practiceId, (tx) =>
+      tx.captureRequest.count({ where: { agreementId: record!.agreementId! } }),
+    );
+    await request(app.getHttpServer())
+      .post(`/reconciliation/${record!.id}/resend`)
+      .set('x-practice-id', otherPracticeId)
+      .send({ channel: 'sms_link' })
+      .expect(404);
+    const after = await prisma.withPractice(practiceId, (tx) =>
+      tx.captureRequest.count({ where: { agreementId: record!.agreementId! } }),
+    );
+    expect(after).toBe(before);
   });
 });

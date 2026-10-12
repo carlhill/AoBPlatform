@@ -4013,14 +4013,36 @@ as built, with why, and what would reopen it.
    would have taken a signable DB4 off the tablet (hard rule 8). *Enforced by:*
    `a_locked_link_leaves_a_signable_db4_signable`, and the event assertion in
    `link-db4.e2e-spec.ts`.
+   **Amended after review, 12 Oct 2026:**
+   - **A passed check never makes a move the lifecycle forbids.** With two links
+     open, one can lock the agreement (`verification_failed`) and the other pass;
+     the agreement stays locked, nothing is bound, and no event is written
+     (`a_passed_second_link_never_undoes_the_first_links_lockout`).
+   - **A link that locks without moving the agreement is cancelled** in the same
+     transaction, with the existing `capture.cancelled` event and reason
+     `verification_locked_out`. The link then answers 423, reception's queue
+     shows the lock with its reason, and a fresh link is not refused as a
+     duplicate.
+   - **The link signs only with its own check.** If the agreement's verification
+     is no longer the one this link's challenge passed (a desk re-push swapped a
+     staff check in), approve refuses 409 with `link_verification_replaced`
+     (`link_refuses_a_signature_when_the_desk_replaced_the_links_verification`).
 5. **Reception's resend sends the message.** `POST /reconciliation/:id/resend`
    used to open a capture request and return its token, and send nothing - the
    queue row said "sent". It now queues the same message the post-service
    chase sends (`CaptureLinkDispatcher.sendPostAgreementLink`), to the email or
-   mobile ON FILE only (D-2026-09-11-03), and queues nothing when the record
-   has no contact for that channel. In development the outbound queue goes to
-   the sandbox gateway and Mailhog. *Enforced by:*
-   `reception_sends_the_unsigned_db4_to_the_contact_on_file`.
+   mobile ON FILE only (D-2026-09-11-03). In development the outbound queue
+   goes to the sandbox gateway and Mailhog. **Amended after review, 12 Oct
+   2026:** a channel with no contact on file is refused BEFORE any link is
+   opened (`no_contact_for_channel`); opening the link and queueing the
+   message are one transaction, so a failed send leaves no open request; the
+   response is `{captureRequestId, channel, expiresAt}` and never the token;
+   and the console dashboard's resend uses the channel the patient has on
+   file (`channelFor`). *Enforced by:*
+   `reception_sends_the_unsigned_db4_to_the_contact_on_file`,
+   `resend_refuses_a_channel_with_no_contact_on_file`,
+   `resend_opens_nothing_when_the_message_cannot_be_queued`,
+   `resend_from_another_practice_fails_closed`.
 6. **`LINK_DB4_SHEETS_ENABLED`, default on, is the switch.** `false` returns
    the link page to the general summary for DB4s. *Why default on:* off is the
    broken state for a DB4 (no form, a "no dollar amount" line, no Signed-DB4),

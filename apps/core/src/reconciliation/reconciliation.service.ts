@@ -203,49 +203,64 @@ export class ReconciliationService {
         'No agreement exists for this service yet — create one (choosing the assignor) before sending a capture link.',
       );
     }
-    const opened = await this.capture.open(practiceId, { agreementId: record.agreementId, channel });
-
     /*
-     * AND THE MESSAGE GOES (TELEHEALTH-PLAN §8 step 1, 12 Oct 2026).
-     *
-     * Until today this opened a capture request and returned its token to the
-     * console, which did nothing with it: the row said "sent" and nobody was
-     * sent anything. The message is the one the post-service chase sends —
-     * the same dispatcher, the same words, the same outbound queue (which in
-     * development is the sandbox gateway and Mailhog) — so a link from
-     * reception and a link from the sweep are one link.
-     *
      * THE CONTACT ON FILE, AND ONLY THAT ONE (D-2026-09-11-03; D-2026-10-11-07
-     * decision 3). The dispatcher reads the email or mobile the practice's
-     * system already holds; nothing in this request can redirect it. A row
-     * with no contact for the channel is refused on the queue before it gets
-     * here (`resendBlockedReason`), and if one arrives anyway the capture
-     * request is opened as before and no message is queued.
+     * decision 3). The message goes to the email or mobile the practice's
+     * system already holds; nothing in this request can redirect it. A
+     * channel with no contact behind it is REFUSED BEFORE ANY LINK IS OPENED,
+     * by name: opening one would report a send that never happened, and leave
+     * an open request that makes every retry hit FR-2.7's duplicate refusal —
+     * the wrong cause, named confidently (wow.md §13).
      */
-    const destination =
-      channel === 'sms_link' ? patient?.mobile?.trim() : channel === 'email_link' ? patient?.email?.trim() : null;
-    if (opened.token && patient && destination && (channel === 'sms_link' || channel === 'email_link')) {
-      const token = opened.token;
-      const agreementId = record.agreementId;
-      await this.prisma.withPractice(practiceId, async (tx) => {
-        const practice = await tx.practice.findFirst({ select: { name: true } });
-        const agreement = await tx.agreement.findFirst({ where: { id: agreementId } });
-        const anchor = agreement ? await anchorForAgreement(tx, agreement) : null;
-        await this.links.sendPostAgreementLink(tx, {
-          practiceId,
-          practiceName: practice?.name ?? '',
-          patient,
-          providerName: anchor?.name ?? 'your practitioner',
-          serviceDate: record.serviceDate,
-          mbsItemNumbers: record.mbsItemNumbers,
-          captureRequestId: opened.captureRequestId,
-          channel,
-          token,
-          expiresAt: opened.expiresAt,
-        });
+    const destination = channel === 'sms_link' ? patient?.mobile?.trim() : patient?.email?.trim();
+    if (!patient || !destination) {
+      throw new BadRequestException({
+        message:
+          channel === 'sms_link'
+            ? 'This patient has no mobile number on their record, so no SMS was sent and no link was opened. ' +
+              'Add the number in the practice system; it syncs through.'
+            : 'This patient has no email address on their record, so no email was sent and no link was opened. ' +
+              'Add the address in the practice system; it syncs through.',
+        reason: 'no_contact_for_channel',
       });
     }
-    return opened;
+    const agreementId = record.agreementId;
+
+    /*
+     * OPEN AND SEND ARE ONE TRANSACTION (TELEHEALTH-PLAN §8 step 1, 12 Oct 2026).
+     *
+     * Until today this opened a capture request, returned its token to the
+     * console, and sent nothing: the row said "sent" and nobody was sent
+     * anything. The message is the one the post-service chase sends — the
+     * same dispatcher, the same words, the same outbound queue (the sandbox
+     * gateway and Mailhog in development) — and it is queued in the SAME
+     * transaction that opens the link, so a queue that refuses rolls the link
+     * back with it and a retry starts clean.
+     *
+     * THE TOKEN IS NOT RETURNED. It exists for the message, and a console
+     * holding a working link to a patient's agreement could open it.
+     */
+    const opened = await this.prisma.withPractice(practiceId, async (tx) => {
+      const request = await this.capture.openWithin(tx, practiceId, { agreementId, channel });
+      if (!request.token) throw new Error('A remote capture request opened without a token.');
+      const practice = await tx.practice.findFirst({ select: { name: true } });
+      const agreement = await tx.agreement.findFirst({ where: { id: agreementId } });
+      const anchor = agreement ? await anchorForAgreement(tx, agreement) : null;
+      await this.links.sendPostAgreementLink(tx, {
+        practiceId,
+        practiceName: practice?.name ?? '',
+        patient,
+        providerName: anchor?.name ?? 'your practitioner',
+        serviceDate: record.serviceDate,
+        mbsItemNumbers: record.mbsItemNumbers,
+        captureRequestId: request.captureRequestId,
+        channel: channel as 'sms_link' | 'email_link',
+        token: request.token,
+        expiresAt: request.expiresAt,
+      });
+      return request;
+    });
+    return { captureRequestId: opened.captureRequestId, channel: opened.channel, expiresAt: opened.expiresAt };
   }
 
   /**
@@ -393,6 +408,23 @@ export class ReconciliationService {
       const requests = agreement
         ? await tx.captureRequest.findMany({ where: { agreementId: agreement.id }, orderBy: { createdAt: 'asc' } })
         : [];
+      /*
+       * WHY A LINK WAS CLOSED, where the record says (12 Oct 2026). A DB4 link
+       * whose challenge locked is cancelled by `verifyLink`; the challenge's
+       * `lockedAt` is the observation, so the queue can name it rather than
+       * show a bare "cancelled". Every other cancellation stays unnamed here.
+       */
+      const challengeIds = requests.map((r) => r.verificationChallengeId).filter((id): id is string => id !== null);
+      const lockedChallenges = new Set(
+        challengeIds.length
+          ? (
+              await tx.verificationChallenge.findMany({
+                where: { id: { in: challengeIds }, lockedAt: { not: null } },
+                select: { id: true },
+              })
+            ).map((c) => c.id)
+          : [],
+      );
       const correspondence = requests.length
         ? await tx.correspondence.findMany({
             where: { subjectType: 'CaptureRequest', subjectId: { in: requests.map((r) => r.id) } },
@@ -445,6 +477,10 @@ export class ReconciliationService {
           captureRequestId: r.id,
           channel: r.channel,
           status: r.status,
+          cancelledReason:
+            r.status === 'cancelled' && r.verificationChallengeId && lockedChallenges.has(r.verificationChallengeId)
+              ? ('verification_locked_out' as const)
+              : null,
           openedAt: r.createdAt.toISOString(),
           expiresAt: r.expiresAt?.toISOString() ?? null,
           completedAt: r.completedAt?.toISOString() ?? null,

@@ -66,6 +66,16 @@ export class AgreeService {
     return this.prisma.withPractice(parsed.practiceId, async (tx) => {
       const request = await tx.captureRequest.findFirst({ where: { tokenHash: parsed.tokenHash } });
       if (!request) throw new NotFoundException('This link is not valid.');
+      const link = await linkCheckOf(tx, request.verificationChallengeId);
+      /*
+       * A LINK CLOSED BY ITS OWN LOCKOUT SAYS LOCKED (423), not "used or
+       * closed" (12 Oct 2026): a DB4 link that locks is cancelled in the same
+       * transaction (`CaptureService.verifyLink`), and the person holding it
+       * should be told the true reason.
+       */
+      if (request.status !== 'open' && link === 'locked') {
+        throw new HttpException('Verification is locked. Contact the practice.', 423);
+      }
       if (request.status !== 'open') throw new GoneException('This link has already been used or closed.');
       if (request.expiresAt && request.expiresAt < new Date()) {
         throw new GoneException('This link has expired. Contact the practice for a new one.');
@@ -73,8 +83,16 @@ export class AgreeService {
       const agreement = await tx.agreement.findFirst({ where: { id: request.agreementId } });
       if (!agreement) throw new NotFoundException('This link is not valid.');
       const practice = await tx.practice.findFirst({});
-      const link = await linkCheckOf(tx, request.verificationChallengeId);
-      return { practiceId: parsed.practiceId, request, agreement, practiceName: practice?.name ?? null, link };
+      const linkVerificationEventId =
+        link === 'passed' ? await passedVerificationOf(tx, request.verificationChallengeId) : null;
+      return {
+        practiceId: parsed.practiceId,
+        request,
+        agreement,
+        practiceName: practice?.name ?? null,
+        link,
+        linkVerificationEventId,
+      };
     });
   }
 
@@ -230,8 +248,11 @@ export class AgreeService {
     affirmations: readonly string[] = [],
     signature?: DrawnSignatureCapture,
   ) {
-    const { practiceId, request, agreement, link } = await this.resolve(token);
-    if (link === 'locked') throw new HttpException('Verification is locked. Contact the practice.', 423);
+    const { practiceId, request, agreement, link, linkVerificationEventId } = await this.resolve(token);
+    // Locked by this link, or by another link to the same agreement: the same answer `read` gives.
+    if (link === 'locked' || agreement.status === 'verification_failed') {
+      throw new HttpException('Verification is locked. Contact the practice.', 423);
+    }
     /*
      * THE LINK'S OWN CHALLENGE, AGAIN — the same gate `read` holds, for the
      * same reason: a DB4 is at the signing step before anybody opens the link,
@@ -240,6 +261,23 @@ export class AgreeService {
      */
     if (link !== 'passed' || agreement.status !== 'awaiting_signature' || !agreement.particularsLockedAt) {
       throw new ConflictException('Confirm your details and review the agreement first.');
+    }
+    /*
+     * THE SIGNATURE BINDS THE CHECK THIS LINK'S PERSON PASSED, OR NONE
+     * (12 Oct 2026). `sign()` binds whatever verification the agreement holds
+     * now, and a desk re-push after the link passed swaps a staff check in.
+     * Signing from the link then would record the desk's check against a
+     * signature made on a phone. Refused with a code; the agreement is
+     * untouched and stays signable where it was re-pushed (hard rule 8).
+     * Named test: `link_refuses_a_signature_when_the_desk_replaced_the_links_verification`.
+     */
+    if (!linkVerificationEventId || agreement.verificationEventId !== linkVerificationEventId) {
+      throw new ConflictException({
+        message:
+          'The identity check on this agreement is no longer the one made on this link, so a signature from ' +
+          'this link would be recorded against somebody else\'s check.',
+        reason: 'link_verification_replaced',
+      });
     }
     /*
      * A DRAWING ONLY WHERE THE PAGE OFFERED A PAD (TELEHEALTH-PLAN §8 step 1).
@@ -355,6 +393,21 @@ async function linkCheckOf(
   if (challenge.passedAt) return 'passed';
   if (challenge.lockedAt) return 'locked';
   return 'open';
+}
+
+/**
+ * THE VERIFICATION EVENT THIS LINK'S CHALLENGE PASSED WITH — the id `verifyLink`
+ * bound to the agreement. Null if there is none (never passed, or the row is
+ * gone), which `approve` reads as "not this link's check".
+ */
+async function passedVerificationOf(tx: Prisma.TransactionClient, challengeId: string | null): Promise<string | null> {
+  if (!challengeId) return null;
+  const event = await tx.verificationEvent.findFirst({
+    where: { challengeId, outcome: 'passed' },
+    orderBy: { createdAt: 'desc' },
+    select: { id: true },
+  });
+  return event?.id ?? null;
 }
 
 /**
