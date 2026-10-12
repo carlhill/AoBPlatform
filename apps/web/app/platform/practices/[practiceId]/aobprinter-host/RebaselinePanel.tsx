@@ -111,7 +111,8 @@ export function RebaselinePanel({
             </>
           )}
           {errorCode === 'second_factor_required' && <p>{r.stepUpSecondFactorMissing}</p>}
-          {errorCode !== 'reauthentication_required' && errorCode !== 'second_factor_required' && (
+          {errorCode === 'sign_in_method_unrecorded' && <p>{r.stepUpMethodUnrecorded}</p>}
+          {!['reauthentication_required', 'second_factor_required', 'sign_in_method_unrecorded'].includes(errorCode) && (
             <p data-testid="aobprinter-rebaseline-unmapped">{r.stepUpUnmapped(errorCode)}</p>
           )}
         </Notice>

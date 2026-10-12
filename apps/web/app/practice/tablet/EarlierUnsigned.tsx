@@ -58,6 +58,8 @@ export interface EarlierUnsignedRow {
   reason: string;
   serviceRecordId: string | null;
   reconciliationDecision: string | null;
+  /** Is the service still an item on Reconciliation (queue or choice list)? Absent from an older core. */
+  serviceOnReconciliation?: boolean;
 }
 
 export interface EarlierUnsignedList {
@@ -80,16 +82,30 @@ export function earlierReasonText(row: Pick<EarlierUnsignedRow, 'reason' | 'reco
 }
 
 /**
+ * THE ASSOCIATION REASONS (D-2026-10-10-09, option (b)) link to the SERVICE's
+ * Reconciliation item, never to the draft -- but ONLY while that item is on
+ * Reconciliation (`serviceOnReconciliation`). A service a stored agreement now
+ * covers has left both lists, and a link to it would land on "That item is not
+ * on this queue"; the line then goes to the patient's page, which lists the
+ * agreement and its after-service agreement. There is no page for one
+ * agreement in this console.
+ */
+const ASSOCIATION_REASONS: readonly string[] = ['service_associated', 'service_choice_needed', 'service_associated_other'];
+
+/**
  * WHERE THIS ROW IS DEALT WITH — the Reconciliation item while one is on the
  * queue, otherwise the patient's page. Routed through `destination`, so a
  * platform operator gets the read-only twin and a link the caller may not
  * open is hidden rather than left to refuse them.
  */
 export function earlierLink(
-  row: Pick<EarlierUnsignedRow, 'reason' | 'serviceRecordId' | 'patientId'>,
+  row: Pick<EarlierUnsignedRow, 'reason' | 'serviceRecordId' | 'patientId' | 'serviceOnReconciliation'>,
   ctx: Pick<PushDesk, 'audiences' | 'practiceId'>,
 ) {
-  if (row.reason === 'service_in_reconciliation' && row.serviceRecordId) {
+  const toItem =
+    row.reason === 'service_in_reconciliation' ||
+    (ASSOCIATION_REASONS.includes(row.reason) && row.serviceOnReconciliation === true);
+  if (toItem && row.serviceRecordId) {
     return destination(
       '/practice/reconciliation',
       strings.tablet.earlierToReconciliation,

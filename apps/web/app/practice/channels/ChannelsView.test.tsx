@@ -8,8 +8,15 @@
  */
 import { describe, expect, it, vi, afterEach } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { DEFAULT_PRACTICE_TIMEZONE, PRACTICE_TIMEZONE_KEYS } from '@aobplatform/domain';
 import { ChannelsView } from './ChannelsView';
 import { strings } from '../../strings';
+import {
+  UNSIGNED_DRAFT_CLOSURE_DEFAULT_DAYS,
+  UNSIGNED_DRAFT_CLOSURE_MAX_DAYS,
+  UNSIGNED_DRAFT_CLOSURE_MIN_DAYS,
+  UNSIGNED_DRAFT_CLOSURE_VERSION,
+} from '@aobplatform/domain';
 
 const PRACTICE = 'practice-1';
 
@@ -51,7 +58,12 @@ interface D6aStub {
   putMessage?: string;
 }
 
-function stubFetch(devices: Array<{ state: string }>, devicesOk = true, d6a: D6aStub = {}) {
+function stubFetch(
+  devices: Array<{ state: string }>,
+  devicesOk = true,
+  d6a: D6aStub = {},
+  practice: Record<string, unknown> = {},
+) {
   vi.stubGlobal(
     'fetch',
     vi.fn(async (url: string, init?: RequestInit) => {
@@ -87,7 +99,7 @@ function stubFetch(devices: Array<{ state: string }>, devicesOk = true, d6a: D6a
               : { message: d6a.putMessage ?? 'refused' },
         } as unknown as Response;
       }
-      return { ok: true, status: 200, json: async () => PRACTICE_CONFIG } as unknown as Response;
+      return { ok: true, status: 200, json: async () => ({ ...PRACTICE_CONFIG, ...practice }) } as unknown as Response;
     }),
   );
 }
@@ -204,6 +216,51 @@ describe('the kiosk inactivity reset field', () => {
     }
     fireEvent.change(input, { target: { value: '30' } });
     expect((screen.getByTestId('channels-save') as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('closure_days_empty_means_the_versioned_default_and_saves_as_null_a_number_saves_as_itself', async () => {
+    stubFetch([{ state: 'paired' }]);
+    render(<ChannelsView practiceId={PRACTICE} />);
+
+    const input = (await screen.findByTestId('channels-close-days')) as HTMLInputElement;
+    await waitFor(() => expect((screen.getByTestId('channels-idle-minutes') as HTMLInputElement).value).toBe('2'));
+    // The server sent no value: empty, with the default and its version said in the hint.
+    expect(input.value).toBe('');
+    expect(document.body.textContent).toContain(
+      strings.channels.closeHint(
+        UNSIGNED_DRAFT_CLOSURE_MIN_DAYS,
+        UNSIGNED_DRAFT_CLOSURE_MAX_DAYS,
+        UNSIGNED_DRAFT_CLOSURE_DEFAULT_DAYS,
+        UNSIGNED_DRAFT_CLOSURE_VERSION,
+      ),
+    );
+
+    for (const refused of ['0', '91', '2.5']) {
+      fireEvent.change(input, { target: { value: refused } });
+      expect((screen.getByTestId('channels-save') as HTMLButtonElement).disabled).toBe(true);
+    }
+    fireEvent.change(input, { target: { value: '14' } });
+    fireEvent.click(screen.getByTestId('channels-save'));
+    await waitFor(() => {
+      const patch = vi
+        .mocked(fetch)
+        .mock.calls.find(([, init]) => (init as RequestInit | undefined)?.method === 'PATCH');
+      expect(JSON.parse((patch![1] as RequestInit).body as string).unsignedDraftClosureDays).toBe(14);
+    });
+  });
+
+  it('closure_days_cleared_saves_null_back_to_the_default', async () => {
+    stubFetch([{ state: 'paired' }]);
+    render(<ChannelsView practiceId={PRACTICE} />);
+    await waitFor(() => expect((screen.getByTestId('channels-idle-minutes') as HTMLInputElement).value).toBe('2'));
+
+    fireEvent.click(screen.getByTestId('channels-save'));
+    await waitFor(() => {
+      const patch = vi
+        .mocked(fetch)
+        .mock.calls.find(([, init]) => (init as RequestInit | undefined)?.method === 'PATCH');
+      expect(JSON.parse((patch![1] as RequestInit).body as string).unsignedDraftClosureDays).toBeNull();
+    });
   });
 });
 
@@ -335,5 +392,46 @@ describe('the default service description', () => {
     await waitFor(() => expect(screen.getByText(strings.channels.d6aUnavailable)).toBeTruthy());
     expect(screen.queryByTestId('channels-d6a')).toBeNull();
     expect(screen.queryByTestId('channels-d6a-save')).toBeNull();
+  });
+});
+
+/*
+ * THE PRACTICE'S TIMEZONE (D-2026-10-10-03). The options are the content
+ * file's, in its order, with names from the string table; the saved value
+ * goes back on the same whole-form PATCH as every other setting here.
+ */
+describe('the practice timezone — options from the content list', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('practice_timezone_options_are_the_content_list_in_file_order', async () => {
+    stubFetch([{ state: 'paired' }]);
+    render(<ChannelsView practiceId={PRACTICE} />);
+
+    const select = (await screen.findByTestId('channels-timezone')) as HTMLSelectElement;
+    expect([...select.options].map((o) => o.value)).toEqual([...PRACTICE_TIMEZONE_KEYS]);
+    expect(select.options[0]!.textContent).toBe(strings.channels.timezoneNames['Australia/Sydney']);
+    // A server that did not say means the column default, never an empty box.
+    await waitFor(() => expect(select.value).toBe(DEFAULT_PRACTICE_TIMEZONE));
+  });
+
+  it('shows the saved zone and sends the chosen one on save', async () => {
+    stubFetch([{ state: 'paired' }], true, {}, { timezone: 'Australia/Brisbane' });
+    render(<ChannelsView practiceId={PRACTICE} />);
+
+    const select = (await screen.findByTestId('channels-timezone')) as HTMLSelectElement;
+    await waitFor(() => expect(select.value).toBe('Australia/Brisbane'));
+
+    fireEvent.change(select, { target: { value: 'Australia/Perth' } });
+    fireEvent.click(screen.getByTestId('channels-save'));
+
+    await waitFor(() => {
+      const patch = vi
+        .mocked(fetch)
+        .mock.calls.find(([, init]) => (init as RequestInit | undefined)?.method === 'PATCH');
+      expect(patch).toBeTruthy();
+      expect(JSON.parse((patch![1] as RequestInit).body as string).timezone).toBe('Australia/Perth');
+    });
   });
 });

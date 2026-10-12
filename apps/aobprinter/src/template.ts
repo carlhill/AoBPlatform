@@ -39,8 +39,13 @@ export type ExtractorKind = (typeof EXTRACTOR_KINDS)[number];
  *              that is not a DD/MM/YYYY date is left exactly as printed rather
  *              than mangled — the server validator can then see what arrived.
  * `money`      "$1,045.05" → "1045.05". The figure PracSoft printed, with the
- *              presentation removed. Never rounded, never recomputed.
- * `collapseSpaces` runs of whitespace to one space.
+ *              presentation removed. Never rounded, never recomputed. NO
+ *              SHIPPED TEMPLATE APPLIES IT TO AN AMOUNT SINCE -10-1: Carl wants
+ *              the amount shown as printed, `$` included (D-2026-10-10-08). It
+ *              stays because -09-1 uses it and must keep re-reading its records.
+ * `collapseSpaces` trims, and folds runs of whitespace to one space. Every other
+ *              character stays, which is why -10-1 uses it for the amount:
+ *              "$1,045.05" stays "$1,045.05".
  * `upper`      for a code the form prints in mixed case.
  */
 export const TRANSFORMS = ['date:dmy', 'money', 'collapseSpaces', 'upper'] as const;
@@ -348,19 +353,31 @@ export function parseTemplate(raw: unknown): ParserTemplate {
 /*
  * THE TEMPLATE SET, loaded and validated at module load.
  *
- * Only one template exists today. It is imported rather than read from disk so
- * that the installed program carries its templates in its own bundle — a
- * desktop that reads its parser from a folder is a desktop where somebody can
- * change the parser, and the version on the record would then be a claim rather
- * than a fact.
+ * Every version ever shipped stays here, oldest first. A superseded template is
+ * never edited and never dropped: a record stamped with it must still be
+ * re-read against the template that made it (hard rule 14). Each is imported
+ * rather than read from disk so that the installed program carries its
+ * templates in its own bundle — a desktop that reads its parser from a folder
+ * is a desktop where somebody can change the parser, and the version on the
+ * record would then be a claim rather than a fact.
  */
-import pracsoft3Db4 from '../content/pracsoft3-db4-2026-09-1.json';
+import pracsoft3Db4September from '../content/pracsoft3-db4-2026-09-1.json';
+import pracsoft3Db4October from '../content/pracsoft3-db4-2026-10-1.json';
 
-const TEMPLATES: readonly ParserTemplate[] = [parseTemplate(pracsoft3Db4)];
+const TEMPLATES: readonly ParserTemplate[] = [
+  parseTemplate(pracsoft3Db4September),
+  parseTemplate(pracsoft3Db4October),
+];
 
 export function templateFor(version: string): ParserTemplate | null {
   return TEMPLATES.find((t) => t.version === version) ?? null;
 }
 
-/** The template a fresh install parses with, until configuration says otherwise. */
-export const DEFAULT_TEMPLATE_VERSION = 'pracsoft3-db4-2026-09-1';
+/**
+ * The template a fresh install parses with, until configuration says otherwise.
+ *
+ * -10-1 SINCE 10 OCTOBER 2026 (D-2026-10-10-08): identical to -09-1 except that
+ * the amount keeps the `$` PracSoft printed. A config.json that names -09-1 in
+ * `templateVersion` keeps parsing with it until that line is changed.
+ */
+export const DEFAULT_TEMPLATE_VERSION = 'pracsoft3-db4-2026-10-1';

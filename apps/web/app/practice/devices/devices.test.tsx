@@ -638,6 +638,16 @@ describe('/practice/devices — the practice’s tablets', () => {
       expect(screen.queryByTestId('devices-step-up-action')).toBeNull();
     });
 
+    it('an_unrecorded_sign_in_method_is_refused_and_not_called_a_password', async () => {
+      stubRefusedRevoke('sign_in_method_unrecorded', 'This sign-in did not record how it was made.');
+      const panel = await attemptRevoke();
+      expect(panel.textContent).toContain(strings.devices.stepUpMethodUnrecorded);
+      // A passkey session must not be told it used a password, and must not be offered a sign-in loop.
+      expect(panel.textContent).not.toContain(strings.devices.stepUpSecondFactorMissing);
+      expect(screen.queryByTestId('devices-step-up-action')).toBeNull();
+      expect(screen.queryByTestId('devices-step-up-unmapped')).toBeNull();
+    });
+
     it('shows an unmapped reason code rather than a sentence that explains nothing', async () => {
       stubRefusedRevoke('a_code_this_build_has_never_met', 'Refused.');
       await attemptRevoke();

@@ -17,10 +17,14 @@
  * for the same trick), so a value set before any suite builds a Nest
  * application is the value the application gets.
  *
- * THE DATABASE IS CREATED OUT OF BAND, by `scripts/dev/test-db.sh`, as a schema
- * copy of dev. A copy rather than `migrate deploy` because the dev migration
- * ledger still carries the failed `20260903020000_chase_attempts` (TODO), and a
- * broken ledger must not be the reason nobody can run a test.
+ * THE DATABASE IS CREATED PER RUN (11 Oct 2026). `e2e-database.global-setup.ts`
+ * clones one from the template `scripts/dev/test-db.sh` builds — a schema copy
+ * of dev — and sets `E2E_DATABASE_URL` to it before this file runs, so two runs
+ * from two worktrees never share tables. A copy rather than `migrate deploy`
+ * because the dev migration ledger still carries the failed
+ * `20260903020000_chase_attempts` (TODO), and a broken ledger must not be the
+ * reason nobody can run a test. `DEFAULT_TEST_URL` below is reached only when
+ * the global setup did not run.
  */
 /**
  * AS `aob_app`, NEVER AS `aobplatform`, AND THIS IS THE IMPORTANT LINE IN THE

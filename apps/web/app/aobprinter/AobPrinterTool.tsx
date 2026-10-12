@@ -49,7 +49,7 @@
  * typing something real, and nothing should be typed that is.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { BLANK, PRESETS, type Draft, type ProviderRow, type ServiceRow } from './presets';
+import { BLANK, PRESETS, startFromPreset, type Draft, type ProviderRow, type ServiceRow } from './presets';
 import { buildEnvelope, draftFromEnvelope, envelopeWithHash, sha256Hex } from './envelope';
 import styles from './aobprinter.module.css';
 
@@ -298,7 +298,8 @@ export function AobPrinterTool() {
     const preset = PRESETS.find((p) => p.key === key);
     if (!preset) return;
     setDraft((d) => {
-      const next = preset.apply({ ...BLANK, practiceId: d.practiceId, patientRecordNumber: d.patientRecordNumber });
+      // The chart number AND the name carry over — see `startFromPreset`.
+      const next = startFromPreset(preset, d);
       /*
        * THE FORM REFERENCE IS STAMPED, NOT CARRIED. Two presets sharing one
        * reference would be the same FORM to `db4-assignment.handler.ts` —

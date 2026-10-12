@@ -392,7 +392,8 @@ export function DevicesView({ practiceId }: { practiceId: string }) {
             </>
           )}
           {errorCode === 'second_factor_required' && <p>{strings.devices.stepUpSecondFactorMissing}</p>}
-          {errorCode !== 'reauthentication_required' && errorCode !== 'second_factor_required' && (
+          {errorCode === 'sign_in_method_unrecorded' && <p>{strings.devices.stepUpMethodUnrecorded}</p>}
+          {!['reauthentication_required', 'second_factor_required', 'sign_in_method_unrecorded'].includes(errorCode) && (
             <p data-testid="devices-step-up-unmapped">{strings.devices.stepUpUnmapped(errorCode)}</p>
           )}
         </Notice>
