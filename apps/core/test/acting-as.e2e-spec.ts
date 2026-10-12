@@ -47,6 +47,8 @@ const OPERATOR_A = {
   sub: randomUUID(),
   principalType: 'staff',
   roles: ['platform_admin'],
+  // A passkey session: core refuses an operator whose token names no method (D-2026-10-11-02).
+  amr: ['hwk'],
   preferredUsername: `operator.a.${RUN}`,
   raw: {},
 };
