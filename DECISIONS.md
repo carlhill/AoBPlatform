@@ -3860,3 +3860,69 @@ separate decision for Carl.
 **What would reopen it:** a genuine need for a non-browser staff sign-in, for
 example a CLI. That would use the device authorisation grant, which still runs
 a browser flow, not a password grant.
+
+## D-2026-10-11-07 - Telehealth: a consent-to-telehealth record before the call, the doctor's identity check plus a 6-digit code, contacts on file only, one page, languages English first
+
+**Date:** 11 October 2026. **Decided by:** Carl, *"1a, 2 yes, 3 on-file only, 4
+one page, 5 yes"*, answering the five questions Claude set out when Carl asked
+for telehealth support. **Plan:** `TELEHEALTH-PLAN.md`.
+
+**The decisions:**
+1. **The step before a telehealth consultation is a record that the patient (or
+   carer) agreed to a telehealth consultation with this doctor.** It is not an
+   assignment of benefit and not a pre-agreement (s 65C(4) item 5). The DB4
+   after the consultation stays the one agreement.
+2. **On a live call, the doctor's identity check plus a 6-digit code replaces
+   the patient typing three identifiers.** The doctor records which identifier
+   types were checked (never values). The code is shown only on the doctor's
+   screen, read out on the call, and never sent in the message. A link with
+   nobody on the phone still asks for three typed identifiers (REQ-VER-03).
+3. **The link goes only to the mobile or email already on the record.**
+   D-2026-09-11-03 holds. A wrong contact is fixed in PracSoft.
+4. **One page for the whole consultation.** It waits after the patient agrees,
+   and the doctor sends the DB4 into it at the end.
+5. **Languages are built in from the start, English first, with translations
+   added as content.** The screen is translated. **The Signed-DB4 stays the
+   English DB4**, with a translated reading page vaulted beside it.
+
+**What this replaces or amends:**
+- the TODO.md entry "Telehealth: the call IS the acceptance" (22 Aug 2026) is
+  replaced; the call does not run in our app;
+- DB4-AND-AOBL.md §10 item 0a is answered: the link to the contact on record is
+  the flow, and the step offered before the call is a consent record, not a
+  pre-agreement;
+- **REQ-LANG-02 is amended**: not English and the chosen language side by side
+  on the form, because the practice wants the exact same DB4 (D-2026-09-14-02);
+- **REQ-VER-03 gains a live-call path**: identity checked by staff on the call,
+  as it is at the desk.
+
+**What would reopen it:** an auditor or Services Australia treating the doctor's
+check on a call as weaker than typed identifiers; a practice that wants a real
+pre-agreement; or legal advice that the agreement itself must be in the
+patient's language.
+
+## D-2026-10-11-08 - Telehealth exceptions, and the two scenarios: at the practice, and outside it or after hours
+
+**Date:** 11 October 2026. **Decided by:** Carl: *"We always have exceptions to
+the process"*. **Plan:** `TELEHEALTH-PLAN.md` §4 and §5.
+
+**The decisions:**
+1. **The doctor may mark the step before the consultation not done, with a
+   reason.** Examples: emergency, language barrier, technology gap. The
+   consultation goes ahead, and the patient or carer does only the DB4
+   afterwards. The reasons are a versioned option list (content, not code).
+   The time the reason was recorded is kept.
+2. **Scenario A, the doctor at the practice:** the DB4 is sent to the patient's
+   page at the end of the consultation, before the call ends.
+3. **Scenario B, the doctor outside the practice or after hours:** the DB4 is
+   sent the next day, once the doctor has updated the PMS. Reception contacts
+   the patient or carer to sign it, either by phone (reception checks identity
+   and reads out a code) or by link alone (three typed identifiers).
+
+**Proposed and not yet ruled:** the other scenarios in `TELEHEALTH-PLAN.md`
+§5c (enduring cover, a consultation that did not go ahead, a declined DB4, an
+interpreter, two patients on one call, a handover, a session that never gets a
+DB4, no contact on file).
+
+**What would reopen it:** a reason that turns out to be used to skip the step
+routinely, or a practice where reception cannot do next-day follow-up.

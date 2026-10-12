@@ -858,41 +858,15 @@ the two have to be picked up together.
 
 ## Capture
 
-### Telehealth: the call IS the acceptance
-**Status:** not started.
-**Decided:** 2026-08-22, Carl.
+### ~~Telehealth: the call IS the acceptance~~ - REPLACED 11 Oct 2026
+**Status:** replaced by `TELEHEALTH-PLAN.md` (D-2026-10-11-07, -08). Not built.
 
-For a telehealth consultation the practitioner calls the patient through the
-app, the patient accepts the call, and that acceptance is the consent
-ceremony — no separate link, no SMS, no second device.
-
-**Why this is attractive:** it removes the weakest step in remote capture. A
-link sent to a phone proves somebody holds that phone; a patient answering a
-call they were expecting, in a consultation they booked, with a practitioner
-they can see, is a materially stronger act — and it happens inside the
-appointment rather than beside it.
-
-**What has to be worked out before it is built,** because each of these
-changes what the record means:
-
-- **What exactly is captured.** Accepting a call is consent to the CALL. The
-  s 65C data set and the assignment of benefit are a different agreement, and
-  the ceremony has to present them, not assume them. A patient who thinks they
-  answered the phone has not assigned a benefit.
-- **What the evidence is.** A signature is an artefact; an accepted call is an
-  event. The record needs something durable — the call metadata, the
-  timestamps, what was displayed and read, and whether the patient was told
-  what they were agreeing to. Whether that includes a recording is a separate
-  decision with its own consent question.
-- **Identity.** The call proves the patient answered, not who they are. The
-  identifier check (FR-1.4, minimum three, never Medicare) still has to happen
-  and probably has to happen visually, on the call.
-- **Failure modes.** Dropped calls, the patient handing the phone to somebody
-  else, a call accepted while the patient is driving. A ceremony that cannot
-  be safely abandoned mid-way is not safe.
-
-**Depends on:** the capture channel work, and a decision on whether telehealth
-calls run in our app at all or through a PMS-provided channel.
+The call does not run in our app. Before the consultation, the doctor checks
+identity on the call and sends a link to the contact on file; the patient enters
+a 6-digit code the doctor reads out and agrees to the telehealth consultation.
+After it, the DB4 appears on the same page and the patient signs it. The
+questions this entry raised (what is captured, what the evidence is, identity,
+failure modes) are answered in the plan: §2 decisions 1-2, §6 item 2, §4 and §5.
 
 ---
 
