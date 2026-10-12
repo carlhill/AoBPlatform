@@ -164,7 +164,11 @@ export function TelehealthPanel() {
     // OUT OF ORDER IS NORMAL: a slow answer for the previous patient must never land under this one.
     if (latestChoice.current !== hit.patientId) return;
     if (!res) return setError(strings.status.unreachable);
-    if (!res.ok) return setError(await refusal(res));
+    if (!res.ok) {
+      const said = await refusal(res);
+      if (latestChoice.current !== hit.patientId) return;
+      return setError(said);
+    }
     const c = (await res.json()) as TelehealthMaskedContact;
     if (latestChoice.current !== hit.patientId || c.patientId !== hit.patientId) return;
     setContact(c);

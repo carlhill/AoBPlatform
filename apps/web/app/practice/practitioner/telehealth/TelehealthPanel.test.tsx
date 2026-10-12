@@ -252,6 +252,44 @@ describe('TelehealthPanel', () => {
     expect(screen.getByTestId('telehealth-mobile').textContent).not.toContain('111');
   });
 
+  it('an earlier patient’s refusal arriving late is dropped, never shown under the later patient', async () => {
+    const OTHER = { patientId: 'p-2', givenNames: 'Second', familyName: 'Fixtureson', dateOfBirth: '1990-02-02' };
+    let releaseFirst: (() => void) | null = null;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const reply = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as unknown as Response;
+        if (url.endsWith('/telehealth/enabled')) return reply({ enabled: true });
+        if (url.endsWith('/telehealth/sessions')) return reply([]);
+        if (url.includes('/telehealth/patients?q=')) return reply([PATIENT, OTHER]);
+        if (url.endsWith('/p-1/contact')) {
+          // The first patient's refusal arrives at once, but its body is slow and lands after the second's contact.
+          return {
+            ok: false,
+            status: 404,
+            json: () =>
+              new Promise((resolve) => {
+                releaseFirst = () => resolve({ message: 'That patient is not on this practice’s records.' });
+              }),
+          } as unknown as Response;
+        }
+        if (url.endsWith('/p-2/contact')) return reply({ patientId: 'p-2', maskedMobile: '•••••• 222', maskedEmail: null });
+        return reply({});
+      }),
+    );
+    render(<TelehealthPanel />);
+    fireEvent.change(await screen.findByTestId('telehealth-search'), { target: { value: 'Fixture' } });
+    fireEvent.click(screen.getByTestId('telehealth-find'));
+    fireEvent.click(await screen.findByTestId('telehealth-choose-p-1'));
+    await waitFor(() => expect(releaseFirst).not.toBeNull());
+    fireEvent.click(screen.getByTestId('telehealth-choose-p-2'));
+    expect((await screen.findByTestId('telehealth-mobile')).textContent).toContain('222');
+    releaseFirst!();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(screen.queryByTestId('telehealth-error')).toBeNull();
+    expect(screen.getByTestId('telehealth-mobile').textContent).toContain('222');
+  });
+
   it('takes the last three digits of a masked mobile for the read-back', () => {
     expect(mobileEnding('•••••• 412')).toBe('412');
   });
