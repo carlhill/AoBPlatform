@@ -116,6 +116,16 @@ describe('TelehealthPatientView', () => {
     fireEvent.change(screen.getByTestId('telehealth-consenter-name'), { target: { value: 'Jane' } });
     fireEvent.change(screen.getByTestId('telehealth-consenter-mobile'), { target: { value: '0400 000 999' } });
     expect(tick.hasAttribute('disabled')).toBe(true);
+    // The right mobile gets its tick; the one-name entry, once left, says what is wrong in words (Carl, 12 Oct 2026).
+    expect(screen.getByTestId('telehealth-mobile-ok')).toBeTruthy();
+    expect(screen.queryByTestId('telehealth-name-ok')).toBeNull();
+    fireEvent.blur(screen.getByTestId('telehealth-consenter-name'));
+    expect(screen.getByText(t.consenterNameNeeded)).toBeTruthy();
+    // A wrong mobile, once left, says so too.
+    fireEvent.change(screen.getByTestId('telehealth-consenter-mobile'), { target: { value: '0299' } });
+    fireEvent.blur(screen.getByTestId('telehealth-consenter-mobile'));
+    expect(screen.getByText(t.consenterMobileNeeded)).toBeTruthy();
+    expect(screen.queryByTestId('telehealth-mobile-ok')).toBeNull();
 
     fireEvent.change(screen.getByTestId('telehealth-consenter-name'), { target: { value: 'Jane Citizen' } });
     fireEvent.change(screen.getByTestId('telehealth-consenter-mobile'), { target: { value: '0400 000 999' } });

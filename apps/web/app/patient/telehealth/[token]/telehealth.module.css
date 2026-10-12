@@ -105,3 +105,15 @@
   font-size: 1.0625rem;
   color: var(--ink);
 }
+
+/* A field's label with its green tick once the value is right. */
+.labelRow {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+}
+
+.okMark {
+  color: var(--ok);
+  flex: none;
+}

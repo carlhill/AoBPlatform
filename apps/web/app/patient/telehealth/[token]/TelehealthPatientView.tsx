@@ -28,7 +28,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { ShieldCheck } from 'lucide-react';
+import { CircleCheck, ShieldCheck } from 'lucide-react';
 import {
   TELEHEALTH_CONSENTER_NAME_SLOT,
   TELEHEALTH_CONTENT,
@@ -124,6 +124,9 @@ export function TelehealthPatientView({ token }: { token: string }) {
   /** Someone acting for the patient names themselves and gives a mobile before the tick (D-2026-10-12-03 item 12). */
   const [consenterName, setConsenterName] = useState('');
   const [consenterMobile, setConsenterMobile] = useState('');
+  /** Left once, so a field still being typed is never called wrong (Carl, 12 Oct 2026). */
+  const [nameTouched, setNameTouched] = useState(false);
+  const [mobileTouched, setMobileTouched] = useState(false);
 
   useEffect(() => {
     void (async () => {
@@ -241,8 +244,12 @@ export function TelehealthPatientView({ token }: { token: string }) {
   if (page) {
     const provider = page.providerName ?? '';
     // The tick waits for a full name and a mobile from someone acting for the patient; the patient needs neither.
-    const consenterReady =
-      page.consenterIsPatient || (isPlausibleConsenterName(consenterName) && isWellFormedMobile(consenterMobile));
+    const nameOk = isPlausibleConsenterName(consenterName);
+    const mobileOk = isWellFormedMobile(consenterMobile);
+    const consenterReady = page.consenterIsPatient || (nameOk && mobileOk);
+    /* A green tick in a circle once a field is right, and words, not colour alone, once a wrong one is left (Carl, 12 Oct 2026). */
+    const okMark = (ok: boolean, testId: string) =>
+      ok ? <CircleCheck size={20} className={styles.okMark} aria-label={t.fieldOk} data-testid={testId} /> : null;
     /*
      * WHO THE PROVIDER IS, AND WHERE TO CHECK (Carl, D-2026-10-12-03 item 10):
      * only when core says the registration was sighted and is current. The
@@ -285,7 +292,15 @@ export function TelehealthPatientView({ token }: { token: string }) {
                     page.patientGivenNames ?? '',
                   )}
                 </p>
-                <Field label={t.consenterNameLabel} hint={t.consenterNameHint}>
+                <Field
+                  label={
+                    <span className={styles.labelRow}>
+                      {t.consenterNameLabel} {okMark(nameOk, 'telehealth-name-ok')}
+                    </span>
+                  }
+                  hint={t.consenterNameHint}
+                  error={nameTouched && !nameOk && consenterName.trim() ? t.consenterNameNeeded : null}
+                >
                   {({ id, describedBy }) => (
                     <TextInput
                       id={id}
@@ -294,11 +309,20 @@ export function TelehealthPatientView({ token }: { token: string }) {
                       autoComplete="name"
                       maxLength={100}
                       onChange={(e) => setConsenterName(e.target.value)}
+                      onBlur={() => setNameTouched(true)}
                       data-testid="telehealth-consenter-name"
                     />
                   )}
                 </Field>
-                <Field label={t.consenterMobileLabel} hint={t.consenterMobileHint}>
+                <Field
+                  label={
+                    <span className={styles.labelRow}>
+                      {t.consenterMobileLabel} {okMark(mobileOk, 'telehealth-mobile-ok')}
+                    </span>
+                  }
+                  hint={t.consenterMobileHint}
+                  error={mobileTouched && !mobileOk && consenterMobile.trim() ? t.consenterMobileNeeded : null}
+                >
                   {({ id, describedBy }) => (
                     <TextInput
                       id={id}
@@ -309,6 +333,7 @@ export function TelehealthPatientView({ token }: { token: string }) {
                       maxLength={20}
                       value={consenterMobile}
                       onChange={(e) => setConsenterMobile(e.target.value)}
+                      onBlur={() => setMobileTouched(true)}
                       data-testid="telehealth-consenter-mobile"
                     />
                   )}
