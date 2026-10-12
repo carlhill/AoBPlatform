@@ -212,8 +212,9 @@ describe('telehealth sessions (e2e, real Postgres)', () => {
     ]);
     for (const entry of recorded) expect(Object.values(entry.event.payload)).not.toContain(sent.code);
 
-    // And they reached the vault outbox, committed with their writes (hard rule 11): one row each, and
-    // exactly one consent although agree was pressed twice. (Sorted: two rows in one transaction can share
+    // And they reached the vault outbox: one row each, and exactly one consent although agree was pressed
+    // twice. (That they commit in the SAME transaction as their writes is proven by
+    // telehealth_write_and_vault_event_commit_together below.) (Sorted: two rows in one transaction can share
     // an occurredAt, and the table has no sequence.)
     const outbox = await prisma.vaultOutbox.findMany({
       where: { subjectType: 'TelehealthSession', subjectId: sent.session.id },
@@ -234,6 +235,52 @@ describe('telehealth sessions (e2e, real Postgres)', () => {
         expect(Object.values(payload)).not.toContain(value);
       }
     }
+  });
+
+  it('telehealth_write_and_vault_event_commit_together', async () => {
+    // Hard rule 11: a domain write without its vault event, or a vault event without its write, must be
+    // impossible. The sink writes the real outbox row and then fails on the SECOND event of a send, so the
+    // whole transaction has to roll back: the session row AND the already-enqueued session_opened row.
+    // If record() ever wrote the outbox outside the write's tx, the session_opened row would survive.
+    const rollbackPatientId = await prisma.withPractice(practiceId, async (tx) => {
+      const p = await tx.patient.create({
+        data: {
+          practiceId,
+          familyName: 'Rollbackson',
+          givenNames: 'Fixture',
+          dateOfBirth: new Date('1985-03-03'),
+          mobile: '0400 000 413',
+        },
+      });
+      return p.id;
+    });
+    const evidence = app.get(TelehealthEvidence);
+    const previous = evidence.sink;
+    evidence.sink = async (tx, entry) => {
+      await outboxSink(tx, entry);
+      if (entry.event.type === 'telehealth.link_sent') throw new Error('simulated failure after the outbox write');
+    };
+    try {
+      await expect(
+        telehealth.send(asPractitioner(gp.practitionerId), practiceId, {
+          patientId: rollbackPatientId,
+          identifierTypes: checked,
+          channel: 'sms',
+          consenterIsPatient: true,
+        }),
+      ).rejects.toThrow(/simulated failure/);
+    } finally {
+      evidence.sink = previous;
+    }
+
+    const sessions = await prisma.withPractice(practiceId, (tx) =>
+      tx.telehealthSession.findMany({ where: { patientId: rollbackPatientId } }),
+    );
+    expect(sessions).toHaveLength(0);
+    const opened = (await prisma.vaultOutbox.findMany({ where: { type: 'telehealth.session_opened' } })).filter(
+      (r) => (r.payload as { patientId?: string }).patientId === rollbackPatientId,
+    );
+    expect(opened).toHaveLength(0);
   });
 
   it('telehealth_identifier_types_never_values', async () => {
@@ -262,7 +309,7 @@ describe('telehealth sessions (e2e, real Postgres)', () => {
       where: { type: 'verification.staff_verified', subjectId: row.verificationEventId! },
     });
     expect((outbox.payload as { identifierTypes: string }).identifierTypes).toBe('address,date_of_birth,name');
-    // And the proposed events carry a count, not the list and not the values.
+    // And the telehealth events carry a count, not the list and not the values.
     const opened = recorded.find((e) => e.event.type === 'telehealth.session_opened')!;
     expect(opened.event.payload).toMatchObject({ identifierTypeCount: 3 });
     expect(Object.keys(opened.event.payload)).not.toContain('identifierTypes');

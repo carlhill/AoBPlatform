@@ -75,8 +75,9 @@ const NOTE_LOOKS_LIKE_A_VALUE = /\d{6,}|\S+@\S+\.\S+/;
  * provider may record it with no session at all.
  *
  * EVERY WRITE HANDS ITS EVENT TO `TelehealthEvidence.record` INSIDE ITS OWN
- * TRANSACTION. The event types are PROPOSED (D-2026-10-12-02) and the flag
- * stays off until Carl approves them — see `telehealth-evidence.ts`.
+ * TRANSACTION, which enqueues it on the vault outbox with that same `tx`
+ * (hard rule 11). The event types were approved by Carl on 12 Oct 2026
+ * (D-2026-10-12-02) — see `telehealth-evidence.ts`.
  *
  * NO IDENTIFIER VALUE, CONTACT VALUE OR CODE IS LOGGED, STORED OR RETURNED TO
  * THE PATIENT'S PAGE. The code is returned once, to the provider.
