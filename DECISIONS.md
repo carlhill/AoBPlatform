@@ -4101,7 +4101,15 @@ codes, counts and times only: never the 6-digit code, a contact, a name or the
   on the `db4` profile does not see it. Telehealth may want its own surface;
 - the consent wording: "Yes, start my telehealth consultation with
   {providerName}", and a carer form. TELEHEALTH-PLAN.md §9 leaves the wording
-  to Carl.
+  to Carl;
+- **the name "AoBPlatform" (AoB = Assignment of Benefit) against G10**: it is
+  still the email footer's organisation, the Shell wordmark on the patient
+  page, and the product name elsewhere. The page's own title and description
+  are neutral now; the name itself is Carl's call;
+- **no age check when the patient consents for themselves.** A patient under
+  14 can be recorded as agreeing to the consultation. TELEHEALTH-PLAN.md §3
+  step 4 says the signer rules apply (14+ may self-assign); nothing was changed
+  pending Carl's ruling.
 
 **What would reopen it:** Carl choosing different event names or payloads, or
 the Department's answer to G10 changing what the step before the call records.

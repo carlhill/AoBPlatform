@@ -20,7 +20,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | Exported symbols indexed | 2580 |
 | Files scanned for exports | 596 |
 | Files scanned for imports | 639 |
-| Exports with no comment of their own | 1044 |
+| Exports with no comment of their own | 1043 |
 | Exports imported nowhere else | 1065 |
 
 ## Sections
@@ -583,7 +583,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `metadata` | web:patient/messages/[token]/page.tsx |  | 0 |
 | `metadata` | web:patient/portal/activate/[token]/page.tsx |  | 0 |
 | `metadata` | web:patient/portal/page.tsx |  | 0 |
-| `metadata` | web:patient/telehealth/[token]/page.tsx |  | 0 |
+| `metadata` | web:patient/telehealth/[token]/page.tsx | THE PAGE'S OWN HEAD, NEUTRAL UNTIL G10 IS ANSWERED (TELEHEALTH-PLAN.md §9). | 0 |
 | `metadata` | web:platform/acting-as/history/page.tsx |  | 0 |
 | `metadata` | web:platform/acting-as/page.tsx |  | 0 |
 | `metadata` | web:platform/templates/page.tsx |  | 0 |
