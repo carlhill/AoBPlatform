@@ -20,6 +20,7 @@
 import content from '../content/telehealth.json';
 import reasonsContent from '../content/telehealth-not-done-reasons.json';
 import { APPROVED_IDENTIFIER_TYPES, type ApprovedIdentifierType } from './identifiers';
+import { ASSIGNOR_RELATIONSHIP_KEYS } from './assignor-relationships';
 
 /* -------------------------------------------------------------------------
  * States
@@ -34,6 +35,8 @@ import { APPROVED_IDENTIFIER_TYPES, type ApprovedIdentifierType } from './identi
  * - `agreed`: they pressed the one button.
  * - `not_done`: the provider recorded the step as not done, with a reason, and
  *   the consultation went ahead (hard rule 8; §4).
+ * - `went_ahead`: after the patient agreed, the provider recorded the consultation as complete (Carl,
+ *   D-2026-10-12-03 item 6).
  * - `did_not_proceed`: the consultation did not happen (scenario C2, not yet
  *   ruled; the state exists so the model can hold it).
  *
@@ -43,7 +46,7 @@ import { APPROVED_IDENTIFIER_TYPES, type ApprovedIdentifierType } from './identi
  * adding them is a change to this list, `TELEHEALTH_SESSION_MOVES` and the
  * migration's CHECK, which is copied from here.
  */
-export const TELEHEALTH_SESSION_STATES = ['opened', 'code_checked', 'agreed', 'not_done', 'did_not_proceed'] as const;
+export const TELEHEALTH_SESSION_STATES = ['opened', 'code_checked', 'agreed', 'not_done', 'did_not_proceed', 'went_ahead'] as const;
 export type TelehealthSessionState = (typeof TELEHEALTH_SESSION_STATES)[number];
 
 /**
@@ -57,9 +60,10 @@ export type TelehealthSessionState = (typeof TELEHEALTH_SESSION_STATES)[number];
 export const TELEHEALTH_SESSION_MOVES: Readonly<Record<TelehealthSessionState, readonly TelehealthSessionState[]>> = {
   opened: ['code_checked', 'not_done', 'did_not_proceed'],
   code_checked: ['agreed', 'not_done', 'did_not_proceed'],
-  agreed: ['did_not_proceed'],
+  agreed: ['went_ahead', 'did_not_proceed'],
   not_done: [],
   did_not_proceed: [],
+  went_ahead: [],
 };
 
 export function isTelehealthSessionState(value: unknown): value is TelehealthSessionState {
@@ -118,8 +122,14 @@ export interface TelehealthContent {
     readonly key: string;
     /** Placeholders: {{providerName}}. */
     readonly statement: string;
-    /** When a carer agrees for the patient. Placeholders: {{providerName}}, {{patientGivenNames}}. */
+    /**
+     * When someone agrees for the patient. Placeholders: {{providerName}},
+     * {{patientGivenNames}}, {{consenterName}} (typed by them on the page) and
+     * {{relationship}} (from `relationshipPhrases`). Carl, 12 Oct 2026, D-2026-10-12-03 item 12.
+     */
     readonly carerStatement: string;
+    /** `carer` -> `carer for`: one phrase for every assignor relationship key. */
+    readonly relationshipPhrases: Readonly<Record<string, string>>;
   };
 }
 
@@ -176,8 +186,8 @@ export function parseTelehealthContent(raw: unknown): TelehealthContent {
     return fail('`consent.key` must be a versioned lower_snake_case key, e.g. telehealth_consult_v1');
   }
   const allowed: Record<'statement' | 'carerStatement', readonly string[]> = {
-    statement: ['providerName'],
-    carerStatement: ['providerName', 'patientGivenNames'],
+    statement: ['providerName', 'patientName'],
+    carerStatement: ['providerName', 'patientGivenNames', 'consenterName', 'relationship'],
   };
   for (const field of ['statement', 'carerStatement'] as const) {
     const line = consent[field];
@@ -193,6 +203,15 @@ export function parseTelehealthContent(raw: unknown): TelehealthContent {
     }
   }
 
+  const phrases = consent.relationshipPhrases as Record<string, unknown> | undefined;
+  if (typeof phrases !== 'object' || phrases === null) return fail('`consent.relationshipPhrases` must be an object');
+  for (const key of ASSIGNOR_RELATIONSHIP_KEYS) {
+    const phrase = phrases[key];
+    if (typeof phrase !== 'string' || phrase.trim().length === 0) {
+      return fail(`consent.relationshipPhrases has no phrase for the relationship "${key}"`);
+    }
+  }
+
   return {
     version: doc.version,
     code,
@@ -201,6 +220,7 @@ export function parseTelehealthContent(raw: unknown): TelehealthContent {
       key: consent.key,
       statement: consent.statement as string,
       carerStatement: consent.carerStatement as string,
+      relationshipPhrases: phrases as Record<string, string>,
     },
   };
 }
@@ -215,21 +235,52 @@ export const TELEHEALTH_CONTENT_VERSION: string = parsedContent.version;
  * the record cannot word it differently. A missing value throws rather than
  * rendering braces in front of a patient.
  */
+/**
+ * Left in the carer's statement until they have typed their name, so the page
+ * can show the sentence filling in as they type. The statement that is
+ * RECORDED is always rendered by core with the name it received.
+ */
+export const TELEHEALTH_CONSENTER_NAME_SLOT = '{{consenterName}}';
+
 export function telehealthConsentStatement(input: {
   providerName: string;
   consenterIsPatient: boolean;
   patientGivenNames?: string;
+  /** The patient's full name from the record, for their own statement (Carl, 12 Oct 2026). */
+  patientName?: string;
+  /** The assignor relationship key the provider chose on the call. */
+  relationshipKey?: string | null;
+  /** Typed by the person on the page; absent, the slot is left in for the page to fill. */
+  consenterName?: string;
 }): string {
   const template = input.consenterIsPatient ? parsedContent.consent.statement : parsedContent.consent.carerStatement;
   const values: Record<string, string | undefined> = {
     providerName: input.providerName,
     patientGivenNames: input.patientGivenNames,
+    patientName: input.patientName,
+    relationship: input.relationshipKey ? parsedContent.consent.relationshipPhrases[input.relationshipKey] : undefined,
+    consenterName: input.consenterName?.trim() || undefined,
   };
-  return template.replace(PLACEHOLDER, (_m, name: string) => {
+  return template.replace(PLACEHOLDER, (slot, name: string) => {
     const value = values[name];
+    if (!value && name === 'consenterName') return slot;
     if (!value) throw new Error(`The telehealth statement needs {{${name}}} and none was given.`);
     return value;
   });
+}
+
+/**
+ * THE NAME SOMEONE ACTING FOR THE PATIENT TYPES (D-2026-10-12-03 item 12).
+ * A full name as they would sign it: at least two names, one of them three
+ * letters or more ("J Ada" passes, "J A" does not; Carl, 12 Oct 2026), no
+ * more than 100 characters, and nothing that looks like a number or an
+ * address, so a contact or an identifier cannot be typed into the name box.
+ */
+export function isPlausibleConsenterName(value: string): boolean {
+  const name = value.trim();
+  if (name.length > 100 || /[\d@]/.test(name)) return false;
+  const names = name.split(/\s+/).filter((part) => /\p{L}/u.test(part));
+  return names.length >= 2 && names.some((part) => (part.match(/\p{L}/gu) ?? []).length >= 3);
 }
 
 /* -------------------------------------------------------------------------
@@ -290,4 +341,23 @@ export const TELEHEALTH_NOT_DONE_REASON_KEYS: readonly string[] = parsedReasons.
 
 export function telehealthNotDoneReason(key: unknown): TelehealthNotDoneReason | undefined {
   return typeof key === 'string' ? parsedReasons.reasons.find((r) => r.key === key) : undefined;
+}
+
+/**
+ * THE TELEHEALTH CONSULTATION ID (Carl, 12 Oct 2026, D-2026-10-12-03 item 11):
+ * a short reference the patient sees in the message and on their page, and
+ * quotes when they ring the practice. `TH-` and two groups of four from
+ * Crockford's base 32, which drops I, L, O and U so it survives being read
+ * out over the phone. 40 random bits, unique across the platform (a unique
+ * index says so, and core draws again on the rare clash). A REFERENCE, NOT A KEY: it opens nothing and carries nothing
+ * about the patient.
+ */
+export const TELEHEALTH_CONSULTATION_ID_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+export const TELEHEALTH_CONSULTATION_ID_PATTERN = /^TH-[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4}$/;
+
+export function telehealthConsultationId(randomBytes: (n: number) => Uint8Array): string {
+  const bytes = randomBytes(8);
+  let out = '';
+  for (let i = 0; i < 8; i++) out += TELEHEALTH_CONSULTATION_ID_ALPHABET[bytes[i]! % 32];
+  return `TH-${out.slice(0, 4)}-${out.slice(4)}`;
 }

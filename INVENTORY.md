@@ -17,30 +17,30 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 | | Count |
 |---|---|
-| Exported symbols indexed | 2581 |
-| Files scanned for exports | 596 |
-| Files scanned for imports | 639 |
-| Exports with no comment of their own | 1043 |
-| Exports imported nowhere else | 1066 |
+| Exported symbols indexed | 2596 |
+| Files scanned for exports | 597 |
+| Files scanned for imports | 640 |
+| Exports with no comment of their own | 1050 |
+| Exports imported nowhere else | 1074 |
 
 ## Sections
 
-- [Web components](#web-components) — 247
+- [Web components](#web-components) — 248
 - [Web hooks](#web-hooks) — 16
-- [Web helpers and constants](#web-helpers-and-constants) — 324
+- [Web helpers and constants](#web-helpers-and-constants) — 325
 - [Web types](#web-types) — 123
-- [Domain functions](#domain-functions) — 412
-- [Domain constants and content](#domain-constants-and-content) — 278
+- [Domain functions](#domain-functions) — 414
+- [Domain constants and content](#domain-constants-and-content) — 281
 - [Domain types](#domain-types) — 304
-- [Contracts types](#contracts-types) — 130
+- [Contracts types](#contracts-types) — 132
 - [Contracts functions and constants](#contracts-functions-and-constants) — 38
 - [Core services, controllers and modules](#core-services-controllers-and-modules) — 302
-- [Core helpers, constants and types](#core-helpers-constants-and-types) — 244
+- [Core helpers, constants and types](#core-helpers-constants-and-types) — 250
 - [AOBPRINTER (the desktop print channel)](#aobprinter-the-desktop-print-channel-) — 163
 
 ## Web components
 
-247 exports.
+248 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -57,9 +57,9 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `Screen` | web:kiosk/components/Chrome.tsx | Header, content and footer. | **13** · web:kiosk/screens/AssignorScreen.tsx, web:kiosk/screens/CheckDetailsScreen.tsx, web:kiosk/screens/CompleteScreen.tsx, +10 more |
 | `Blueprint` | web:kiosk/components/Chrome.tsx |  | **11** · web:kiosk/screens/AssignorScreen.tsx, web:kiosk/screens/CheckDetailsScreen.tsx, web:kiosk/screens/HandoverScreen.tsx, +8 more |
 | `Section` | web:ui/index.tsx |  | **11** · web:apply/ApplyForm.tsx, web:platform/practices/[practiceId]/aobprinter-host/RebaselinePanel.tsx, web:practice/aobprinter-host/AobPrinterHostView.tsx, +8 more |
+| `Checkbox` | web:ui/index.tsx | ONE CHECKBOX, AND FROM 12 SEP 2026 IT ALSO WORKS IN A TABLE ROW. | **10** · web:apply/ApplyForm.tsx, web:patient/agree/[token]/AgreeView.tsx, web:patient/telehealth/[token]/TelehealthPatientView.tsx, +7 more |
 | `Card` | web:patient/portal/portal-ui.tsx |  | **9** · web:patient/portal/cards/AgreementsCard.tsx, web:patient/portal/cards/DataCard.tsx, web:patient/portal/cards/DetailsCard.tsx, +6 more |
 | `CardState` | web:patient/portal/portal-ui.tsx | Loading, failed, or empty — the three answers that are not data. | **9** · web:patient/portal/cards/AgreementsCard.tsx, web:patient/portal/cards/DataCard.tsx, web:patient/portal/cards/DetailsCard.tsx, +6 more |
-| `Checkbox` | web:ui/index.tsx | ONE CHECKBOX, AND FROM 12 SEP 2026 IT ALSO WORKS IN A TABLE ROW. | **9** · web:apply/ApplyForm.tsx, web:patient/agree/[token]/AgreeView.tsx, web:practice/affiliations/AffiliationsView.tsx, +6 more |
 | `PracticeOverride` | web:practice/usePractice.tsx |  | **7** · web:platform/practices/[practiceId]/application/page.tsx, web:platform/practices/[practiceId]/correspondence/page.tsx, web:platform/practices/[practiceId]/queue/page.tsx, +4 more |
 | `GuardedButton` | web:kiosk/components/Buttons.tsx |  | **6** · web:kiosk/components/SignatureControl.tsx, web:kiosk/screens/AssignorScreen.tsx, web:kiosk/screens/CheckDetailsScreen.tsx, +3 more |
 | `PortalButton` | web:patient/portal/portal-ui.tsx | A BUTTON WITH A 44px TARGET, which is why this is not `Button` from `app/ui`. | **6** · web:patient/portal/PortalView.tsx, web:patient/portal/activate/[token]/ActivateView.tsx, web:patient/portal/cards/DetailsCard.tsx, +3 more |
@@ -263,6 +263,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `ReviewQueuePage` | web:review/page.tsx |  | 0 |
 | `ReviewsPage` | web:practice/reviews/page.tsx |  | 0 |
 | `RootLayout` | web:layout.tsx |  | 0 |
+| `SessionDetails` | web:practice/practitioner/telehealth/TelehealthPanel.tsx | ONE SESSION, EXPANDED IN THE SIDE PANEL (Carl, 12 Oct 2026): what a doctor needs to call back, in an emergency above all, without leaving the page. | 0 |
 | `SetupPage` | web:practice/setup/page.tsx |  | 0 |
 | `StatusPage` | web:status/[token]/page.tsx |  | 0 |
 | `StopEmailChangePage` | web:practice/stop-email-change/page.tsx |  | 0 |
@@ -317,7 +318,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Web helpers and constants
 
-324 exports.
+325 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -620,6 +621,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `queueSummary` | web:practice/patients/PatientsQueueView.tsx | THE FRESHEST TRUE THING ABOUT THIS PATIENT, IN ONE LINE. | 0 |
 | `queueTone` | web:practice/patients/PatientsQueueView.tsx | Stop-tone for a cross nobody has answered; warn while a tablet is live. | 0 |
 | `readLockFailure` | web:kiosk/Ceremony.tsx |  | 0 |
+| `recordValue` | web:practice/practitioner/telehealth/TelehealthPanel.tsx | The record's value for one kind of identifier, for the doctor to compare. | 0 |
 | `redirectUri` | web:auth.ts |  | 0 |
 | `refusalFor` | web:patient/telehealth/[token]/TelehealthPatientView.tsx | WHAT A REFUSAL MEANS, FROM ITS CODE — NEVER FROM THE STATUS ALONE (wow.md §13). | 0 |
 | `relationshipDescription` | web:kiosk/rules/assignor.ts | What is actually sent as the relationship: the free text when the option asks for it, otherwise the option's own label. | 0 |
@@ -778,7 +780,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Domain functions
 
-412 exports.
+414 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -789,6 +791,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `chaseBandFor` | domain:chase.ts |  | **5** · core:arrivals/post-service-chase.sweep.ts, core:auto-capture/auto-capture.service.ts, core:chase-attempts/chase-attempts.service.ts, +2 more |
 | `isPlatformOperator` | domain:landing.ts |  | **5** · web:practice/locations/LocationsView.tsx, web:practice/practitioners/PractitionersView.tsx, web:practice/queue/QueueView.tsx, +2 more |
 | `landingPath` | domain:landing.ts |  | **5** · web:AccessGuard.tsx, web:MainMenu.tsx, web:NotFoundView.tsx, +2 more |
+| `normalisePhone` | domain:contacts.ts | Reduce an Australian telephone number to a comparable form. | **5** · core:agreements/agreements.service.ts, core:telehealth/telehealth.service.ts, domain:agreement-copy.ts, +2 more |
 | `IdentifierSetError` | domain:identifiers.ts |  | **4** · core:portal/portal.service.ts, core:practices/practices.service.ts, core:telehealth/telehealth.service.ts, +1 more |
 | `attemptAllowed` | domain:chase.ts |  | **4** · core:chase-attempts/chase-attempts.service.ts, core:reconciliation/reconciliation.service.ts, domain:chase-attempt.ts, +1 more |
 | `canTransition` | domain:lifecycle.ts |  | **4** · core:agreements/agreements.service.ts, core:capture/capture.service.ts, core:retention/retention-sweep.service.ts, +1 more |
@@ -796,7 +799,6 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `detailTypeForPatientField` | domain:tablet-session.ts |  | **4** · core:arrivals/arrivals.service.ts, core:patients/patients.service.ts, core:tablet-sessions/tablet-sessions.service.ts, +1 more |
 | `isValidAhpraNumberFormat` | domain:enrolment-ceremony.ts |  | **4** · core:affiliations/affiliations.service.ts, core:organisations/organisations.service.ts, web:practice/practitioners/PractitionersView.tsx, +1 more |
 | `kioskIdleTimeoutOrDefault` | domain:kiosk.ts | WHAT THE TABLET USES when the server said nothing it can believe. | **4** · core:kiosk/kiosk.service.ts, web:kiosk/Ceremony.tsx, web:kiosk/useInactivityReset.ts, +1 more |
-| `normalisePhone` | domain:contacts.ts | Reduce an Australian telephone number to a comparable form. | **4** · core:agreements/agreements.service.ts, domain:agreement-copy.ts, domain:assignor.ts, +1 more |
 | `practiceDayOf` | domain:practice-day.ts | `YYYY-MM-DD` FOR AN INSTANT, IN THE ZONE THE PRACTICE CHOSE (D-2026-10-10-03). | **4** · core:arrivals/arrivals.service.ts, core:practices/practice-day.ts, core:practitioner-queue/practitioner-queue.service.ts, +1 more |
 | `profileAllows` | domain:practice-surfaces.ts | May a practice on this profile open this console page? | **4** · web:AccessGuard.tsx, web:MainMenu.tsx, web:practice/setup/SetupHub.tsx, +1 more |
 | `relationshipNeedsFreeText` | domain:assignor-relationships.ts | True for the one option that reveals a required "Please describe" box. | **4** · web:kiosk/rules/assignor.ts, web:kiosk/screens/AssignorScreen.tsx, web:practice/patients/NewAgreementPanel.tsx, +1 more |
@@ -849,7 +851,9 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `expiresAt` | domain:pending-email-change.ts |  | **2** · core:identity/practitioner-email.service.ts, core:organisations/pending-email.service.ts |
 | `isAffiliationVelocityAnomalous` | domain:affiliation.ts | REQ-ANOM-01 — surface, never block. | **2** · core:affiliations/affiliations.service.ts, core:identity-dashboard/identity-dashboard.service.ts |
 | `isPairingCodeShape` | domain:devices.ts | Shape only — whether it is a LIVE code is the server's question, not this one. | **2** · core:devices/devices.service.ts, web:kiosk/screens/PairingScreen.tsx |
+| `isPlausibleConsenterName` | domain:telehealth.ts | THE NAME SOMEONE ACTING FOR THE PATIENT TYPES (D-2026-10-12-03 item 12). | **2** · core:telehealth/telehealth.service.ts, web:patient/telehealth/[token]/TelehealthPatientView.tsx |
 | `isValidAbnChecksum` | domain:abn.ts | The ATO's published ABN check: subtract 1 from the leading digit, apply the weights, and the weighted sum must be divisible by 89. | **2** · core:organisations/organisations.service.ts, web:apply/ApplyForm.tsx |
+| `isWellFormedMobile` | domain:assignor.ts | Australian mobile, checked for SHAPE only. | **2** · core:telehealth/telehealth.service.ts, web:patient/telehealth/[token]/TelehealthPatientView.tsx |
 | `kioskPollMs` | domain:kiosk.ts |  | **2** · core:devices/devices.service.ts, core:kiosk/kiosk.service.ts |
 | `matchesPracticeStaff` | domain:assignor.ts | REQ-VUL-04 / hard rule 10 — the practice-staff comparison. | **2** · web:kiosk/rules/assignor.ts, web:practice/tablet/pushDesk.tsx |
 | `mayChoosePractice` | domain:landing.ts | May this person choose which practice they are looking at? | **2** · web:practice/PracticeList.tsx, web:practice/usePractice.tsx |
@@ -1059,7 +1063,8 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `summariseAudit` | domain:audit.ts | A short account of what the trail shows, for the top of the view. | **1** · core:organisations/audit.service.ts |
 | `surfaceOf` | domain:practice-surfaces.ts | Which surface owns a console page, or `always`, or null. | **1** · web:AccessGuard.tsx |
 | `surfaceOfEndpoint` | domain:practice-surfaces.ts | Which surface owns a core route, or `always`, or null. | **1** · core:practices/surface.guard.ts |
-| `telehealthConsentStatement` | domain:telehealth.ts | The statement exactly as the patient sees it — one function, so the page and the record cannot word it differently. | **1** · core:telehealth/telehealth.service.ts |
+| `telehealthConsentStatement` | domain:telehealth.ts |  | **1** · core:telehealth/telehealth.service.ts |
+| `telehealthConsultationId` | domain:telehealth.ts |  | **1** · core:telehealth/telehealth.service.ts |
 | `telehealthNotDoneReason` | domain:telehealth.ts |  | **1** · core:telehealth/telehealth.service.ts |
 | `telehealthTransports` | domain:telehealth.ts | Which transports a channel choice uses, in a fixed order. | **1** · core:telehealth/telehealth-link.dispatcher.ts |
 | `templateTypeFor` | domain:agreement-templates.ts | WHICH TEMPLATE TYPE AN AGREEMENT TYPE USES. | **1** · core:templates/templates.service.ts |
@@ -1146,7 +1151,6 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `isVerbalCaptureAllowed` | domain:guards.ts |  | 0 |
 | `isVisitAgreementType` | domain:visit-policy.ts |  | 0 |
 | `isWellFormedEmail` | domain:assignor.ts | Conservative, and deliberately not RFC 5322. The purpose is to catch the typo that would send a patient's agreement copy nowhere — not to litigate the address grammar, which would refuse valid mailboxes to no benefit. | 0 |
-| `isWellFormedMobile` | domain:assignor.ts | Australian mobile, checked for SHAPE only. | 0 |
 | `kioskScreenIsCeremony` | domain:kiosk.ts | THE SCREENS THAT MEAN SOMEBODY IS STANDING THERE. | 0 |
 | `matchOrganisationName` | domain:abn.ts |  | 0 |
 | `mayAttemptConfirmation` | domain:pending-email-change.ts |  | 0 |
@@ -1197,7 +1201,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Domain constants and content
 
-278 exports.
+281 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -1219,6 +1223,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `ADDRESS_CHECK_VERSION` | domain:address-check.ts | The catalogue version. | **2** · core:organisations/organisations.controller.ts, core:organisations/organisations.service.ts |
 | `AFFILIATION_VELOCITY_WINDOW_DAYS` | domain:affiliation.ts |  | **2** · core:affiliations/affiliations.service.ts, core:identity-dashboard/identity-dashboard.service.ts |
 | `AOBPRINTER_OFFLINE_AFTER_MS` | domain:aobprinter-host.ts | OFFLINE AFTER FIFTEEN MINUTES whatever the interval (D-2026-10-10-02, decision 2). | **2** · core:aobprinter-hosts/aobprinter-hosts.service.ts, web:practice/aobprinter-host/AobPrinterHostView.tsx |
+| `ASSIGNOR_RELATIONSHIP_KEYS` | domain:assignor-relationships.ts | Just the keys, in order — the shape a `<select>` wants. | **2** · core:telehealth/telehealth.service.ts, domain:telehealth.ts |
 | `AU_STATES` | domain:address.ts |  | **2** · web:apply/ApplyForm.tsx, web:status/[token]/correct/CorrectView.tsx |
 | `BILLING_ROLE_KEYS` | domain:billing-roles.ts | Just the keys, in order — the shape a `<select>` and a CHECK constraint want. | **2** · core:affiliations/affiliations.controller.ts, core:affiliations/affiliations.service.ts |
 | `CORRECTABLE_PATIENT_FIELDS` | domain:tablet-session.ts | WHAT RECEPTION MAY CORRECT ON THE PLATFORM'S MIRROR, and the list is the whole of it (TODO.md "Check-your-details", Carl 4 Sep 2026). | **2** · core:patients/patients.service.ts, web:practice/tablet/pushDesk.tsx |
@@ -1261,7 +1266,6 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `AOBPRINTER_REBASELINE_REASON_KEYS` | domain:aobprinter-rebaseline-reasons.ts | Just the keys, in order — what a `<select>` and a DTO's `@IsIn` want. | **1** · web:platform/practices/[practiceId]/aobprinter-host/RebaselinePanel.tsx |
 | `AOBPRINTER_VAULT_ANCHOR_MIN_INTERVAL_MS` | domain:aobprinter-host.ts | `aobprinter.chain_anchored` reaches the vault at most this often (D-2026-10-10-02, decision 5). | **1** · core:aobprinter-hosts/aobprinter-hosts.service.ts |
 | `ARTEFACT_PURPOSES` | domain:artefact.ts | What an artefact is evidence OF. | **1** · core:artefacts/artefacts.controller.ts |
-| `ASSIGNOR_RELATIONSHIP_KEYS` | domain:assignor-relationships.ts | Just the keys, in order — the shape a `<select>` wants. | **1** · core:telehealth/telehealth.service.ts |
 | `ASSOCIATION_CANDIDATE_TYPES` | domain:pre-agreement-association.ts | ONLY A PRE-AGREEMENT IS ASSOCIATED. | **1** · core:agreements/pre-agreement-association.ts |
 | `AUTOMATIC_CESSATION_TRIGGERS` | domain:enduring.ts | The six automatic cessation triggers (65CA(8), Addendum v2 §3.3). | **1** · core:enduring/enduring.controller.ts |
 | `BILLING_ROLES` | domain:billing-roles.ts | The list, in file order, which is screen order. | **1** · core:affiliations/affiliations.service.ts |
@@ -1338,6 +1342,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `SURFACE_REFUSED_CODE` | domain:practice-surfaces.ts | THE REASON CODE FOR "this practice does not use that part of AoB", named once and read by both sides. | **1** · core:practices/surface.guard.ts |
 | `TABLET_SESSION_IDLE_MS` | domain:tablet-session.ts | THIRTY MINUTES OF NOTHING AND THE SESSION IS OVER. | **1** · core:tablet-sessions/tablet-sessions.service.ts |
 | `TELEHEALTH_CODE_LOCKED_TASK_KIND` | domain:review-tasks.ts | The kind a locked telehealth code raises. | **1** · core:telehealth/telehealth.service.ts |
+| `TELEHEALTH_CONSENTER_NAME_SLOT` | domain:telehealth.ts | Left in the carer's statement until they have typed their name, so the page can show the sentence filling in as they type. | **1** · web:patient/telehealth/[token]/TelehealthPatientView.tsx |
 | `TELEHEALTH_CONTENT_VERSION` | domain:telehealth.ts |  | **1** · core:telehealth/telehealth.service.ts |
 | `TELEHEALTH_IDENTITY_CHECKLIST` | domain:telehealth.ts | WHAT THE PROVIDER TICKS ON THE CALL: identifier TYPES, from the approved six, never values (hard rules 1 and 9; REQ-VER-02/-04). | **1** · web:practice/practitioner/telehealth/TelehealthPanel.tsx |
 | `TELEHEALTH_LINK_STATES` | domain:telehealth.ts | States in which the patient's page is still live and a fresh link may be sent. | **1** · core:telehealth/telehealth.service.ts |
@@ -1467,6 +1472,8 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `SUPPRESSIONS_SHOWN_ON_LOG` | domain:correspondence-log.ts | A send that never happened, and why. | 0 |
 | `TABLET_SESSION_PATIENT_FIELDS` | domain:tablet-session.ts | WHAT THE TABLET IS SHOWN ABOUT THE PATIENT, and the list is the contract. | 0 |
 | `TABLET_SESSION_STATES` | domain:tablet-session.ts |  | 0 |
+| `TELEHEALTH_CONSULTATION_ID_ALPHABET` | domain:telehealth.ts | THE TELEHEALTH CONSULTATION ID (Carl, 12 Oct 2026, D-2026-10-12-03 item 11): a short reference the patient sees in the message and on their page, and quotes when they ring the practice. | 0 |
+| `TELEHEALTH_CONSULTATION_ID_PATTERN` | domain:telehealth.ts |  | 0 |
 | `TELEHEALTH_NEUTRAL_WORDING_FORBIDDEN` | domain:telehealth.ts | WORDS THE CONSENT STATEMENT AND THE LINK MESSAGE MAY NEVER USE, until the Department answers G10 (TELEHEALTH-PLAN.md §9). | 0 |
 | `TELEHEALTH_SESSION_MOVES` | domain:telehealth.ts | THE MOVES, AND ONLY THESE. | 0 |
 | `TELEHEALTH_SESSION_STATES` | domain:telehealth.ts | WHERE A SESSION HAS GOT TO. | 0 |
@@ -1793,7 +1800,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Contracts types
 
-130 exports.
+132 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -1841,9 +1848,10 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `PortalLink` | contracts:portal.ts | One practice the patient linked for themselves. | **2** · core:portal/portal-reads.service.ts, core:portal/portal.service.ts |
 | `RefusedArrival` | contracts:arrivals.ts | ONE ARRIVAL WAITING FOR RECEPTION TO NAME A PROVIDER. | **2** · core:arrivals/arrivals.service.ts, web:practice/patients/PatientsQueueView.tsx |
 | `TelehealthLinkLanding` | contracts:telehealth.ts | The landing, before the code. | **2** · core:telehealth/telehealth.service.ts, web:patient/telehealth/[token]/TelehealthPatientView.tsx |
-| `TelehealthMaskedContact` | contracts:telehealth.ts | The contact on the record, masked. | **2** · core:telehealth/telehealth.service.ts, web:practice/practitioner/telehealth/TelehealthPanel.tsx |
+| `TelehealthMaskedContact` | contracts:telehealth.ts | The contact on the record. | **2** · core:telehealth/telehealth.service.ts, web:practice/practitioner/telehealth/TelehealthPanel.tsx |
 | `TelehealthPageView` | contracts:telehealth.ts | The one page, after the code. | **2** · core:telehealth/telehealth.service.ts, web:patient/telehealth/[token]/TelehealthPatientView.tsx |
 | `TelehealthSendResult` | contracts:telehealth.ts | What Send (and Send again) returns. | **2** · core:telehealth/telehealth.service.ts, web:practice/practitioner/telehealth/TelehealthPanel.tsx |
+| `TelehealthSessionDetail` | contracts:telehealth.ts | ONE SESSION IN FULL, FOR A CALL-BACK (Carl, 12 Oct 2026): the session, the patient's record and contact read NOW from the PMS mirror (null if the record has gone), and the relationship of whoever agreed for the patient. | **2** · core:telehealth/telehealth.service.ts, web:practice/practitioner/telehealth/TelehealthPanel.tsx |
 | `TelehealthSessionView` | contracts:telehealth.ts | One session as the provider's panel sees it. | **2** · core:telehealth/telehealth.service.ts, web:practice/practitioner/telehealth/TelehealthPanel.tsx |
 | `AobPrinterChainRegressionView` | contracts:aobprinter-heartbeat.ts | A regression as stored on the row: the finding, and when it was made. | **1** · core:aobprinter-hosts/aobprinter-hosts.service.ts |
 | `AobPrinterExceptionStage` | contracts:aobprinter-heartbeat.ts | One of `AOBPRINTER_EXCEPTION_STAGES`. | **1** · aobprinter:store.ts |
@@ -1897,6 +1905,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `SilentRestoreClient` | contracts:auth.ts |  | **1** · web:AccessGuard.tsx |
 | `TelehealthCodeAccepted` | contracts:telehealth.ts | A right code. | **1** · core:telehealth/telehealth.service.ts |
 | `TelehealthCodeRefused` | contracts:telehealth.ts | A wrong code. | **1** · core:telehealth/telehealth.service.ts |
+| `TelehealthPatientRecord` | contracts:telehealth.ts | The chosen patient's record as the doctor's panel shows it, IN FULL (Carl, D-2026-10-12-03 item 1), so the doctor can compare what the person on the call says. | **1** · core:telehealth/telehealth.service.ts |
 | `ValidationRequest` | contracts:rules-engine.ts |  | **1** · core:rules-client/rules-client.module.ts |
 | `WriteArtefactRequest` | contracts:pms-adapter.ts |  | **1** · connector:mock-adapter.ts |
 | `WriteBackManifest` | contracts:print-capture.ts | THE WRITE-BACK MANIFEST — the small JSON beside the PDF in the patient's folder (DB4-AND-AOBL.md §7, row 3b). | **1** · aobprinter:collector.ts |
@@ -2083,7 +2092,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `TabletSessionsModule` | core:tablet-sessions/tablet-sessions.module.ts |  | **2** · core:app.module.ts, core:patients/patients.module.ts |
 | `TelehealthEvidence` | core:telehealth/telehealth-evidence.ts |  | **2** · core:telehealth/telehealth.module.ts, core:telehealth/telehealth.service.ts |
 | `TelehealthLinkDispatcher` | core:telehealth/telehealth-link.dispatcher.ts | SENDS THE LINK TO THE ONE PAGE FOR A TELEHEALTH CONSULTATION (TELEHEALTH-PLAN.md §3 step 5). | **2** · core:telehealth/telehealth.module.ts, core:telehealth/telehealth.service.ts |
-| `TelehealthService` | core:telehealth/telehealth.service.ts | THE STEP BEFORE A TELEHEALTH CONSULTATION (TELEHEALTH-PLAN.md §3–§4, §8 step 2). | **2** · core:telehealth/telehealth.controller.ts, core:telehealth/telehealth.module.ts |
+| `TelehealthService` | core:telehealth/telehealth.service.ts |  | **2** · core:telehealth/telehealth.controller.ts, core:telehealth/telehealth.module.ts |
 | `TemplatesModule` | core:templates/templates.module.ts |  | **2** · core:agreements/agreements.module.ts, core:app.module.ts |
 | `UpdateConfigDto` | core:practices/practices.dto.ts |  | **2** · core:practices/practices.controller.ts, core:practices/practices.service.ts |
 | `WriteBackService` | core:pms/write-back.service.ts | Write-back is the product (REQ-INT-02): the signed artefact lands in the PMS patient record. | **2** · core:agreements/agreements.service.ts, core:pms/pms.module.ts |
@@ -2284,7 +2293,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Core helpers, constants and types
 
-244 exports.
+250 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -2327,7 +2336,6 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `SignedDb4Document` | core:render/signed-db4-document.ts |  | **2** · core:agreements/signed-db4.service.ts, core:render/signed-db4-renderer.ts |
 | `VAULT_CLIENT` | core:vault/vault.tokens.ts |  | **2** · core:vault/vault-relay.service.ts, core:vault/vault.module.ts |
 | `allocatePracticeCodeIfPossible` | core:practices/practice-code.ts | ALLOCATE, BUT NEVER FAIL THE THING THAT ASKED. | **2** · core:organisations/organisations.service.ts, core:practices/practices.service.ts |
-| `anchorForAffiliation` | core:affiliations/agreement-anchor.ts | THE AFFILIATION, AS A PERSON AND A PLACE. | **2** · core:arrivals/arrivals.service.ts, core:telehealth/telehealth.service.ts |
 | `associateAfterCommit` | core:agreements/associate-after-commit.ts |  | **2** · core:arrivals/arrivals.service.ts, core:pms/pms-sync.service.ts |
 | `clientKey` | core:portal/portal-client-key.ts | WHAT A RATE LIMITER ON A PUBLIC PORTAL ROUTE COUNTS AGAINST. | **2** · core:portal/portal-passkey.controller.ts, core:portal/portal.controller.ts |
 | `evaluateChallenge` | core:verification/identifier-matching.ts | Evaluates ALL challenged identifiers (never short-circuits on first mismatch — uniform timing) and reports only the aggregate. | **2** · core:kiosk/kiosk.service.ts, core:verification/verification.service.ts |
@@ -2371,6 +2379,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `ResolvedChange` | core:identity/practitioner-email.service.ts | The subject of a change, as resolved from a token before any scope exists. | **1** · core:organisations/pending-email.service.ts |
 | `TELEHEALTH_VAULT_EVENTS_APPROVED` | core:telehealth/telehealth-evidence.ts | THE VAULT EVENTS A TELEHEALTH SESSION EMITS — APPROVED BY CARL, 12 OCT 2026 (TELEHEALTH-PLAN.md §6 item 8; DECISIONS.md D-2026-10-12-02, "Carl's ruling" item 1; the eighth, `telehealth.code_wrong`, item 8, later the same day). | **1** · core:telehealth/telehealth.service.ts |
 | `TelehealthVaultEvent` | core:telehealth/telehealth-evidence.ts |  | **1** · core:telehealth/telehealth.service.ts |
+| `anchorForAffiliation` | core:affiliations/agreement-anchor.ts | THE AFFILIATION, AS A PERSON AND A PLACE. | **1** · core:arrivals/arrivals.service.ts |
 | `anchorsForAffiliations` | core:affiliations/agreement-anchor.ts | The batch form. | **1** · core:arrivals/arrivals.service.ts |
 | `assertRenderable` | core:render/agreement-document.ts |  | **1** · core:render/agreement-pdf-renderer.ts |
 | `assertSignedDb4Renderable` | core:render/signed-db4-document.ts | THE RENDER-TIME GUARD FOR THIS ARTEFACT KIND. | **1** · core:render/signed-db4-renderer.ts |
@@ -2410,6 +2419,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `recordPreAgreementAssociation` | core:agreements/pre-agreement-association.ts | THE ASSOCIATION AND ITS EVENT, in the caller's transaction (hard rule 11). | **1** · core:reconciliation/reconciliation.service.ts |
 | `sha256Hex` | core:artefacts/artefact-store.ts |  | **1** · core:artefacts/artefacts.service.ts |
 | `telehealthCodeMatches` | core:telehealth/telehealth-code.ts | Constant-time. | **1** · core:telehealth/telehealth.service.ts |
+| `telehealthProvider` | core:telehealth/telehealth-provider.ts |  | **1** · core:telehealth/telehealth.service.ts |
 | `usernameForPracticeAdmin` | core:identity/account-names.ts | THE PRACTICE'S OWN ACCOUNT -- `admin.xlevelup`. | **1** · core:identity/practice-admin.service.ts |
 | `ABN_LOOKUP_LIMIT` | core:organisations/abn-lookup-rate-limit.ts | Twenty previews in ten minutes from one address. | 0 |
 | `ABN_LOOKUP_WINDOW_MS` | core:organisations/abn-lookup-rate-limit.ts |  | 0 |
@@ -2486,11 +2496,14 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `SignedDb4PrintRecord` | core:render/signed-db4-document.ts | The DB4 Print Record as it is reproduced — the driver's capture, narrowed to what is drawn. | 0 |
 | `SignedDb4Signature` | core:render/signed-db4-document.ts | THE MARK, AS A REFERENCE. | 0 |
 | `StagedArtefact` | core:artefacts/artefacts.service.ts | Bytes already written and hashed; the metadata row has not been made yet. | 0 |
+| `TELEHEALTH_AHPRA_LINE_TEMPLATE_KEY` | core:telehealth/telehealth-link.dispatcher.ts | Appended only when the provider's Ahpra registration was sighted and is current (D-2026-10-12-03 item 10). | 0 |
+| `TELEHEALTH_CONSULTATION_ID_LINE_TEMPLATE_KEY` | core:telehealth/telehealth-link.dispatcher.ts | Appended to every telehealth link: the reference the patient quotes to the practice (D-2026-10-12-03 item 11). | 0 |
 | `TELEHEALTH_EVENT_TYPES` | core:telehealth/telehealth-evidence.ts |  | 0 |
 | `TELEHEALTH_LINK_TEMPLATE_KEY` | core:telehealth/telehealth-link.dispatcher.ts | The template the link message is rendered from (versioned content). | 0 |
 | `TELEHEALTH_VERIFICATION_CHANNEL` | core:telehealth/telehealth.service.ts | The verification channel the provider's check on the call is recorded under. | 0 |
 | `TelehealthEvidenceEntry` | core:telehealth/telehealth-evidence.ts |  | 0 |
 | `TelehealthEvidenceSink` | core:telehealth/telehealth-evidence.ts | Where an entry goes: the vault outbox, on the caller's `tx` (`outboxSink`). | 0 |
+| `TelehealthProvider` | core:telehealth/telehealth-provider.ts | HOW THE PROVIDER IS NAMED TO THE PATIENT IN TELEHEALTH (Carl, 12 Oct 2026, D-2026-10-12-03 item 10): in the link message and on the patient's page. | 0 |
 | `UNPAIRED_MESSAGE` | core:devices/device.guard.ts | ONE SENTENCE FOR "this tablet is not paired", and the kiosk shows its own copy regardless. | 0 |
 | `UploadInput` | core:artefacts/artefacts.service.ts |  | 0 |
 | `VerifiableAgreement` | core:render/verified-artefact.ts | THE ONE WAY A STORED AGREEMENT BECOMES BYTES SOMEBODY IS GIVEN — hard rule 13. | 0 |
@@ -2529,7 +2542,9 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `outboxSink` | core:telehealth/telehealth-evidence.ts | The outbox, on the SAME `tx` as the domain write (hard rule 11, FR-11.2). | 0 |
 | `renderedStringsOf` | core:render/agreement-document.ts | Every string that will be drawn on the page, in one list — including the particulars' own values, because a service description or a provider name is as much a line on the contract as a template paragraph is. | 0 |
 | `reproducedStringsOf` | core:render/signed-db4-document.ts | THE STRINGS REPRODUCED FROM THE FORM. | 0 |
+| `shownAhpraNumber` | core:telehealth/telehealth-provider.ts |  | 0 |
 | `storedLocalCheck` | core:aobprinter-hosts/aobprinter-hosts.service.ts | THE HOST'S OWN CHECK AS STORED: rebuilt from only the fields its `ok` value declares (the contract's `AobPrinterLocalCheck` union), never the object the request carried. | 0 |
+| `telehealthProviderName` | core:telehealth/telehealth-provider.ts |  | 0 |
 | `templateValuesFor` | core:agreements/agreements.service.ts | THE PARTICULARS, TURNED INTO THE VALUES THE WORDS NEED. | 0 |
 | `unwrapJsonp` | core:organisations/abr.ts | Strip the `callback( … )` padding the JSON endpoints answer with. | 0 |
 

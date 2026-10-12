@@ -3645,6 +3645,8 @@ model AobPrinterHost {
 model TelehealthSession {
   id                    String    @id @default(uuid()) @db.Uuid
   practiceId            String    @db.Uuid
+  /// The TH-XXXX-XXXX reference the patient quotes to the practice (D-2026-10-12-03 item 11). A reference, never a key. Unique across the platform.
+  consultationId        String    @unique
   patientId             String    @db.Uuid
   practitionerId        String    @db.Uuid
   affiliationId         String    @db.Uuid
@@ -3664,6 +3666,10 @@ model TelehealthSession {
   consenterRelationship String?
   /// The 18+ attestation for someone acting for another (hard rule 10). Null for the patient themselves.
   consenterAttested18   Boolean?
+  /// Typed by someone acting for the patient on the page, with their mobile (D-2026-10-12-03 item 12). Never in a vault payload.
+  consenterName         String?
+  /// National form, 04XXXXXXXX. Mandatory for someone acting for the patient: the practice may need to reach them.
+  consenterMobile       String?
   /// sms | email | both. Null when no link was sent.
   channel               String?
   linkTokenHash         String?   @unique

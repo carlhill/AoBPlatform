@@ -39,7 +39,7 @@ describe('the telehealth vault events', () => {
     const listed: readonly string[] = VAULT_EVENT_TYPES;
     expect(TELEHEALTH_VAULT_EVENTS_APPROVED).toBe(true);
     for (const type of TELEHEALTH_EVENT_TYPES) expect(listed).toContain(type);
-    // Exactly the eight approved: no other telehealth type has crept into the vault list.
+    // Exactly the nine approved (the ninth, consultation_held, D-2026-10-12-03 item 6): no other telehealth type has crept into the vault list.
     expect([...TELEHEALTH_EVENT_TYPES].sort()).toEqual(
       [
         'telehealth.session_opened',
@@ -50,6 +50,7 @@ describe('the telehealth vault events', () => {
         'telehealth.consent_recorded',
         'telehealth.not_done',
         'telehealth.did_not_proceed',
+        'telehealth.consultation_held',
       ].sort(),
     );
     expect(listed.filter((t) => t.startsWith('telehealth.')).sort()).toEqual([...TELEHEALTH_EVENT_TYPES].sort());

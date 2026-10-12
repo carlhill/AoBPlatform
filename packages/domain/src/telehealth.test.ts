@@ -3,6 +3,7 @@
  * (TELEHEALTH-PLAN.md §3–§4, §7; D-2026-10-11-07/-08).
  */
 import {
+  TELEHEALTH_CONSULTATION_ID_PATTERN,
   TELEHEALTH_CONTENT,
   TELEHEALTH_CONTENT_VERSION,
   TELEHEALTH_IDENTITY_CHECKLIST,
@@ -14,11 +15,15 @@ import {
   mayMoveTelehealthSession,
   parseTelehealthContent,
   parseTelehealthNotDoneReasonContent,
+  TELEHEALTH_CONSENTER_NAME_SLOT,
+  isPlausibleConsenterName,
   telehealthConsentStatement,
+  telehealthConsultationId,
   telehealthNotDoneReason,
   telehealthTransports,
 } from './telehealth';
 import { patientMessageTemplate } from './patient-message-templates';
+import { ASSIGNOR_RELATIONSHIP_KEYS } from './assignor-relationships';
 import { REVIEW_TASK_KEYS, TELEHEALTH_CODE_LOCKED_TASK_KIND } from './review-tasks';
 
 describe('the telehealth identity checklist', () => {
@@ -55,13 +60,35 @@ describe('the telehealth consent wording is versioned and neutral', () => {
   });
 
   it('renders_the_statement_for_the_patient_and_for_a_carer', () => {
-    expect(telehealthConsentStatement({ providerName: 'Dr Sample Chen', consenterIsPatient: true })).toBe(
-      'Yes, start my telehealth consultation with Dr Sample Chen',
-    );
     expect(
-      telehealthConsentStatement({ providerName: 'Dr Sample Chen', consenterIsPatient: false, patientGivenNames: 'Testy' }),
-    ).toContain('for Testy with Dr Sample Chen');
+      telehealthConsentStatement({ providerName: 'Dr Sample Chen', consenterIsPatient: true, patientName: 'Testy Fixture' }),
+    ).toBe('I, Testy Fixture, want to start my telehealth consultation with Dr Sample Chen now.');
+    // A carer: their own typed name, the relationship phrase, and the patient's given names (D-2026-10-12-03 item 12).
+    expect(
+      telehealthConsentStatement({
+        providerName: 'Dr Sample Chen',
+        consenterIsPatient: false,
+        patientGivenNames: 'Testy',
+        relationshipKey: 'carer',
+        consenterName: 'Jane Citizen',
+      }),
+    ).toBe('I, Jane Citizen, carer for Testy, want to start the telehealth consultation for Testy with Dr Sample Chen now.');
+    // Before they type, the name slot is left in for the page to fill as they type.
+    expect(
+      telehealthConsentStatement({ providerName: 'Dr Sample Chen', consenterIsPatient: false, patientGivenNames: 'Testy', relationshipKey: 'mother' }),
+    ).toContain(`${TELEHEALTH_CONSENTER_NAME_SLOT}, mother of Testy`);
     expect(() => telehealthConsentStatement({ providerName: 'Dr Sample Chen', consenterIsPatient: false })).toThrow();
+  });
+
+  it('every_assignor_relationship_has_a_phrase_and_names_are_checked', () => {
+    for (const key of ASSIGNOR_RELATIONSHIP_KEYS) expect(TELEHEALTH_CONTENT.consent.relationshipPhrases[key]).toBeTruthy();
+    expect(isPlausibleConsenterName('Jane Citizen')).toBe(true);
+    expect(isPlausibleConsenterName('J')).toBe(false);
+    expect(isPlausibleConsenterName('J Ada')).toBe(true);
+    expect(isPlausibleConsenterName('J A')).toBe(false);
+    expect(isPlausibleConsenterName('Jane')).toBe(false);
+    expect(isPlausibleConsenterName('0412 345 678')).toBe(false);
+    expect(isPlausibleConsenterName('jane@example.invalid')).toBe(false);
   });
 
   it('carries_the_thresholds_as_content_not_code', () => {
@@ -78,13 +105,16 @@ describe('the telehealth consent wording is versioned and neutral', () => {
 
 describe('the telehealth link message', () => {
   it('telehealth_code_never_in_the_message', () => {
-    const t = patientMessageTemplate('telehealth_link_v1');
-    const words = [t.subject ?? '', t.sms ?? '', ...t.paragraphs, ...(t.smallPrint ?? [])];
-    // No placeholder a code could be substituted into…
-    for (const line of words) expect(line).not.toMatch(/\{\{\s*code\s*\}\}/i);
-    // …and the same neutrality as the statement until G10 is answered.
-    for (const line of words) expect(line).not.toMatch(TELEHEALTH_NEUTRAL_WORDING_FORBIDDEN);
-    expect(t.sms).toContain('{{telehealthUrl}}');
+    // The link and the two lines appended to it (Ahpra, consultation ID): all of them.
+    for (const key of ['telehealth_link_v2', 'telehealth_ahpra_line_v1', 'telehealth_consultation_id_line_v1']) {
+      const t = patientMessageTemplate(key);
+      const words = [t.subject ?? '', t.sms ?? '', ...t.paragraphs, ...(t.smallPrint ?? [])];
+      // No placeholder a code could be substituted into…
+      for (const line of words) expect(line).not.toMatch(/\{\{\s*code\s*\}\}/i);
+      // …and the same neutrality as the statement until G10 is answered.
+      for (const line of words) expect(line).not.toMatch(TELEHEALTH_NEUTRAL_WORDING_FORBIDDEN);
+    }
+    expect(patientMessageTemplate('telehealth_link_v2').sms).toContain('{{telehealthUrl}}');
   });
 });
 
@@ -136,5 +166,19 @@ describe('telehealth session states', () => {
 
   it('a_locked_code_raises_a_known_review_task', () => {
     expect(REVIEW_TASK_KEYS).toContain(TELEHEALTH_CODE_LOCKED_TASK_KIND);
+  });
+});
+
+describe('the telehealth consultation ID (D-2026-10-12-03 item 11)', () => {
+  it('is_th_and_two_groups_of_four_with_no_letters_that_read_alike', () => {
+    for (let n = 0; n < 200; n++) {
+      const id = telehealthConsultationId((size) => Uint8Array.from({ length: size }, () => Math.floor(Math.random() * 256)));
+      expect(id).toMatch(TELEHEALTH_CONSULTATION_ID_PATTERN);
+      expect(id.slice(3)).not.toMatch(/[ILOU]/);
+    }
+  });
+
+  it('uses_every_byte_value_without_bias_across_the_alphabet', () => {
+    expect(telehealthConsultationId(() => Uint8Array.from([0, 31, 32, 63, 64, 255, 10, 18]))).toBe('TH-0Z0Z-0ZAJ');
   });
 });

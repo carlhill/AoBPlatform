@@ -8,7 +8,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import type { Prisma, TelehealthSession } from '@prisma/client';
+import { randomBytes } from 'node:crypto';
+import { Prisma as PrismaErrors, type Prisma, type TelehealthSession } from '@prisma/client';
 import {
   ASSIGNOR_RELATIONSHIP_KEYS,
   IdentifierSetError,
@@ -25,7 +26,11 @@ import {
   maskEmail,
   maskMobile,
   mayMoveTelehealthSession,
+  isPlausibleConsenterName,
+  isWellFormedMobile,
+  normalisePhone,
   telehealthConsentStatement,
+  telehealthConsultationId,
   telehealthNotDoneReason,
   type TelehealthChannel,
   type TelehealthSessionState,
@@ -36,7 +41,9 @@ import type {
   TelehealthLinkLanding,
   TelehealthMaskedContact,
   TelehealthPageView,
+  TelehealthPatientRecord,
   TelehealthSendResult,
+  TelehealthSessionDetail,
   TelehealthSessionView,
 } from '@aobplatform/contracts';
 import { PrismaService } from '../prisma/prisma.service';
@@ -44,7 +51,7 @@ import { VerificationService } from '../verification/verification.service';
 import { PatientsService } from '../patients/patients.service';
 import { ReviewTasksService } from '../review-tasks/review-tasks.service';
 import { PractitionerQueueService } from '../practitioner-queue/practitioner-queue.service';
-import { anchorForAffiliation } from '../affiliations/agreement-anchor';
+import { telehealthProvider } from './telehealth-provider';
 import { mintCaptureToken, parseCaptureToken } from '../capture/capture-token';
 import type { Actor } from '../auth/actor.decorator';
 import { generateTelehealthCode, hashTelehealthCode, telehealthCodeMatches } from './telehealth-code';
@@ -82,6 +89,54 @@ const NOTE_LOOKS_LIKE_A_VALUE = /\d{6,}|\S+@\S+\.\S+/;
  * NO IDENTIFIER VALUE, CONTACT VALUE OR CODE IS LOGGED, STORED OR RETURNED TO
  * THE PATIENT'S PAGE. The code is returned once, to the provider.
  */
+const PATIENT_RECORD_SELECT = {
+  id: true,
+  givenNames: true,
+  familyName: true,
+  dateOfBirth: true,
+  genderAsIdentified: true,
+  address: true,
+  patientRecordNumber: true,
+  ihi: true,
+  mobile: true,
+  email: true,
+} as const;
+
+/** The record as the provider's panel shows it, in full (D-2026-10-12-03 item 1). Shown, never stored. */
+function recordOf(patient: {
+  givenNames: string;
+  familyName: string;
+  dateOfBirth: Date;
+  genderAsIdentified: string | null;
+  address: string | null;
+  patientRecordNumber: string | null;
+  ihi: string | null;
+  mobile: string | null;
+  email: string | null;
+}): TelehealthPatientRecord {
+  return {
+    givenNames: patient.givenNames,
+    familyName: patient.familyName,
+    dateOfBirth: patient.dateOfBirth.toISOString().slice(0, 10),
+    gender: patient.genderAsIdentified,
+    address: patient.address,
+    patientRecordNumber: patient.patientRecordNumber,
+    ihi: patient.ihi,
+    // Only what would be sent to: a value the masker rejects is not a usable contact.
+    mobile: maskMobile(patient.mobile) ? patient.mobile : null,
+    email: maskEmail(patient.email) ? patient.email : null,
+  };
+}
+
+/** The first of a person's names, to greet them by. A title typed into the name is skipped. */
+function firstName(names: string | null | undefined): string | null {
+  const parts = (names ?? '').trim().split(/\s+/).filter((part) => part && !/^(dr|mr|mrs|ms|miss|mx|prof)\.?$/i.test(part));
+  return parts[0] ?? null;
+}
+
+/** The states a practitioner records that close the link: the page says which (Carl, 12 Oct 2026). */
+const TELEHEALTH_OUTCOME_STATES: readonly string[] = ['went_ahead', 'did_not_proceed', 'not_done'];
+
 @Injectable()
 export class TelehealthService {
   constructor(
@@ -145,6 +200,27 @@ export class TelehealthService {
     return { practiceId, practitionerId, actorId: actor.id };
   }
 
+  /**
+   * A TRANSACTION THAT CREATES A SESSION, RUN AGAIN ON THE RARE ID CLASH. The
+   * consultation ID is drawn inside `fn`, so a retry draws a fresh one. A
+   * unique violation aborts the whole transaction in Postgres, which is why
+   * the retry is the transaction and not the insert. Three tries: with 40 bits
+   * a second clash in a row is not a thing that happens.
+   */
+  private async withFreshConsultationId<T>(practiceId: string, fn: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await this.prisma.withPractice(practiceId, fn);
+      } catch (err) {
+        const clash =
+          err instanceof PrismaErrors.PrismaClientKnownRequestError &&
+          err.code === 'P2002' &&
+          JSON.stringify(err.meta?.target ?? '').includes('consultationId');
+        if (!clash || attempt >= 3) throw err;
+      }
+    }
+  }
+
   private async liveAffiliation(tx: Prisma.TransactionClient, practitionerId: string) {
     const affiliation = await tx.affiliation.findFirst({
       where: { practitionerId, status: { in: LIVE_AFFILIATION_STATUSES } },
@@ -167,7 +243,12 @@ export class TelehealthService {
     return this.patients.search(practiceId, term ?? '');
   }
 
-  /** The contact on the record, masked. The values never leave the server (D-2026-09-11-03). */
+  /**
+   * The chosen patient's record, IN FULL, for the doctor to compare on the
+   * call (Carl, D-2026-10-12-03 item 1), plus the masked contact for the
+   * channel choice. Only the practitioner on the call reaches this (`scope`),
+   * and nothing here is stored: the session records identifier types only.
+   */
   async contact(
     actor: Actor | undefined,
     headerPracticeId: string | undefined,
@@ -175,10 +256,37 @@ export class TelehealthService {
   ): Promise<TelehealthMaskedContact> {
     const { practiceId } = await this.scope(actor, headerPracticeId);
     const patient = await this.prisma.withPractice(practiceId, (tx) =>
-      tx.patient.findFirst({ where: { id: patientId }, select: { id: true, mobile: true, email: true } }),
+      tx.patient.findFirst({ where: { id: patientId }, select: PATIENT_RECORD_SELECT }),
     );
     if (!patient) throw new NotFoundException('That patient is not on this practice’s records.');
-    return { patientId: patient.id, maskedMobile: maskMobile(patient.mobile), maskedEmail: maskEmail(patient.email) };
+    return {
+      patientId: patient.id,
+      maskedMobile: maskMobile(patient.mobile),
+      maskedEmail: maskEmail(patient.email),
+      record: recordOf(patient),
+    };
+  }
+
+  /**
+   * ONE OF MY SESSIONS, IN FULL, FOR A CALL-BACK (Carl, 12 Oct 2026): the
+   * patient's record and contact READ NOW from the PMS mirror (so a call-back
+   * uses today's number, not a copy), which kinds of detail were checked, who
+   * was on the call, and the carer's name and mobile. The practitioner's own
+   * sessions only; RLS keeps it to this practice. Nothing is written.
+   */
+  async detail(actor: Actor | undefined, headerPracticeId: string | undefined, sessionId: string): Promise<TelehealthSessionDetail> {
+    const { practiceId, practitionerId } = await this.scope(actor, headerPracticeId);
+    return this.prisma.withPractice(practiceId, async (tx) => {
+      const row = await tx.telehealthSession.findFirst({ where: { id: sessionId, practitionerId } });
+      if (!row) throw new NotFoundException('There is no telehealth session of yours with that id at this practice.');
+      const patient = await tx.patient.findFirst({ where: { id: row.patientId }, select: PATIENT_RECORD_SELECT });
+      const [session] = await this.views(tx, [row]);
+      return {
+        session: session!,
+        record: patient ? recordOf(patient) : null,
+        consenterRelationship: row.consenterIsPatient === false ? row.consenterRelationship : null,
+      };
+    });
   }
 
   /** This practitioner's sessions from the last day, newest first — what the live status polls. */
@@ -221,7 +329,7 @@ export class TelehealthService {
     const code = generateTelehealthCode(TELEHEALTH_CONTENT.code.digits);
     const codeExpiresAt = new Date(Date.now() + TELEHEALTH_CONTENT.code.validityMinutes * 60_000);
 
-    const result = await this.prisma.withPractice(practiceId, async (tx) => {
+    const result = await this.withFreshConsultationId(practiceId, async (tx) => {
       const patient = await tx.patient.findFirst({ where: { id: input.patientId } });
       if (!patient) throw new NotFoundException('That patient is not on this practice’s records.');
       this.assertContactFor(channel, patient);
@@ -239,6 +347,11 @@ export class TelehealthService {
       const session = await tx.telehealthSession.create({
         data: {
           practiceId,
+          /*
+           * The reference the patient quotes (D-2026-10-12-03 item 11). Unique across the
+           * platform: the index refuses a clash and `withFreshConsultationId` draws again.
+           */
+          consultationId: telehealthConsultationId((n) => randomBytes(n)),
           patientId: patient.id,
           practitionerId,
           affiliationId,
@@ -404,7 +517,7 @@ export class TelehealthService {
     const { practiceId, practitionerId, actorId } = await this.scope(actor, headerPracticeId);
     const { reason, note } = this.reasonOf(input);
     const consultationAt = this.consultationAtOf(input.consultationAt);
-    return this.prisma.withPractice(practiceId, async (tx) => {
+    return this.withFreshConsultationId(practiceId, async (tx) => {
       const patient = await tx.patient.findFirst({ where: { id: input.patientId }, select: { id: true } });
       if (!patient) throw new NotFoundException('That patient is not on this practice’s records.');
       const affiliationId = await this.liveAffiliation(tx, practitionerId);
@@ -412,6 +525,11 @@ export class TelehealthService {
       const session = await tx.telehealthSession.create({
         data: {
           practiceId,
+          /*
+           * The reference the patient quotes (D-2026-10-12-03 item 11). Unique across the
+           * platform: the index refuses a clash and `withFreshConsultationId` draws again.
+           */
+          consultationId: telehealthConsultationId((n) => randomBytes(n)),
           patientId: patient.id,
           practitionerId,
           affiliationId,
@@ -475,6 +593,42 @@ export class TelehealthService {
     });
   }
 
+  /**
+   * CONSULTATION COMPLETE (Carl, 12 Oct 2026, D-2026-10-12-03 item 6): after
+   * the patient agreed, the provider records that the consultation was held.
+   * The write and its approved vault event `telehealth.consultation_held`
+   * commit together (hard rule 11).
+   */
+  async markWentAhead(
+    actor: Actor | undefined,
+    headerPracticeId: string | undefined,
+    sessionId: string,
+    input: { consultationAt?: string },
+  ): Promise<TelehealthSessionView> {
+    const { practiceId, practitionerId, actorId } = await this.scope(actor, headerPracticeId);
+    const consultationAt = this.consultationAtOf(input.consultationAt);
+    return this.prisma.withPractice(practiceId, async (tx) => {
+      const session = await this.ownSession(tx, sessionId, practitionerId);
+      this.assertMove(session.state, 'went_ahead');
+      const now = new Date();
+      const updated = await tx.telehealthSession.update({
+        where: { id: session.id },
+        data: {
+          state: 'went_ahead',
+          consultationAt,
+          outcomeRecordedAt: now,
+          outcomeRecordedById: actorId,
+        },
+      });
+      await this.record(tx, session.id, { principalType: 'practitioner', id: actorId }, {
+        type: 'telehealth.consultation_held',
+        payload: { fromState: session.state, consultationAt: consultationAt?.toISOString() ?? null, recordedAt: now.toISOString() },
+      });
+      const [view] = await this.views(tx, [updated]);
+      return view!;
+    });
+  }
+
   /* ---------------------------------------------------------------------
    * The patient's page (public: the link token, then the page key)
    * ------------------------------------------------------------------ */
@@ -488,7 +642,10 @@ export class TelehealthService {
       const session = await tx.telehealthSession.findFirst({ where: { linkTokenHash: parsed.tokenHash } });
       if (!session) throw new NotFoundException({ code: 'link_invalid', message: 'This link is not valid.' });
       const practice = await tx.practice.findFirst({ select: { name: true } });
-      return { state: this.linkState(session), practiceName: practice?.name ?? null };
+      const state = this.linkState(session);
+      // Which outcome closed it, so the page can say the right thing (Carl, 12 Oct 2026). Nothing about the patient.
+      const outcome = state === 'closed' && TELEHEALTH_OUTCOME_STATES.includes(session.state) ? session.state : null;
+      return { state, practiceName: practice?.name ?? null, outcome: outcome as TelehealthLinkLanding['outcome'] };
     });
   }
 
@@ -618,9 +775,34 @@ export class TelehealthService {
    * the server's words at the server's version, never text from the page.
    * Pressing twice is the same answer, not a second record.
    */
-  async agree(pageKey: string | undefined, consentKey: string): Promise<TelehealthPageView> {
+  async agree(
+    pageKey: string | undefined,
+    consentKey: string,
+    consenter: { name?: string; mobile?: string } = {},
+  ): Promise<TelehealthPageView> {
     this.assertEnabled();
     const { practiceId, session } = await this.byPageKey(pageKey);
+    /*
+     * SOMEONE ACTING FOR THE PATIENT NAMES THEMSELVES, WITH A MOBILE (Carl, 12 Oct
+     * 2026, D-2026-10-12-03 item 12): their own declaration, made on their page
+     * before the tick, and a number the practice can reach them on. The patient
+     * agreeing for themselves is asked for neither.
+     */
+    const carer = session.consenterIsPatient === false;
+    const consenterName = carer ? (consenter.name ?? '').trim().replace(/\s+/g, ' ') : null;
+    const consenterMobile = carer ? normalisePhone(consenter.mobile ?? '') : null;
+    if (carer && !isPlausibleConsenterName(consenterName ?? '')) {
+      throw new BadRequestException({
+        code: 'consenter_name_needed',
+        message: 'Type your full name: at least two names, one of them three letters or more.',
+      });
+    }
+    if (carer && !isWellFormedMobile(consenterMobile ?? '')) {
+      throw new BadRequestException({
+        code: 'consenter_mobile_needed',
+        message: 'Type a mobile number starting 04, so the practice can reach you.',
+      });
+    }
     if (consentKey !== TELEHEALTH_CONTENT.consent.key) {
       throw new ConflictException({
         code: 'wording_changed',
@@ -646,10 +828,10 @@ export class TelehealthService {
         });
       }
       if (current.state === 'agreed') return this.pageView(tx, current);
-      if (current.state === 'not_done' || current.state === 'did_not_proceed') {
+      if (current.state === 'not_done' || current.state === 'did_not_proceed' || current.state === 'went_ahead') {
         // Said by code, so the page shows what the practitioner recorded, not "the wording changed".
         throw new ConflictException({
-          code: current.state === 'not_done' ? 'session_not_done' : 'session_did_not_proceed',
+          code: `session_${current.state}`,
           message: 'Your practitioner has already recorded this consultation.',
         });
       }
@@ -659,6 +841,8 @@ export class TelehealthService {
         data: {
           state: 'agreed',
           agreedAt: new Date(),
+          consenterName,
+          consenterMobile,
           consentKey: TELEHEALTH_CONTENT.consent.key,
           contentVersion: TELEHEALTH_CONTENT_VERSION,
         },
@@ -698,11 +882,13 @@ export class TelehealthService {
     expiresAt: Date,
   ) {
     const practice = await tx.practice.findFirst({ select: { name: true } });
-    const anchor = await anchorForAffiliation(tx, session.affiliationId);
+    const provider = await telehealthProvider(tx, session.practitionerId);
     return this.dispatcher.send(tx, {
       practiceId,
       practiceName: practice?.name ?? 'Your practice',
-      providerName: anchor?.name ?? 'your practitioner',
+      providerName: provider?.name ?? 'your practitioner',
+      ahpraNumber: provider?.ahpraNumber ?? null,
+      consultationId: session.consultationId,
       sessionId: session.id,
       sendNumber: session.linkSentCount,
       patient,
@@ -759,23 +945,32 @@ export class TelehealthService {
 
   private async pageView(tx: Prisma.TransactionClient, session: TelehealthSession): Promise<TelehealthPageView> {
     const practice = await tx.practice.findFirst({ select: { name: true } });
-    const anchor = await anchorForAffiliation(tx, session.affiliationId);
-    const providerName = anchor?.name ?? null;
+    const provider = await telehealthProvider(tx, session.practitionerId);
+    const providerName = provider?.name ?? null;
     const consenterIsPatient = session.consenterIsPatient ?? true;
-    const patient = consenterIsPatient
-      ? null
-      : await tx.patient.findFirst({ where: { id: session.patientId }, select: { givenNames: true } });
+    // After the code only: the patient's own name in their statement, the given names in a carer's.
+    const patient = await tx.patient.findFirst({ where: { id: session.patientId }, select: { givenNames: true, familyName: true } });
     return {
       state: session.state as TelehealthPageView['state'],
       practiceName: practice?.name ?? null,
       providerName,
+      ahpraNumber: provider?.ahpraNumber ?? null,
+      consultationId: session.consultationId,
       statement: telehealthConsentStatement({
         providerName: providerName ?? 'your practitioner',
         consenterIsPatient,
         patientGivenNames: patient?.givenNames,
+        patientName: patient ? `${patient.givenNames} ${patient.familyName}` : undefined,
+        relationshipKey: session.consenterRelationship,
+        // The name the person typed, once agreed; before that the slot stays for the page to fill.
+        consenterName: session.consenterName ?? undefined,
       }),
       consentKey: TELEHEALTH_CONTENT.consent.key,
       contentVersion: TELEHEALTH_CONTENT_VERSION,
+      consenterIsPatient,
+      consenterRelationship: consenterIsPatient ? null : session.consenterRelationship,
+      patientGivenNames: consenterIsPatient ? null : (patient?.givenNames ?? null),
+      greetingName: firstName(consenterIsPatient ? patient?.givenNames : session.consenterName),
       agreedAt: session.agreedAt?.toISOString() ?? null,
     };
   }
@@ -900,6 +1095,7 @@ export class TelehealthService {
       const p = byId.get(row.patientId);
       return {
         id: row.id,
+        consultationId: row.consultationId,
         patientId: row.patientId,
         patientName: p ? `${p.givenNames} ${p.familyName}` : '',
         state: row.state as TelehealthSessionView['state'],
@@ -915,6 +1111,8 @@ export class TelehealthService {
         agreedAt: row.agreedAt?.toISOString() ?? null,
         notDoneReason: row.notDoneReason,
         notDoneNote: row.notDoneNote,
+        consenterName: row.consenterName,
+        consenterMobile: row.consenterMobile,
         consultationAt: row.consultationAt?.toISOString() ?? null,
         outcomeRecordedAt: row.outcomeRecordedAt?.toISOString() ?? null,
         createdAt: row.createdAt.toISOString(),

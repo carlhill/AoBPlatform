@@ -28,16 +28,23 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { ShieldCheck } from 'lucide-react';
-import { TELEHEALTH_CONTENT } from '@aobplatform/domain';
+import { CircleCheck, ShieldCheck } from 'lucide-react';
+import {
+  TELEHEALTH_CONSENTER_NAME_SLOT,
+  TELEHEALTH_CONTENT,
+  isPlausibleConsenterName,
+  isWellFormedMobile,
+} from '@aobplatform/domain';
 import type { TelehealthLinkLanding, TelehealthPageView } from '@aobplatform/contracts';
-import { Button, Field, Notice, Shell, TextInput, ui } from '../../../ui';
+import { Button, Checkbox, Field, Notice, Shell, TextInput, ui } from '../../../ui';
 import { strings } from '../../../strings';
 import { useLiveRefresh } from '../../../useLiveRefresh';
 import styles from './telehealth.module.css';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
 const t = strings.telehealth.patient;
+/** Ahpra's public register search page, where anyone can look up a registration number. */
+const AHPRA_REGISTER_URL = 'https://www.ahpra.gov.au/Registration/Registers-of-Practitioners.aspx';
 /** From versioned content (hard rule 14), never a literal. */
 const DIGITS = TELEHEALTH_CONTENT.code.digits;
 
@@ -112,6 +119,14 @@ export function TelehealthPatientView({ token }: { token: string }) {
   const [pageKey, setPageKey] = useState<string | null>(null);
   const [page, setPage] = useState<TelehealthPageView | null>(null);
   const [agreeError, setAgreeError] = useState<string | null>(null);
+  /** The patient's own tick beside the statement; Start stays off until it is ticked. */
+  const [ticked, setTicked] = useState(false);
+  /** Someone acting for the patient names themselves and gives a mobile before the tick (D-2026-10-12-03 item 12). */
+  const [consenterName, setConsenterName] = useState('');
+  const [consenterMobile, setConsenterMobile] = useState('');
+  /** Left once, so a field still being typed is never called wrong (Carl, 12 Oct 2026). */
+  const [nameTouched, setNameTouched] = useState(false);
+  const [mobileTouched, setMobileTouched] = useState(false);
 
   useEffect(() => {
     void (async () => {
@@ -171,23 +186,32 @@ export function TelehealthPatientView({ token }: { token: string }) {
     if (!pageKey || !page) return;
     setBusy(true);
     setAgreeError(null);
+    let recorded = false;
     try {
       const res = await fetch(`${CORE_URL}/telehealth/page/agree`, {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-telehealth-page-key': pageKey },
-        body: JSON.stringify({ consentKey: page.consentKey }),
+        body: JSON.stringify({
+          consentKey: page.consentKey,
+          ...(page.consenterIsPatient ? {} : { consenterName: consenterName.trim(), consenterMobile: consenterMobile.trim() }),
+        }),
       }).catch(() => null);
       if (!res) return setStop('unreachable');
       if (!res.ok) {
         const code = await codeOf(res);
         if (code === 'wording_changed') return setAgreeError(t.wordingChanged);
+        if (code === 'consenter_name_needed') return setAgreeError(t.consenterNameNeeded);
+        if (code === 'consenter_mobile_needed') return setAgreeError(t.consenterMobileNeeded);
         // The practitioner recorded the consultation meanwhile: show what they recorded.
-        if (code === 'session_not_done' || code === 'session_did_not_proceed') return loadPage(pageKey);
+        if (code === 'session_not_done' || code === 'session_did_not_proceed' || code === 'session_went_ahead') return loadPage(pageKey);
         return refuse(res.status, code);
       }
       setPage((await res.json()) as TelehealthPageView);
+      recorded = true;
     } finally {
       setBusy(false);
+      // Any way out but a recorded agreement takes the tick off again.
+      if (!recorded) setTicked(false);
     }
   };
 
@@ -207,7 +231,11 @@ export function TelehealthPatientView({ token }: { token: string }) {
       <Shell title={t.title}>
         {practiceLine(landing?.practiceName)}
         <Notice tone={words.tone} title={words.title} data-testid={`telehealth-${stop}`}>
-          {stop === 'unmapped' ? t.unmappedBody(unmappedCode ?? '') : words.body}
+          {stop === 'unmapped'
+            ? t.unmappedBody(unmappedCode ?? '')
+            : stop === 'closed'
+              ? t.closedBodyFor(landing?.outcome ?? null)
+              : words.body}
         </Notice>
       </Shell>
     );
@@ -215,27 +243,124 @@ export function TelehealthPatientView({ token }: { token: string }) {
 
   if (page) {
     const provider = page.providerName ?? '';
+    // The tick waits for a full name and a mobile from someone acting for the patient; the patient needs neither.
+    const nameOk = isPlausibleConsenterName(consenterName);
+    const mobileOk = isWellFormedMobile(consenterMobile);
+    const consenterReady = page.consenterIsPatient || (nameOk && mobileOk);
+    /* A green tick in a circle once a field is right, and words, not colour alone, once a wrong one is left (Carl, 12 Oct 2026). */
+    const okMark = (ok: boolean, testId: string) =>
+      ok ? <CircleCheck size={20} className={styles.okMark} aria-label={t.fieldOk} data-testid={testId} /> : null;
+    /*
+     * WHO THE PROVIDER IS, AND WHERE TO CHECK (Carl, D-2026-10-12-03 item 10):
+     * only when core says the registration was sighted and is current. The
+     * site is named in the text so a careful reader can type it themselves.
+     */
+    const ahpraLine = page.ahpraNumber ? (
+      <p data-testid="telehealth-ahpra">
+        {t.ahpraLine(provider, page.ahpraNumber)}{' '}
+        <a href={AHPRA_REGISTER_URL} target="_blank" rel="noopener noreferrer">
+          {t.ahpraSite}
+        </a>
+        .
+      </p>
+    ) : null;
     return (
       <Shell title={t.title}>
         {practiceLine(page.practiceName)}
         {page.state === 'code_checked' && (
           <section className={styles.card} aria-labelledby="telehealth-with">
             <h2 id="telehealth-with" className={styles.heading}>
-              {t.withProvider(provider)}
+              {/* The provider's name on a line of its own (Carl, 12 Oct 2026). */}
+              {t.withProviderLead}
+              <br />
+              {provider}
             </h2>
+            {ahpraLine}
             {agreeError && <Notice tone="warn">{agreeError}</Notice>}
-            {/* The Button's own class is fixed, so the size lives on a wrapper. */}
-            <div className={styles.big}>
-              <Button variant="primary" onClick={() => void agree()} disabled={busy} data-testid="telehealth-agree">
-                {busy ? t.sending : page.statement}
-              </Button>
+            {/*
+             * ONE STEP: THE TICK IS THE AGREEMENT (Carl, 12 Oct 2026). The
+             * statement is the tick box's label, from the versioned content;
+             * ticking it sends it, and the page turns into the green "has
+             * started" box. If the send fails the tick comes off again, so the
+             * box never shows agreement that was not recorded.
+             */}
+            {!page.consenterIsPatient && (
+              <>
+                <p data-testid="telehealth-consenter-intro">
+                  {t.consenterIntro(
+                    TELEHEALTH_CONTENT.consent.relationshipPhrases[page.consenterRelationship ?? ''] ?? TELEHEALTH_CONTENT.consent.relationshipPhrases.other,
+                    page.patientGivenNames ?? '',
+                  )}
+                </p>
+                <Field
+                  label={
+                    <span className={styles.labelRow}>
+                      {t.consenterNameLabel} {okMark(nameOk, 'telehealth-name-ok')}
+                    </span>
+                  }
+                  hint={t.consenterNameHint}
+                  error={nameTouched && !nameOk && consenterName.trim() ? t.consenterNameNeeded : null}
+                >
+                  {({ id, describedBy }) => (
+                    <TextInput
+                      id={id}
+                      describedBy={describedBy}
+                      value={consenterName}
+                      autoComplete="name"
+                      maxLength={100}
+                      onChange={(e) => setConsenterName(e.target.value)}
+                      onBlur={() => setNameTouched(true)}
+                      data-testid="telehealth-consenter-name"
+                    />
+                  )}
+                </Field>
+                <Field
+                  label={
+                    <span className={styles.labelRow}>
+                      {t.consenterMobileLabel} {okMark(mobileOk, 'telehealth-mobile-ok')}
+                    </span>
+                  }
+                  hint={t.consenterMobileHint}
+                  error={mobileTouched && !mobileOk && consenterMobile.trim() ? t.consenterMobileNeeded : null}
+                >
+                  {({ id, describedBy }) => (
+                    <TextInput
+                      id={id}
+                      describedBy={describedBy}
+                      type="tel"
+                      inputMode="tel"
+                      autoComplete="tel"
+                      maxLength={20}
+                      value={consenterMobile}
+                      onChange={(e) => setConsenterMobile(e.target.value)}
+                      onBlur={() => setMobileTouched(true)}
+                      data-testid="telehealth-consenter-mobile"
+                    />
+                  )}
+                </Field>
+              </>
+            )}
+            <div className={styles.tick}>
+              <Checkbox
+                label={page.statement.replace(TELEHEALTH_CONSENTER_NAME_SLOT, consenterName.trim() || t.consenterNameSlot)}
+                checked={ticked}
+                disabled={busy || !consenterReady}
+                onCheckedChange={(on) => {
+                  if (!on || busy) return;
+                  setTicked(true);
+                  void agree();
+                }}
+                testId="telehealth-tick"
+              />
             </div>
+            {busy && <p aria-live="polite">{t.sending}</p>}
           </section>
         )}
         {page.state === 'agreed' && (
-          <section className={styles.card} data-testid="telehealth-waiting" aria-live="polite">
-            <h2 className={styles.heading}>{t.waitingTitle(provider)}</h2>
+          <section className={`${styles.card} ${styles.started}`} data-testid="telehealth-waiting" aria-live="polite">
+            <h2 className={styles.heading}>{t.started(page.greetingName)}</h2>
             <p>{t.waitingBody}</p>
+            {ahpraLine}
           </section>
         )}
         {page.state === 'not_done' && (
@@ -243,11 +368,22 @@ export function TelehealthPatientView({ token }: { token: string }) {
             {t.notDoneBody}
           </Notice>
         )}
+        {page.state === 'went_ahead' && (
+          <section className={`${styles.card} ${styles.started}`} data-testid="telehealth-complete" aria-live="polite">
+            <h2 className={styles.heading}>{t.completeTitle(page.greetingName)}</h2>
+            <p>{t.completeBody}</p>
+            {ahpraLine}
+          </section>
+        )}
         {page.state === 'did_not_proceed' && (
           <Notice tone="warn" title={t.didNotProceedTitle} data-testid="telehealth-did-not-proceed">
             {t.didNotProceedBody}
           </Notice>
         )}
+        {/* The reference to quote to the practice, at the foot of every state (D-2026-10-12-03 item 11). */}
+        <p className={styles.reference} data-testid="telehealth-consultation-id">
+          {t.consultationId(page.consultationId)}
+        </p>
       </Shell>
     );
   }

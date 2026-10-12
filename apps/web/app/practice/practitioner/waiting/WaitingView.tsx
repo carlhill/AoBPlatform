@@ -216,7 +216,7 @@ export function WaitingView() {
       try {
         const res = await fetch(`${CORE_URL}/practitioner-queue/visits/${arrivalId}/state`, {
           method: 'POST',
-          headers: { ...apiHeaders(chosen), 'content-type': 'application/json' },
+          headers: apiHeaders(chosen),
           body: JSON.stringify({ state }),
         });
         const body = (await res.json().catch(() => ({}))) as {
@@ -270,7 +270,7 @@ export function WaitingView() {
       try {
         const res = await fetch(`${CORE_URL}/arrivals/move`, {
           method: 'POST',
-          headers: { ...apiHeaders(chosen), 'content-type': 'application/json' },
+          headers: apiHeaders(chosen),
           body: JSON.stringify({ arrivalIds, toAffiliationId }),
         });
         const body = (await res.json().catch(() => ({}))) as ArrivalMoveResult & { message?: string };

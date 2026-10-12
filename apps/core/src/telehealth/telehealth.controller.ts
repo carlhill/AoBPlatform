@@ -98,6 +98,18 @@ export class AgreeDto {
   @IsString()
   @MaxLength(80)
   consentKey!: string;
+
+  /** Someone acting for the patient: their full name, as they would sign it (D-2026-10-12-03 item 12). */
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  consenterName?: string;
+
+  /** Someone acting for the patient: a mobile the practice can reach them on. Mandatory for them; checked by core. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  consenterMobile?: string;
 }
 
 /**
@@ -192,6 +204,27 @@ export class TelehealthController {
     return this.telehealth.markDidNotProceed(actor, practiceId, id, dto);
   }
 
+  /** One of my sessions in full, for a call-back (Carl, 12 Oct 2026). Read only. */
+  @Get('sessions/:id')
+  sessionDetail(
+    @Headers('x-practice-id') practiceId: string | undefined,
+    @Param('id', ParseUUIDPipe) id: string,
+    @SessionActor() actor: Actor | undefined,
+  ) {
+    return this.telehealth.detail(actor, practiceId, id);
+  }
+
+  /** Consultation complete, after the patient agreed (D-2026-10-12-03 item 6). Same body as did-not-proceed. */
+  @Post('sessions/:id/went-ahead')
+  wentAhead(
+    @Headers('x-practice-id') practiceId: string | undefined,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: DidNotProceedDto,
+    @SessionActor() actor: Actor | undefined,
+  ) {
+    return this.telehealth.markWentAhead(actor, practiceId, id, dto);
+  }
+
   /*
    * THE PATIENT'S PAGE — public, because the person holding the link has no
    * account and must never need one (REQ-PORT-08). The token, then the page
@@ -219,6 +252,6 @@ export class TelehealthController {
   @Public()
   @Post('page/agree')
   agree(@Headers('x-telehealth-page-key') pageKey: string | undefined, @Body() dto: AgreeDto) {
-    return this.telehealth.agree(pageKey, dto.consentKey);
+    return this.telehealth.agree(pageKey, dto.consentKey, { name: dto.consenterName, mobile: dto.consenterMobile });
   }
 }

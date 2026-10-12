@@ -60,7 +60,9 @@ export type TelehealthVaultEvent =
         recordedAt: string;
       };
     }
-  | { type: 'telehealth.did_not_proceed'; payload: { fromState: string; consultationAt: string | null; recordedAt: string } };
+  | { type: 'telehealth.did_not_proceed'; payload: { fromState: string; consultationAt: string | null; recordedAt: string } }
+  /** Approved by Carl, 12 Oct 2026 (D-2026-10-12-03 item 6): the consultation was held, after the patient agreed. */
+  | { type: 'telehealth.consultation_held'; payload: { fromState: string; consultationAt: string | null; recordedAt: string } };
 
 export const TELEHEALTH_EVENT_TYPES = [
   'telehealth.session_opened',
@@ -71,6 +73,7 @@ export const TELEHEALTH_EVENT_TYPES = [
   'telehealth.consent_recorded',
   'telehealth.not_done',
   'telehealth.did_not_proceed',
+  'telehealth.consultation_held',
 ] as const satisfies readonly (TelehealthVaultEvent['type'] & VaultEventType)[];
 
 export interface TelehealthEvidenceEntry {

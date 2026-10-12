@@ -9,7 +9,18 @@ import { TelehealthPanel, isWaiting, mobileEnding } from './TelehealthPanel';
 import { strings } from '../../../strings';
 
 const p = strings.telehealth.panel;
-const PATIENT = { patientId: 'p-1', givenNames: 'Testy', familyName: 'Telehealthson', dateOfBirth: '1980-01-01' };
+const PATIENT = { patientId: 'p-1', givenNames: 'Testy', familyName: 'Telehealthson', dateOfBirth: '1980-01-01', patientRecordNumber: 'PRN-0001' };
+const RECORD = {
+  givenNames: 'Testy',
+  familyName: 'Telehealthson',
+  dateOfBirth: '1980-01-01',
+  gender: null,
+  address: '1 Example Street, Faketown',
+  patientRecordNumber: 'PRN-0001',
+  ihi: null,
+  mobile: '0400 000 412',
+  email: null,
+};
 
 vi.mock('next/navigation', () => ({
   usePathname: () => '/practice/practitioner/telehealth',
@@ -26,11 +37,14 @@ vi.mock('../../usePractice', () => ({
 
 let enabled = true;
 let sessions: unknown[] = [];
+/** When set, POST /telehealth/sessions refuses with this message. */
+let sendRefusal: string | null = null;
 const calls: { url: string; method: string; body?: unknown }[] = [];
 
 function session(state: string, extra: Record<string, unknown> = {}) {
   return {
     id: 's-1',
+    consultationId: 'TH-AB12-CD34',
     patientId: 'p-1',
     patientName: 'Testy Telehealthson',
     state,
@@ -56,6 +70,7 @@ function session(state: string, extra: Record<string, unknown> = {}) {
 beforeEach(() => {
   enabled = true;
   sessions = [];
+  sendRefusal = null;
   calls.length = 0;
   vi.stubGlobal(
     'fetch',
@@ -66,12 +81,21 @@ beforeEach(() => {
         ({ ok: status < 300, status, json: async () => body }) as unknown as Response;
       if (url.endsWith('/telehealth/enabled')) return reply(200, { enabled });
       if (url.includes('/telehealth/patients?q=')) return reply(200, [PATIENT]);
-      if (url.endsWith('/contact')) return reply(200, { patientId: 'p-1', maskedMobile: '•••••• 412', maskedEmail: null });
+      if (url.endsWith('/contact')) return reply(200, { patientId: 'p-1', maskedMobile: '•••••• 412', maskedEmail: null, record: RECORD });
       if (url.endsWith('/telehealth/sessions') && method === 'POST') {
+        if (sendRefusal) return reply(400, { message: sendRefusal });
         sessions = [session('opened')];
         return reply(201, { session: sessions[0], code: '042917', codeExpiresAt: '2026-10-12T00:10:00.000Z', queued: ['sms'] });
       }
       if (url.endsWith('/telehealth/sessions')) return reply(200, sessions);
+      if (url.endsWith('/telehealth/sessions/s-1')) {
+        return reply(200, {
+          session: { ...session('agreed'), consenterIsPatient: false, consenterName: 'Jane Citizen', consenterMobile: '0400000999' },
+          record: RECORD,
+          consenterRelationship: 'carer',
+        });
+      }
+      if (url.endsWith('/went-ahead')) return reply(201, session('went_ahead'));
       if (url.endsWith('/not-done')) {
         sessions = [session('not_done', { notDoneReason: 'emergency', outcomeRecordedAt: '2026-10-12T00:05:00.000Z' })];
         return reply(201, sessions[0]);
@@ -89,7 +113,7 @@ afterEach(() => {
 async function choosePatient() {
   render(<TelehealthPanel />);
   fireEvent.change(await screen.findByTestId('telehealth-search'), { target: { value: 'Telehealthson' } });
-  fireEvent.click(screen.getByTestId('telehealth-find'));
+  fireEvent.submit(screen.getByTestId('telehealth-search').closest('form')!);
   fireEvent.click(await screen.findByTestId('telehealth-choose-p-1'));
   await screen.findByTestId('telehealth-mobile');
 }
@@ -119,7 +143,7 @@ describe('TelehealthPanel', () => {
 
   it('reads back the masked contact, sends types only, and shows the code once', async () => {
     await choosePatient();
-    expect(screen.getByTestId('telehealth-mobile').textContent).toContain(p.mobileEnding('412'));
+    expect(screen.getByTestId('telehealth-mobile').textContent).toContain('0400 000 412');
     const send = screen.getByTestId('telehealth-send') as HTMLButtonElement;
     expect(send.disabled).toBe(true);
 
@@ -129,6 +153,10 @@ describe('TelehealthPanel', () => {
     fireEvent.click(send);
 
     expect((await screen.findByTestId('telehealth-code')).textContent).toBe('0 4 2 9 1 7');
+    // Once sent, Send the link goes, and a new link is offered beside the code (Carl, 12 Oct 2026).
+    expect(screen.queryByTestId('telehealth-send')).toBeNull();
+    expect(screen.getByTestId('telehealth-sent-note')).toBeTruthy();
+    expect(screen.getByTestId('telehealth-code-send-again').textContent).toBe(p.sendAgain);
     const post = calls.find((c) => c.method === 'POST' && c.url.endsWith('/telehealth/sessions'))!;
     // telehealth_identifier_types_never_values: the body carries kinds of identifier and no contact.
     expect(post.body).toEqual({
@@ -139,6 +167,90 @@ describe('TelehealthPanel', () => {
     });
     expect(await screen.findByTestId('telehealth-status-s-1')).toBeTruthy();
     expect(screen.getByTestId('telehealth-status-s-1').textContent).toBe(p.status.opened);
+  });
+
+  it('marks the chosen patient, folds the list away, and "Choose someone else" brings it back', async () => {
+    await choosePatient();
+    expect(screen.getByTestId('telehealth-chosen').textContent).toContain(p.chosen);
+    expect(screen.queryByTestId('telehealth-choose-p-1')).toBeNull();
+
+    fireEvent.click(screen.getByTestId('telehealth-choose-again'));
+    expect(await screen.findByTestId('telehealth-choose-p-1')).toBeTruthy();
+    expect(screen.queryByTestId('telehealth-chosen')).toBeNull();
+    // Nothing of the last patient survives, least of all the contact.
+    expect(screen.queryByTestId('telehealth-mobile')).toBeNull();
+  });
+
+  it('shows the record in full beside each tick, says when a detail is not on the record, and the hit carries the record number', async () => {
+    render(<TelehealthPanel />);
+    fireEvent.change(await screen.findByTestId('telehealth-search'), { target: { value: 'Telehealthson' } });
+    fireEvent.submit(screen.getByTestId('telehealth-search').closest('form')!);
+    expect((await screen.findByTestId('telehealth-choose-p-1')).textContent).toContain('PRN-0001');
+    fireEvent.click(screen.getByTestId('telehealth-choose-p-1'));
+    await screen.findByTestId('telehealth-mobile');
+    expect(screen.getByTestId('telehealth-record-name').textContent).toBe('Testy Telehealthson');
+    expect(screen.getByTestId('telehealth-record-date_of_birth').textContent).toBe('1980-01-01');
+    expect(screen.getByTestId('telehealth-record-address').textContent).toBe('1 Example Street, Faketown');
+    expect(screen.getByTestId('telehealth-record-gender').textContent).toBe(p.recordNone);
+    expect(screen.queryByTestId('telehealth-email')).toBeNull();
+    // Shown, never sent: the POST still carries kinds only (see the send test).
+  });
+
+  it('"Start new telehealth consultation" gives a clean form, search box included', async () => {
+    await choosePatient();
+    fireEvent.click(screen.getByTestId('telehealth-type-name'));
+    fireEvent.click(screen.getByTestId('telehealth-start-new'));
+    expect((screen.getByTestId('telehealth-search') as HTMLInputElement).value).toBe('');
+    expect(screen.queryByTestId('telehealth-chosen')).toBeNull();
+    expect(screen.queryByTestId('telehealth-hits')).toBeNull();
+    expect(screen.queryByTestId('telehealth-mobile')).toBeNull();
+    expect(screen.queryByTestId('telehealth-type-name')).toBeNull();
+  });
+
+  it('clicking the patient in the side panel shows what a call-back needs, read from the record', async () => {
+    sessions = [session('agreed')];
+    render(<TelehealthPanel />);
+    fireEvent.click(await screen.findByTestId('telehealth-open-s-1'));
+    const detail = await screen.findByTestId('telehealth-detail-s-1');
+    expect(screen.getByTestId('telehealth-detail-mobile-s-1').textContent).toBe('0400 000 412');
+    expect(screen.getByTestId('telehealth-detail-carer-mobile-s-1').textContent).toBe('0400000999');
+    expect(detail.textContent).toContain('Jane Citizen (Carer)');
+    expect(detail.textContent).toContain('TH-AB12-CD34');
+  });
+
+  it('an outcome blanks the form; the session stays in the panel', async () => {
+    sessions = [session('agreed')];
+    await choosePatient();
+    fireEvent.click(screen.getByTestId('telehealth-went-ahead-s-1'));
+    await waitFor(() => expect(screen.queryByTestId('telehealth-chosen')).toBeNull());
+    expect((screen.getByTestId('telehealth-search') as HTMLInputElement).value).toBe('');
+  });
+
+  it('an agreed session offers no new link and code', async () => {
+    sessions = [session('agreed')];
+    render(<TelehealthPanel />);
+    expect(await screen.findByTestId('telehealth-status-s-1')).toBeTruthy();
+    expect(screen.queryByTestId('telehealth-send-again-s-1')).toBeNull();
+    expect(screen.getByTestId('telehealth-did-not-proceed-s-1')).toBeTruthy();
+    // The two outcomes after agreeing: complete, or did not go ahead.
+    expect(screen.getByTestId('telehealth-went-ahead-s-1').textContent).toBe(p.wentAhead);
+    // The reference the patient quotes is beside the session (D-2026-10-12-03 item 11).
+    expect(screen.getByTestId('telehealth-id-s-1').textContent).toBe(p.consultationId('TH-AB12-CD34'));
+  });
+
+  it('a refused send is said next to the Send button, not off-screen at the top', async () => {
+    sendRefusal = 'The server observed something.';
+    await choosePatient();
+    for (const type of ['name', 'date_of_birth', 'address']) fireEvent.click(screen.getByTestId(`telehealth-type-${type}`));
+    fireEvent.click(screen.getByTestId('telehealth-who-patient'));
+    const send = screen.getByTestId('telehealth-send') as HTMLButtonElement;
+    await waitFor(() => expect(send.disabled).toBe(false));
+    fireEvent.click(send);
+
+    const notice = await screen.findByTestId('telehealth-error');
+    expect(notice.textContent).toContain(sendRefusal);
+    expect(screen.getAllByTestId('telehealth-error')).toHaveLength(1);
+    expect(notice.closest('section')?.getAttribute('aria-labelledby')).toBe('th-contact');
   });
 
   it('someone acting for the patient needs a relationship and the 18+ tick before Send', async () => {
@@ -201,6 +313,7 @@ describe('TelehealthPanel', () => {
         return { ok: true, status: 200, json: async () => [] } as unknown as Response;
       }),
     );
+    fireEvent.click(screen.getByTestId('telehealth-choose-again'));
     fireEvent.click(screen.getByTestId('telehealth-choose-p-1'));
     expect((await screen.findByTestId('telehealth-error')).textContent).toContain('not on this practice');
     expect(screen.queryByTestId('telehealth-mobile')).toBeNull();
@@ -233,16 +346,17 @@ describe('TelehealthPanel', () => {
           await new Promise<void>((resolve) => {
             releaseFirst = resolve;
           });
-          return reply({ patientId: 'p-1', maskedMobile: '•••••• 111', maskedEmail: null });
+          return reply({ patientId: 'p-1', maskedMobile: '•••••• 111', maskedEmail: null, record: { ...RECORD, mobile: '0400 000 111' } });
         }
-        if (url.endsWith('/p-2/contact')) return reply({ patientId: 'p-2', maskedMobile: '•••••• 222', maskedEmail: null });
+        if (url.endsWith('/p-2/contact')) return reply({ patientId: 'p-2', maskedMobile: '•••••• 222', maskedEmail: null, record: { ...RECORD, givenNames: 'Second', familyName: 'Fixtureson', mobile: '0400 000 222' } });
         return reply({});
       }),
     );
     render(<TelehealthPanel />);
     fireEvent.change(await screen.findByTestId('telehealth-search'), { target: { value: 'Fixture' } });
-    fireEvent.click(screen.getByTestId('telehealth-find'));
+    fireEvent.submit(screen.getByTestId('telehealth-search').closest('form')!);
     fireEvent.click(await screen.findByTestId('telehealth-choose-p-1'));
+    fireEvent.click(screen.getByTestId('telehealth-choose-again'));
     fireEvent.click(screen.getByTestId('telehealth-choose-p-2'));
     expect((await screen.findByTestId('telehealth-mobile')).textContent).toContain('222');
     await waitFor(() => expect(releaseFirst).not.toBeNull());
@@ -273,15 +387,16 @@ describe('TelehealthPanel', () => {
               }),
           } as unknown as Response;
         }
-        if (url.endsWith('/p-2/contact')) return reply({ patientId: 'p-2', maskedMobile: '•••••• 222', maskedEmail: null });
+        if (url.endsWith('/p-2/contact')) return reply({ patientId: 'p-2', maskedMobile: '•••••• 222', maskedEmail: null, record: { ...RECORD, givenNames: 'Second', familyName: 'Fixtureson', mobile: '0400 000 222' } });
         return reply({});
       }),
     );
     render(<TelehealthPanel />);
     fireEvent.change(await screen.findByTestId('telehealth-search'), { target: { value: 'Fixture' } });
-    fireEvent.click(screen.getByTestId('telehealth-find'));
+    fireEvent.submit(screen.getByTestId('telehealth-search').closest('form')!);
     fireEvent.click(await screen.findByTestId('telehealth-choose-p-1'));
     await waitFor(() => expect(releaseFirst).not.toBeNull());
+    fireEvent.click(screen.getByTestId('telehealth-choose-again'));
     fireEvent.click(screen.getByTestId('telehealth-choose-p-2'));
     expect((await screen.findByTestId('telehealth-mobile')).textContent).toContain('222');
     releaseFirst!();

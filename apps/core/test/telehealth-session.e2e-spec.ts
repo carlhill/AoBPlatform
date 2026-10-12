@@ -13,9 +13,9 @@ process.env.TELEHEALTH_ENABLED = 'true';
 
 import { Test } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import request from 'supertest';
-import { TELEHEALTH_CONTENT, TELEHEALTH_NEUTRAL_WORDING_FORBIDDEN } from '@aobplatform/domain';
+import { TELEHEALTH_CONTENT, TELEHEALTH_NEUTRAL_WORDING_FORBIDDEN, telehealthConsultationId } from '@aobplatform/domain';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { TelehealthService } from '../src/telehealth/telehealth.service';
@@ -78,6 +78,8 @@ describe('telehealth sessions (e2e, real Postgres)', () => {
     await prisma.withPractice(practiceId, async (tx) => {
       await tx.practice.create({ data: { id: practiceId, name: 'Telehealth Test Practice' } });
       gp = await createServicingProvider(tx, practiceId, { name: 'Dr Sample Chen' });
+      // A medical practitioner, so the patient sees "Dr" (D-2026-10-12-03 item 10: only from the profession).
+      await tx.practitioner.update({ where: { id: gp.practitionerId }, data: { profession: 'Medical Practitioner' } });
       patientId = (
         await tx.patient.create({
           data: {
@@ -167,7 +169,7 @@ describe('telehealth sessions (e2e, real Postgres)', () => {
     // The patient: landing (practice only), code, page, agree.
     const token = await tokenFrom(sent.session.id);
     const landing = await request(app.getHttpServer()).get(`/telehealth/link/${token}`).expect(200);
-    expect(landing.body).toEqual({ state: 'open', practiceName: 'Telehealth Test Practice' });
+    expect(landing.body).toEqual({ state: 'open', practiceName: 'Telehealth Test Practice', outcome: null });
 
     const entered = await request(app.getHttpServer())
       .post(`/telehealth/link/${token}/code`)
@@ -181,7 +183,7 @@ describe('telehealth sessions (e2e, real Postgres)', () => {
     const page = await request(app.getHttpServer()).get('/telehealth/page').set('x-telehealth-page-key', pageKey).expect(200);
     expect(page.body.state).toBe('code_checked');
     expect(page.body.providerName).toBe('Dr Sample Chen');
-    expect(page.body.statement).toBe('Yes, start my telehealth consultation with Dr Sample Chen');
+    expect(page.body.statement).toBe('I, Testy Telehealthson, want to start my telehealth consultation with Dr Sample Chen now.');
     expect(page.body.statement).not.toMatch(TELEHEALTH_NEUTRAL_WORDING_FORBIDDEN);
 
     const listed = await telehealth.list(asPractitioner(gp.practitionerId), practiceId);
@@ -340,6 +342,8 @@ describe('telehealth sessions (e2e, real Postgres)', () => {
         tx.telehealthSession.create({
           data: {
             practiceId,
+            // A valid reference, so the database refuses for the reason under test and no other.
+            consultationId: telehealthConsultationId((size) => randomBytes(size)),
             patientId,
             practitionerId: gp.practitionerId,
             affiliationId: gp.affiliationId,
@@ -516,6 +520,20 @@ describe('telehealth sessions (e2e, real Postgres)', () => {
     const ok = await request(app.getHttpServer()).post(`/telehealth/link/${fresh}/code`).send({ code: again.code }).expect(201);
     const page = await request(app.getHttpServer()).get('/telehealth/page').set('x-telehealth-page-key', ok.body.pageKey).expect(200);
     expect(page.body.statement).toContain('for Testy with Dr Sample Chen');
+
+    // Someone acting for the patient names themselves and gives a mobile, or the tick is refused (D-2026-10-12-03 item 12).
+    const key = ok.body.pageKey as string;
+    const consentKey = TELEHEALTH_CONTENT.consent.key;
+    const agree = (body: Record<string, unknown>) =>
+      request(app.getHttpServer()).post('/telehealth/page/agree').set('x-telehealth-page-key', key).send({ consentKey, ...body });
+    expect((await agree({ consenterMobile: '0400 000 999' }).expect(400)).body.code).toBe('consenter_name_needed');
+    expect((await agree({ consenterName: 'Jane Citizen', consenterMobile: '0299990000' }).expect(400)).body.code).toBe('consenter_mobile_needed');
+    const agreed = await agree({ consenterName: '  Jane   Citizen ', consenterMobile: '0400 000 999' }).expect(201);
+    expect(agreed.body.state).toBe('agreed');
+    expect(agreed.body.statement).toContain('I, Jane Citizen, ');
+    const row = await prisma.withPractice(practiceId, (tx) => tx.telehealthSession.findFirstOrThrow({ where: { id: sent.session.id } }));
+    expect(row.consenterName).toBe('Jane Citizen');
+    expect(row.consenterMobile).toBe('0400000999');
   });
 
   it('not done, with a reason: from a session, and with no session at all; the consultation is never blocked', async () => {
@@ -625,6 +643,8 @@ describe('telehealth sessions (e2e, real Postgres)', () => {
         tx.telehealthSession.create({
           data: {
             practiceId,
+            // A valid reference, so the database refuses for the reason under test and no other.
+            consultationId: telehealthConsultationId((size) => randomBytes(size)),
             patientId,
             practitionerId: gp.practitionerId,
             affiliationId: gp.affiliationId,

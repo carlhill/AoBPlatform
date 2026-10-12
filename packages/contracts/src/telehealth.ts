@@ -19,21 +19,55 @@
  */
 
 /** Mirrors `TELEHEALTH_SESSION_STATES` in `@aobplatform/domain`. */
-export type TelehealthSessionStateWire = 'opened' | 'code_checked' | 'agreed' | 'not_done' | 'did_not_proceed';
+export type TelehealthSessionStateWire = 'opened' | 'code_checked' | 'agreed' | 'not_done' | 'did_not_proceed' | 'went_ahead';
 
 /** Mirrors `TELEHEALTH_CHANNELS` in `@aobplatform/domain`. */
 export type TelehealthChannelWire = 'sms' | 'email' | 'both';
 
-/** The contact on the record, masked. A null means none is held for that transport. */
+/**
+ * The chosen patient's record as the doctor's panel shows it, IN FULL (Carl,
+ * D-2026-10-12-03 item 1), so the doctor can compare what the person on the
+ * call says. Shown, never stored: the session still records identifier TYPES
+ * only (hard rule 9). The masked forms remain for the channel choice. A null
+ * means the record holds no value for that field.
+ */
+export interface TelehealthPatientRecord {
+  readonly givenNames: string;
+  readonly familyName: string;
+  /** YYYY-MM-DD. */
+  readonly dateOfBirth: string;
+  readonly gender: string | null;
+  readonly address: string | null;
+  readonly patientRecordNumber: string | null;
+  readonly ihi: string | null;
+  readonly mobile: string | null;
+  readonly email: string | null;
+}
+
+/**
+ * ONE SESSION IN FULL, FOR A CALL-BACK (Carl, 12 Oct 2026): the session, the
+ * patient's record and contact read NOW from the PMS mirror (null if the record
+ * has gone), and the relationship of whoever agreed for the patient.
+ */
+export interface TelehealthSessionDetail {
+  readonly session: TelehealthSessionView;
+  readonly record: TelehealthPatientRecord | null;
+  readonly consenterRelationship: string | null;
+}
+
+/** The contact on the record. A null masked value means none is held for that transport. */
 export interface TelehealthMaskedContact {
   readonly patientId: string;
   readonly maskedMobile: string | null;
   readonly maskedEmail: string | null;
+  readonly record: TelehealthPatientRecord;
 }
 
 /** One session as the provider's panel sees it. */
 export interface TelehealthSessionView {
   readonly id: string;
+  /** The TH-XXXX-XXXX reference the patient quotes to the practice (D-2026-10-12-03 item 11). */
+  readonly consultationId: string;
   readonly patientId: string;
   /** The patient's own name from the PMS mirror, for the provider's screen only. */
   readonly patientName: string;
@@ -54,6 +88,9 @@ export interface TelehealthSessionView {
   readonly notDoneReason: string | null;
   /** Whether the `other` reason carried a note. The note itself is returned to the panel only. */
   readonly notDoneNote: string | null;
+  /** Typed by someone acting for the patient, with their mobile, for the provider to reach them (D-2026-10-12-03 item 12). */
+  readonly consenterName: string | null;
+  readonly consenterMobile: string | null;
   /** When the provider says the consultation happened. */
   readonly consultationAt: string | null;
   /** When the outcome (not done / did not proceed) was RECORDED — honest about the next morning. */
@@ -75,6 +112,8 @@ export interface TelehealthSendResult {
 export interface TelehealthLinkLanding {
   readonly state: 'open' | 'used' | 'expired' | 'locked' | 'closed';
   readonly practiceName: string | null;
+  /** When `closed`: which outcome the practitioner recorded, so the page says the right thing (Carl, 12 Oct 2026). */
+  readonly outcome?: 'went_ahead' | 'did_not_proceed' | 'not_done' | null;
 }
 
 /** A right code. The page key keeps the one page open; it is held in memory only. */
@@ -101,6 +140,17 @@ export interface TelehealthPageView {
   readonly state: TelehealthSessionStateWire;
   readonly practiceName: string | null;
   readonly providerName: string | null;
+  /** The provider's Ahpra number, only when sighted and current; null shows no line (D-2026-10-12-03 item 10). */
+  readonly ahpraNumber: string | null;
+  /** The TH-XXXX-XXXX reference the patient quotes to the practice (D-2026-10-12-03 item 11). */
+  readonly consultationId: string;
+  /** False when someone acting for the patient agrees: the page then asks their full name and mobile (D-2026-10-12-03 item 12). */
+  readonly consenterIsPatient: boolean;
+  /** For someone acting for the patient: the relationship key the provider chose, and the patient's given names, for "You are the carer for Juno". Null for the patient. */
+  readonly consenterRelationship: string | null;
+  readonly patientGivenNames: string | null;
+  /** The first name of whoever is on the page, to greet them (Carl, 12 Oct 2026): the patient's, or the name a carer typed once they agreed. */
+  readonly greetingName: string | null;
   /** The one statement, from versioned content, as it will be recorded. */
   readonly statement: string;
   readonly consentKey: string;
@@ -120,6 +170,8 @@ export const TELEHEALTH_ROUTES = {
   markNotDone: 'POST /telehealth/sessions/:id/not-done',
   recordNotDone: 'POST /telehealth/not-done',
   markDidNotProceed: 'POST /telehealth/sessions/:id/did-not-proceed',
+  markWentAhead: 'POST /telehealth/sessions/:id/went-ahead',
+  sessionDetail: 'GET /telehealth/sessions/:id',
   /** Patient page (public; the token or page key is the only credential). */
   landing: 'GET /telehealth/link/:token',
   enterCode: 'POST /telehealth/link/:token/code',

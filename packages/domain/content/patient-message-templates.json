@@ -1,6 +1,6 @@
 {
   "$comment": "VERSIONED CONTENT, NOT CODE (hard rule 14). The words of the messages this platform sends a PATIENT about their own portal record. They live here rather than inline in a dispatcher for the same reason the enduring termination notice does: this regime moved twice and reversed once, copy must be editable without a code change, and the version must travel with every message produced from it. THE RECORD ID LINE IS ITS OWN TEMPLATE because it appears in every portal-related message, not only the invitation -- one set of words appended by one helper, so a patient comparing two messages sees the same sentence both times. That sameness IS the anti-scam check (Carl, 4 Sep 2026): a page, a passkey and a message all quoting one id. WHAT THESE WORDS MAY NEVER SAY. No benefit and no dollar amount of any kind (hard rule 4) -- reg 89AA notices are the one place an amount belongs and they are a different document. Never 'certified', 'approved', 'accredited' or 'government-approved' (hard rule 12, REQ-65C-05). Never a Medicare card number, which is not an identity identifier and is not held here at all (hard rule 1, REQ-VER-02). Never a suggestion that care, an appointment or billing depends on opening the portal -- it never does (hard rule 8; REQ-PORT-08: portal access is never a precondition of signing). PLACEHOLDERS ARE KEYS, NEVER VALUES. A name, a practice name and a link are substituted at send time; nothing personal is written into this file. UK/AU spelling and plain language, because the audience is every patient rather than a confident one.",
-  "version": "patient-messages-2026-10-12",
+  "version": "patient-messages-2026-10-12-4",
   "placeholders": [
     "givenNames",
     "practiceName",
@@ -10,7 +10,9 @@
     "copyUrl",
     "signedOn",
     "providerName",
-    "telehealthUrl"
+    "telehealthUrl",
+    "ahpraNumber",
+    "consultationId"
   ],
   "templates": [
     {
@@ -46,19 +48,35 @@
       "sms": "Your copy of the bulk-billing agreement you signed at {{practiceName}} on {{signedOn}}: {{copyUrl}} -- the link works until {{expiresOn}} and needs no sign-in. Nothing to reply to."
     },
     {
-      "key": "telehealth_link_v1",
+      "key": "telehealth_link_v2",
       "note": "TELEHEALTH-PLAN.md §3 step 5 -- the link to the one page for a telehealth consultation, sent only to the mobile or email already on the record (D-2026-09-11-03) while the provider is on the call. IT NEVER CARRIES THE CODE: the code is shown only on the provider's screen and read out on the call, which is what shows that whoever opened the link can hear the call; there is no placeholder for it and the loader refuses one. NEUTRAL UNTIL G10 IS ANSWERED: about the consultation only -- nothing about bulk billing, Medicare, the assignment or the DB4, which could make the DB4 afterwards a pre-agreement (TELEHEALTH-PLAN.md §9). It asks for nothing but the code the provider reads out.",
       "subject": "Your telehealth consultation with {{practiceName}}",
       "paragraphs": [
         "Hello,",
         "{{providerName}} at {{practiceName}} has sent you this link for your telehealth consultation.",
-        "Open it, then type the 6-digit code {{providerName}} reads out to you on the call. The code is never in this message."
+        "Open it, then type the 6-digit telehealth access code {{providerName}} reads out to you on the call. The access code is never in this message."
       ],
       "actionLabel": "Open the page",
       "smallPrint": [
         "If you are not on a call with {{practiceName}} right now, do nothing. The link stops working on its own."
       ],
-      "sms": "{{practiceName}}: {{providerName}} sent you this link for your telehealth consultation: {{telehealthUrl}} -- type the code {{providerName}} reads out on the call. The code is never in this message."
+      "sms": "{{practiceName}}: {{providerName}} sent you this link for your telehealth consultation: {{telehealthUrl}} -- type the telehealth access code {{providerName}} reads out on the call. The access code is never in this message."
+    },
+    {
+      "key": "telehealth_ahpra_line_v1",
+      "note": "APPENDED TO THE TELEHEALTH LINK ONLY WHEN THE PROVIDER'S AHPRA REGISTRATION HAS BEEN SIGHTED AND IS CURRENT (Carl, 12 Oct 2026, D-2026-10-12-03 item 10). It tells the patient WHO their provider is and where to check it themselves; it is not offered as proof the message is genuine (anyone can quote a real number), which is the code's job. The register is named in plain text as well as linked, so a careful reader can type it rather than click. Ahpra is not Medicare: nothing here touches G10. Never the Medicare provider number, which is a billing identifier, not a public one.",
+      "paragraphs": [
+        "{{providerName}} is registered with Ahpra, registration number {{ahpraNumber}}. You can check this yourself on the public register at www.ahpra.gov.au."
+      ],
+      "sms": "Ahpra registration {{ahpraNumber}}, check it at www.ahpra.gov.au."
+    },
+    {
+      "key": "telehealth_consultation_id_line_v1",
+      "note": "APPENDED TO EVERY TELEHEALTH LINK (Carl, 12 Oct 2026, D-2026-10-12-03 item 11). The short reference the patient quotes when they ring the practice about this consultation; the same id is at the foot of their page and beside the session on the doctor's panel, so all three can be compared. A REFERENCE, NEVER A KEY: it opens nothing, and the message never asks the patient to type it anywhere. Neutral until G10.",
+      "paragraphs": [
+        "Your telehealth consultation ID is {{consultationId}}. Quote it if you call {{practiceName}} about this consultation."
+      ],
+      "sms": "Consultation ID {{consultationId}}."
     },
     {
       "key": "portal_record_id_line_v1",

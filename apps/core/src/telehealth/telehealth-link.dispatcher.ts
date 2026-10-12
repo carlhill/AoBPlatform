@@ -7,7 +7,11 @@ import { EmailComposer } from '../messaging/composer.service';
 import type { EmailBlock } from '../messaging/template';
 
 /** The template the link message is rendered from (versioned content). */
-export const TELEHEALTH_LINK_TEMPLATE_KEY = 'telehealth_link_v1';
+export const TELEHEALTH_LINK_TEMPLATE_KEY = 'telehealth_link_v2';
+/** Appended only when the provider's Ahpra registration was sighted and is current (D-2026-10-12-03 item 10). */
+export const TELEHEALTH_AHPRA_LINE_TEMPLATE_KEY = 'telehealth_ahpra_line_v1';
+/** Appended to every telehealth link: the reference the patient quotes to the practice (D-2026-10-12-03 item 11). */
+export const TELEHEALTH_CONSULTATION_ID_LINE_TEMPLATE_KEY = 'telehealth_consultation_id_line_v1';
 
 /**
  * SENDS THE LINK TO THE ONE PAGE FOR A TELEHEALTH CONSULTATION
@@ -50,6 +54,10 @@ export class TelehealthLinkDispatcher {
       practiceId: string;
       practiceName: string;
       providerName: string;
+      /** The provider's Ahpra number, ONLY when sighted and current; null leaves the line out. */
+      ahpraNumber: string | null;
+      /** The TH-XXXX-XXXX reference; always shown. */
+      consultationId: string;
       sessionId: string;
       /** Which send of this session this is. Each is its own message, never a retry of the last. */
       sendNumber: number;
@@ -65,6 +73,16 @@ export class TelehealthLinkDispatcher {
       providerName: input.providerName,
       telehealthUrl: url,
       expiresOn: input.expiresOn,
+    });
+    const ahpra = input.ahpraNumber
+      ? renderPatientMessage(TELEHEALTH_AHPRA_LINE_TEMPLATE_KEY, {
+          providerName: input.providerName,
+          ahpraNumber: input.ahpraNumber,
+        })
+      : null;
+    const reference = renderPatientMessage(TELEHEALTH_CONSULTATION_ID_LINE_TEMPLATE_KEY, {
+      practiceName: input.practiceName,
+      consultationId: input.consultationId,
     });
     const common = {
       practiceId: input.practiceId,
@@ -89,11 +107,17 @@ export class TelehealthLinkDispatcher {
           ...common,
           channel: 'sms',
           destination: input.patient.mobile,
-          payload: { body: message.sms, templateKey: message.templateKey, templateVersion: message.templateVersion },
+          payload: {
+            body: [message.sms, ahpra?.sms, reference.sms].filter(Boolean).join(' '),
+            templateKey: message.templateKey,
+            templateVersion: message.templateVersion,
+          },
         });
       } else {
         const blocks: EmailBlock[] = [
           ...message.paragraphs.map((text) => ({ text })),
+          ...(ahpra?.paragraphs ?? []).map((text) => ({ text })),
+          ...reference.paragraphs.map((text) => ({ text })),
           { button: { label: message.actionLabel ?? 'Open the page', url } },
           { url },
           ...message.smallPrint.map((small) => ({ small })),
