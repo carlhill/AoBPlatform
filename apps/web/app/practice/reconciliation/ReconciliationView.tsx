@@ -551,6 +551,11 @@ function DetailPanel({
               {a.cancelledReason === 'verification_locked_out' && (
                 <p className={ui.hint} data-testid="reconciliation-attempt-locked">
                   {strings.link.db4.queueAttemptLocked}
+                  {/* The remedy only where it is true for this record (wow.md 13): a new
+                      link opens only on an agreement still awaiting a signature. */}
+                  {detail.agreement?.status === 'awaiting_signature' && (
+                    <> {strings.link.db4.queueAttemptLockedNewLink}</>
+                  )}
                 </p>
               )}
               {a.messages.length > 0 && (

@@ -2123,7 +2123,7 @@ export const strings = {
         drawn_not_offered_on_this_link:
           'This link does not take a drawn signature, so it was not recorded.',
         link_verification_replaced:
-          'The practice checked who you are again after you did on this link, so a signature from this link was not recorded.',
+          'Who you are was checked again after the check on this link, so a signature from this link was not recorded.',
       } as Record<string, string>,
       unmapped: (code: string) =>
         `The practice's system did not record the signature, and gave the reason code "${code}". Quote this code to the practice.`,
@@ -2134,8 +2134,9 @@ export const strings = {
        * check locked (D-2026-10-12-01). The observation, then the remedy that
        * is true for every such row: a fresh link can be sent.
        */
-      queueAttemptLocked:
-        'Closed: the wrong details were entered on this link too many times. A new link can be sent.',
+      queueAttemptLocked: 'Closed: the wrong details were entered on this link too many times.',
+      /** Only while the agreement is awaiting a signature: a new link cannot be opened in any other state. */
+      queueAttemptLockedNewLink: 'A new link can be sent.',
     },
   },
 

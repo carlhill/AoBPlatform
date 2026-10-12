@@ -171,6 +171,7 @@ describe('/practice/reconciliation — a link that locked, and which channel a r
   it('a_link_closed_by_its_lockout_says_so_on_the_queue (D-2026-10-12-01)', async () => {
     stubFetch({
       ...DETAIL,
+      agreement: { id: 'agreement-deep-1', status: 'awaiting_signature' },
       attemptsMade: 1,
       attempts: [
         {
@@ -190,7 +191,36 @@ describe('/practice/reconciliation — a link that locked, and which channel a r
       </PracticeOverride>,
     );
     const line = await screen.findByTestId('reconciliation-attempt-locked');
+    expect(line.textContent).toBe(
+      `${strings.link.db4.queueAttemptLocked} ${strings.link.db4.queueAttemptLockedNewLink}`,
+    );
+  });
+
+  it('a_locked_link_offers_a_new_one_only_where_one_can_open (wow.md 13)', async () => {
+    stubFetch({
+      ...DETAIL,
+      agreement: { id: 'agreement-deep-1', status: 'verification_failed' },
+      attemptsMade: 1,
+      attempts: [
+        {
+          captureRequestId: 'capture-locked-2',
+          channel: 'sms_link',
+          status: 'cancelled',
+          cancelledReason: 'verification_locked_out',
+          openedAt: '2026-10-12T01:00:00.000Z',
+          messages: [],
+        },
+      ],
+    });
+    at(`?${RECONCILIATION_ITEM_PARAM}=${ITEM.serviceRecordId}`);
+    render(
+      <PracticeOverride practiceId={PRACTICE}>
+        <ReconciliationView />
+      </PracticeOverride>,
+    );
+    const line = await screen.findByTestId('reconciliation-attempt-locked');
     expect(line.textContent).toBe(strings.link.db4.queueAttemptLocked);
+    expect(line.textContent).not.toContain(strings.link.db4.queueAttemptLockedNewLink);
   });
 
   it('channel_for_is_the_contact_actually_on_file', () => {
