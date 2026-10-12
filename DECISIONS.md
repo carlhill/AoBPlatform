@@ -3128,6 +3128,16 @@ read, no names in logs, the row stays sendable, and a `tsc` check that
 `a DB4 whose printed name differs from the patient record` block in
 `apps/web/app/practice/tablet/tablet.test.tsx`.
 
+**Amended on 11 October 2026 by D-2026-10-11-06.** The warning band stays,
+and Send to tablet now ALSO refuses a form whose printed name differs
+(`print_record_patient_name_differs`), decided by this entry's comparison
+with one change: when both parts were printed, the same whole name split at a
+different space is no longer a difference ("Anna Van Der" / "Berg" against
+"Anna" / "Van Der Berg").
+Everything below that says the warning "never blocks" or that Send "still
+works" describes the rule before that date; the band's copy was changed to
+match.
+
 **What would reopen it:**
 - Carl wanting a link from the band to the patient's record correction for the
   "PracSoft is already right" case.
@@ -3547,6 +3557,257 @@ location zone, still to build), or a telehealth service rendered for a patient
 in another state.
 
 ---
+
+## D-2026-10-11-05 - A service line AOBPRINTER could not read is counted, and Send-to-tablet refuses it
+
+**Date:** 11 October 2026. **Raised by:** an Opus review on 10 October 2026.
+**Built on:** branch `fix/aobprinter-unparsed-service-lines`, based on
+`fix/db4-amount-keeps-dollar`. **Status: an assumption for Carl to confirm**
+(wow.md §9) on two points marked below.
+
+**What was wrong.** `runRows` in `apps/aobprinter/src/parser.ts` skips any line
+its pattern does not match. Under both shipped templates
+(`pracsoft3-db4-2026-09-1` and `-10-1`), four service-line shapes do not match
+and simply vanished from `services`: a credit with a minus sign (`-$10.00`), a
+credit in brackets (`($10.00)`), a whole-dollar amount (`$45`), and a date-led
+service line with no amount. Core's Send-to-tablet check
+`print_record_benefit_missing` (D-2026-09-27-06) asks only whether ANY row has
+an amount, so one lost row among several passed it. The patient would read, and
+sign, a copy of their form missing a service row, and nobody would know.
+
+**What changed.**
+- **The parser counts.** After parsing, AOBPRINTER counts the lines that open
+  with a day-first date and that no `services` row extractor matched, and puts
+  the count on the record as `unparsedServiceLines` (0 when it read every line).
+  It keeps a count only, never the line: no description, item number or amount
+  is logged or sent. The `job.parsed` log line carries the count.
+- **The contract carries it.** `unparsedServiceLines?: number` is on
+  `Db4PrintRecord` (desktop), on `PrintJobEnvelope` (contracts) and on
+  `PrintJobEnvelopeDto` (`@IsInt() @Min(0) @Max(1000)`). Without the DTO line
+  the whitelist would strip the count at the door. `DB4-print.example.json`
+  carries `0`, so `a_db4_record_survives_the_validation_pipe` proves the count
+  reaches the stored record.
+- **Send-to-tablet refuses it.** A new check, `print_record_service_lines_unread`,
+  is added to the end of `DB4_PRINT_RECORD_CHECKS`. It fires when the count is a
+  number above zero. It is not covered by any ingest gate (`null` in
+  `DB4_PRINT_RECORD_CHECK_GATED_AT_INGEST`). The count also rides on
+  `Db4PrintRecordIdentity`, next to the form reference and template version.
+- **The band names the count, the form and the fix.** The check's line reads
+  *"We could not read 2 service lines on form AOB…, so the patient's copy would
+  be missing them. Send support the form reference and the parser template
+  (pracsoft3-db4-2026-10-1) so the reading can be fixed."* It links to `/help`,
+  where the support contact details are. When this check is present, the band's
+  title, its sentence, the identity block's note and the dead "Who is signing?"
+  control's tooltip all drop "reprint". A reprint prints the same lines the same
+  way, so that advice would be false for every record that reaches it (wow.md
+  §13). The link is a plain `/help` rather than `destination()`, because that
+  page is `public` in `page-access.ts` and `mayReach` would hide it from
+  practice staff.
+
+**Assumption 1 - the services block is every date-led line on the page.**
+Neither shipped template declares where the services block starts and stops,
+and declaring it is a template change (hard rule 14). On the probe DB4 the only
+date-led lines are service rows. If PracSoft's real output prints something else
+that opens with a date (a footer timestamp, for example), it would be counted
+too. That errs towards a refusal at the desk rather than a missing row in front
+of the patient. The first real print will show whether it happens.
+
+**Assumption 2 - a record with no count is not refused.** A record from an
+AOBPRINTER that predates the count carries no `unparsedServiceLines`. It passes
+this check, because nobody observed a lost row, and refusing every push from
+every desktop not yet upgraded would stop working practices over nothing (hard
+rule 8). The cost is that a lost row on a not-yet-upgraded desktop is still
+silent. It is closed by upgrading AOBPRINTER, not by this check.
+
+**Not done here - proposed to Carl.** Widening the row pattern so that
+whole-dollar amounts and credits are read as rows is a template change and needs
+a new version (`pracsoft3-db4-2026-10-2`), not an edit. Whether reversals
+(credit rows) are allowed on a DB4 at all is OPEN: Carl, 11 October 2026,
+*"Not sure if reversals are allowed"*. The question is recorded as
+**Q-2026-10-11-01** below, and no template reads a credit until it closes.
+Until then, the count makes the gap visible and stops it at the desk. Hard rule 4 is unchanged: nothing parses, compares or computes an amount.
+The count is of lines, not of figures.
+
+**Tests.** `apps/aobprinter/src/parser.test.ts`
+(`unparsed_service_lines_are_counted_not_silently_dropped`: each of the four
+shapes under both templates is still absent from `services` and is now
+counted). `apps/core/src/agreements/db4-form-view.spec.ts`
+(`a_print_record_with_unparsed_service_lines_is_refused`,
+`zero_unparsed_service_lines_passes_and_an_absent_count_is_not_refused`).
+`apps/core/src/inbound/print-records.service.spec.ts`
+(`the_refusal_identity_carries_the_unparsed_service_line_count`).
+`apps/web/app/practice/tablet/tablet.test.tsx`
+(`unparsed_service_lines_refusal_names_the_count_and_the_form_and_links_the_fix`
+and three more).
+
+**What would reopen it:** a new template version that reads credits or
+whole-dollar amounts, which would lower the count for those shapes without
+changing this check; a template that declares the services block's edges, which
+would narrow the count to that block; or the first real PracSoft print showing
+date-led lines that are not services.
+
+## Q-2026-10-11-01 - OPEN: may a DB4 carry a reversal (a credit line)?
+
+**Status: OPEN.** This is a question, not a decision. It is recorded so the
+answer has somewhere to land, and so the behaviour the code already has is
+visible. Carl Hill, 11 October 2026, on D-2026-10-11-05: *"Not sure if
+reversals are allowed. Leave Reversals in the decision register."*
+
+**The question.** May a printed DB4 list a reversal or credit against a
+service, such as `-$10.00` or `($10.00)`? If it may, what is the patient
+assigning on that line? Should the Signed-DB4 reproduce it? Does PracSoft ever
+print one on a DB4, or only on an invoice?
+
+**What the documents say: nothing found.** The s 65C data set has no amount
+in it at all (hard rule 4, REQ-REG-04), so the requirements never address a
+negative one. CLAUDE.md §7c says priors on this regime are stale, so this gap
+is flagged here and not filled from memory.
+
+**What the code does today, so it can be overturned.** A reversal line is
+NOT read as a service row under either shipped template
+(`pracsoft3-db4-2026-09-1`, `-10-1`). AOBPRINTER counts it in
+`unparsedServiceLines`, and Send-to-tablet refuses the form with
+`print_record_service_lines_unread` (D-2026-10-11-05). That is the
+conservative direction. The patient is never shown, and never signs, a copy
+missing a line the practice printed. The form is not sent to the tablet, and
+care is not blocked (hard rule 8): the agreement is taken on paper or after
+the service.
+
+**What is NOT done until this closes.** No template version reads a credit.
+Nothing interprets the sign of an amount, nets a reversal against a service,
+or decides that a reversed service drops off the form. Any of those would be
+AoB forming an opinion about a figure, which hard rule 4 forbids.
+
+**What would close this.** A citation that says whether a DB4 may carry a
+reversal and on what terms: an MBS or Services Australia claiming rule, or a
+line in the requirements. The first real PracSoft print of a reversed service
+would also help. If reversals are allowed, a new template version
+(`pracsoft3-db4-2026-10-2` or later; hard rule 14) reads the line exactly as
+printed, as a string. If they are not allowed, the current refusal stands, and
+the band's copy may gain a line saying so.
+
+**Where:** `apps/aobprinter/src/parser.ts` (`countUnparsedServiceLines`),
+`packages/contracts/src/db4-print-record-check.ts`
+(`print_record_service_lines_unread`). Named tests are in
+`apps/aobprinter/src/parser.test.ts` ("a credit with a minus sign", "a credit
+in brackets"). The open template work is in TODO.md, "Read credits and
+whole-dollar amounts as service rows?".
+
+## D-2026-10-11-06 - A printed name that differs from the patient on record stops Send-to-tablet; "PMS patient ID" replaces "Patient ID" and "Chart number"
+
+**Date:** 11 October 2026. **Decided by:** Carl, after a test form printed
+given name "Fern2" against the PMS patient ID of Emin Dummyfield, and the desk
+row showed "Emin Dummyfield": *"STOP and tell Reception that PMS is sending a
+diff name for PMSID xxx. Is this correct?"*, and *"If AOB is storing the
+ChartNumber (is this the PMSPatientID?) If so lets call it that and not the
+ChartNumber"*. **Built on:** branch `feat/db4-printed-name-differs`, based on
+`fix/aobprinter-unparsed-service-lines`.
+
+**This amends D-2026-10-10-11; it does not replace it.** D-2026-10-10-11
+(PR #16) flags the same mismatch with a warning band on the desk row and
+leaves Send to tablet working. PR #16 was closed, but its code reached `main`
+through the `dev/tablet-test` checkpoint (26ca60c). Asked on 11 October 2026
+how the two should live together, Carl chose:
+- **Both.** The warning band stays on the row, showing the printed and
+  recorded names from the moment the form arrives, and Send to tablet now
+  refuses with "Is this the right patient?". The only change to the band is
+  its copy: "Send to tablet still works", "This note on its own does not stop
+  Send to tablet" and "The patient will see the printed name on their DB4…"
+  became false and are replaced by one line saying Send is stopped while the
+  names differ. Its "matched by chart number" now reads "by PMS patient ID",
+  and its remedy now covers either side being the wrong one.
+- **One rule: #16's, with one change.** The refusal uses
+  `db4PrintedNamePartsDiffering` from `packages/contracts/src/db4-printed-name.ts`,
+  the same function that draws the band, so the two can never disagree. The
+  change, also Carl's on 11 October 2026 after an Opus review found the hole:
+  when BOTH parts were printed and the whole name (given then family, reduced
+  by the same rules) is the same, it is the same name. The DB4 template splits
+  a printed name at its last space, so a family name with a space in it
+  ("Anna Van Der Berg" printed as "Anna Van Der" / "Berg", against a record of
+  "Anna" / "Van Der Berg") was otherwise refused on every visit with no remedy
+  that could work: a reprint prints the same split, and correcting the record
+  would damage a name that is right.
+
+Hard rule 8 still holds: this refuses the tablet, never the visit. The patient
+is seen and billed either way, and the agreement can be taken on paper or
+after the service.
+
+**What was wrong.** A DB4 is matched to a patient on the PMS patient ID and on
+nothing else (hard rule 1; `db4-assignment.handler.ts` looks the patient up by
+`patientRecordNumber`). Nothing compared the printed name with the name on
+record. The agreement was placed for the patient on record, and the tablet
+would have shown that patient a form printed in another name. The test tool
+made it easy to produce, because its presets carry the typed name over. A real
+PracSoft print would produce it if the form was printed against the wrong
+patient, or if our record's name is wrong.
+
+**What changed.**
+- **A new Send-to-tablet check, `print_record_patient_name_differs`**
+  (`packages/contracts/src/db4-print-record-check.ts`, not gated at ingest).
+  `checkDb4PrintRecord` takes the patient on record as an optional second
+  argument, and both callers in `agreements.service.ts` pass it: the single
+  push and the desk list. The comparison is D-2026-10-10-11's, amended as
+  above: only a part that was printed is compared; when both were, the same
+  whole name split at a different space is the same name; case, spacing, NFC
+  and typographic apostrophes and dashes are ignored, and nothing else is. A
+  middle name on one side only, a spelling difference, a swap of given and
+  family, dropped punctuation and a stripped accent are all refused, and
+  reception confirms by fixing whichever side is wrong. The recorded name is
+  read the same way on both paths, an empty string included, so the band and
+  the refusal cannot disagree on a record with an empty part.
+- **The band asks reception, and names both fixes.** The title is "Is this the
+  right patient?". The line reads *"Your practice software printed a different
+  name for PMS patient ID DESK-EMIN-DUMMYFIELD from the one on record here
+  (Emin Dummyfield). Is this the right patient? If the name on record is wrong,
+  correct it on the patient. If the PMS patient ID on the form is wrong, fix it
+  in your practice software and print the form again."* It links to the
+  patient, where the name is corrected. The PMS patient ID and the name on
+  record come from the desk row, which already shows both. The refusal itself
+  carries a code and no name (hard rule 9). This title and sentence take
+  precedence over the reprint and unread-line sentences, because the name says
+  WHO the form is for.
+- **"PMS patient ID" is the label.** The practice's own number for the patient
+  in their PMS is what PracSoft prints as "Chart Number". AoB stores it as
+  `Patient.patientRecordNumber` and links it as `pmsLinkageKey` `chart:<n>`. In
+  the console, "Patient ID" now reads "PMS patient ID" everywhere it is shown
+  (`strings.ts`: `practiceNumber`, `practiceNumberUnknown`, the day register,
+  and the unidentified check). The AOBPrinter test tool's "Chart number" fields
+  and labels now read "PMS patient ID" too.
+
+**What did NOT change, deliberately.**
+- **The code name stays `patientRecordNumber`.** "Patient record number" is the
+  approved identifier's own name in hard rule 1 and REQ-VER-02. Renaming the
+  field would separate the code from the regulation's term, so only the words
+  on screen change.
+- **The parser template still matches "Chart Number"**, because that is what
+  PracSoft prints.
+- **The patient-facing DB4 on the kiosk still labels the field "Chart number"**
+  (`strings.ts` kiosk `patientRecordNumber`). That screen reproduces the
+  practice's printed form for the patient, and "PMS" means nothing to them.
+  This is open for Carl to overturn.
+- **The patient portal's "Patient ID at <practice>" (`patientIdAt`) is
+  unchanged** for the same reason: it is read by the patient, not by reception.
+- **Ingest codes such as `no_chart_number` keep their names.** They are codes,
+  not words.
+
+**Assumption for Carl to confirm: there is no "yes, it's correct" button.**
+Reception's answer is to fix whichever side is wrong. Letting the push go ahead
+with the names still different would put a form in one name in front of a
+patient whose agreement is in another. If you want an override, it needs a
+reason recorded and a vault event, and that is a decision of its own.
+
+**Tests.** `apps/core/src/agreements/db4-form-view.spec.ts`
+(`printed_name_that_differs_from_the_patient_on_record_is_refused`,
+`printed_name_is_compared_whole_ignoring_case_and_spacing`,
+`printed_name_is_not_compared_when_either_side_has_none`);
+`apps/core/src/agreements/db4-print-record-name.spec.ts` (both service paths);
+`apps/web/app/practice/tablet/tablet.test.tsx`
+(`printed_name_differs_asks_reception_naming_the_pms_patient_id_and_the_record`
+and two more).
+
+**What would reopen it:** Carl wanting a confirm-and-proceed override; a
+middle-name difference proving common enough in real PracSoft output to need a
+looser comparison; or a decision to rename the kiosk label or the code field.
 
 ## D-2026-10-11-07 - Telehealth: a consent-to-telehealth record before the call, the doctor's identity check plus a 6-digit code, contacts on file only, one page, languages English first
 
