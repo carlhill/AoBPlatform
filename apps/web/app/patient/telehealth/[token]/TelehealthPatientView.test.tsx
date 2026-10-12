@@ -9,7 +9,7 @@ import { strings } from '../../../strings';
 
 const TOKEN = 'cHJhY3RpY2U.secret-example';
 const PAGE_KEY = 'cHJhY3RpY2U.page-key-example';
-const STATEMENT = 'I want to start my telehealth consultation with Dr Sample Chen now.';
+const STATEMENT = 'I, Testy Fixture, want to start my telehealth consultation with Dr Sample Chen now.';
 const t = strings.telehealth.patient;
 
 type Reply = { status: number; body: unknown };
@@ -29,8 +29,9 @@ const page = (state: string) => ({
   providerName: 'Dr Sample Chen',
   ahpraNumber: null,
   consultationId: 'TH-AB12-CD34',
+  consenterIsPatient: true,
   statement: STATEMENT,
-  consentKey: 'telehealth_consult_v2',
+  consentKey: 'telehealth_consult_v3',
   contentVersion: 'telehealth-test',
   agreedAt: state === 'agreed' ? '2026-10-12T00:00:00.000Z' : null,
 });
@@ -83,7 +84,45 @@ describe('TelehealthPatientView', () => {
     const codeCall = fetchMock.mock.calls.find(([u]) => String(u).endsWith('/code'))!;
     expect(JSON.parse(String(codeCall[1]!.body))).toEqual({ code: '042917' });
     const agreeCall = fetchMock.mock.calls.find(([u]) => String(u).endsWith('/page/agree'))!;
-    expect(JSON.parse(String(agreeCall[1]!.body))).toEqual({ consentKey: 'telehealth_consult_v2' });
+    expect(JSON.parse(String(agreeCall[1]!.body))).toEqual({ consentKey: 'telehealth_consult_v3' });
+  });
+
+  it('someone acting for the patient types their full name and a mobile before the tick, and both are sent (D-2026-10-12-03 item 12)', async () => {
+    const carerStatement = 'I, {{consenterName}}, carer for Testy, want to start the telehealth consultation for Testy with Dr Sample Chen now.';
+    const fetchMock = stub((url) => {
+      if (url.endsWith(`/telehealth/link/${TOKEN}`)) return { status: 200, body: { state: 'open', practiceName: 'Sample Practice' } };
+      if (url.endsWith('/code')) return { status: 201, body: { pageKey: PAGE_KEY } };
+      if (url.endsWith('/page/agree')) return { status: 201, body: { ...page('agreed'), consenterIsPatient: false } };
+      return { status: 200, body: { ...page('code_checked'), consenterIsPatient: false, statement: carerStatement } };
+    });
+    render(<TelehealthPatientView token={TOKEN} />);
+    fireEvent.change(await screen.findByLabelText(t.codeLabel), { target: { value: '123456' } });
+    fireEvent.click(screen.getByTestId('telehealth-continue'));
+
+    const tick = await screen.findByTestId('telehealth-tick');
+    // Before anything is typed the tick waits, and the statement shows where the name will go.
+    expect(tick.hasAttribute('disabled')).toBe(true);
+    expect(screen.getByText(/\[your full name\], carer for Testy/)).toBeTruthy();
+
+    fireEvent.change(screen.getByTestId('telehealth-consenter-name'), { target: { value: 'Jane Citizen' } });
+    fireEvent.change(screen.getByTestId('telehealth-consenter-mobile'), { target: { value: '0400 000 999' } });
+    expect(screen.getByText(/I, Jane Citizen, carer for Testy/)).toBeTruthy();
+    await waitFor(() => expect(tick.hasAttribute('disabled')).toBe(false));
+    fireEvent.click(tick);
+
+    await screen.findByTestId('telehealth-waiting');
+    const agreeCall = fetchMock.mock.calls.find(([u]) => String(u).endsWith('/page/agree'))!;
+    expect(JSON.parse(String(agreeCall[1]!.body))).toEqual({
+      consentKey: 'telehealth_consult_v3',
+      consenterName: 'Jane Citizen',
+      consenterMobile: '0400 000 999',
+    });
+  });
+
+  it('a closed link says which outcome closed it', async () => {
+    stub(() => ({ status: 200, body: { state: 'closed', practiceName: 'Sample Practice', outcome: 'went_ahead' } }));
+    render(<TelehealthPatientView token={TOKEN} />);
+    expect((await screen.findByTestId('telehealth-closed')).textContent).toContain(t.closedBodyFor('went_ahead'));
   });
 
   it('telehealth_consent_wording_never_mentions_bulk_billing (on the page itself)', async () => {

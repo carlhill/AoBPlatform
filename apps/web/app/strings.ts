@@ -5654,13 +5654,13 @@ export const strings = {
     patient: {
       title: 'Telehealth consultation',
       /** The page's own description, so a link preview never shows the root layout's (G10). */
-      metaDescription: 'The page for your telehealth consultation. Type the code your practitioner reads out on the call.',
+      metaDescription: 'The page for your telehealth consultation. Type the access code your practitioner reads out on the call.',
       loading: 'Opening…',
       fromPractice: (practice: string) => `From ${practice}`,
-      codeHeading: 'Type the code',
-      codeLede: (digits: number) => `Type the ${digits}-digit code your practitioner reads out to you on the call.`,
-      codeLabel: 'Code',
-      codeHint: 'Numbers only. The code is never in the message we sent you.',
+      codeHeading: 'Enter your telehealth access code',
+      codeLede: (digits: number) => `Type the ${digits}-digit telehealth access code your practitioner reads out to you on the call.`,
+      codeLabel: 'Access code',
+      codeHint: 'Numbers only. The access code is never in the message we sent you.',
       continue: 'Continue',
       checking: 'Checking…',
       wrongCode: (left: number) =>
@@ -5683,8 +5683,21 @@ export const strings = {
       expiredTitle: 'This link has stopped working',
       expiredBody: 'The code only works for a few minutes. Ask your practitioner on the call to send you a new link and code.',
       closedTitle: 'Nothing to do on this page.',
-      closedBody:
-        'Your practitioner has already recorded this consultation. Your Tele-Health call has completed. There is nothing more to do here. Please close this page.',
+      closedBody: 'Your practitioner has already recorded this consultation. There is nothing more to do here. Please close this page.',
+      /** Which outcome closed the link (Carl, 12 Oct 2026); `null` is the plain wording above. */
+      closedBodyFor: (outcome: string | null) =>
+        outcome === 'went_ahead'
+          ? 'Your practitioner has already recorded this consultation. Your telehealth call has completed. There is nothing more to do here. Please close this page.'
+          : outcome === 'did_not_proceed'
+            ? 'Your practitioner has recorded that this consultation did not go ahead. There is nothing more to do here. Please close this page. If that is not right, contact your practice.'
+            : 'Your practitioner has already recorded this consultation. There is nothing more to do here. Please close this page.',
+      consenterIntro: 'You are acting for the patient. Type your full name and your mobile number, then tick the box.',
+      consenterNameLabel: 'Your full name',
+      consenterMobileLabel: 'Your mobile number',
+      consenterMobileHint: 'The practice may need to reach you, especially in an emergency.',
+      consenterNameSlot: '[your full name]',
+      consenterNameNeeded: 'Type your full name, as you would sign it.',
+      consenterMobileNeeded: 'Type a mobile number starting 04, so the practice can reach you.',
       invalidTitle: 'This link does not open anything',
       invalidBody: 'Check that the whole link was copied. If it still does not open, ask your practice for a new one.',
       unreachableTitle: 'We could not reach the server',
@@ -5782,6 +5795,7 @@ export const strings = {
       wentAhead: 'Consultation complete',
       startNew: 'Start new telehealth consultation',
       consultationId: (id: string) => `Consultation ID ${id}`,
+      consenter: (name: string, mobile: string) => `Agreed by ${name} for the patient, mobile ${mobile}`,
       notDoneHeading: 'Not done, with a reason',
       reasonLabel: 'Reason',
       reasonChoose: 'Choose a reason…',

@@ -77,6 +77,9 @@ export interface TelehealthSessionView {
   readonly notDoneReason: string | null;
   /** Whether the `other` reason carried a note. The note itself is returned to the panel only. */
   readonly notDoneNote: string | null;
+  /** Typed by someone acting for the patient, with their mobile, for the provider to reach them (D-2026-10-12-03 item 12). */
+  readonly consenterName: string | null;
+  readonly consenterMobile: string | null;
   /** When the provider says the consultation happened. */
   readonly consultationAt: string | null;
   /** When the outcome (not done / did not proceed) was RECORDED — honest about the next morning. */
@@ -98,6 +101,8 @@ export interface TelehealthSendResult {
 export interface TelehealthLinkLanding {
   readonly state: 'open' | 'used' | 'expired' | 'locked' | 'closed';
   readonly practiceName: string | null;
+  /** When `closed`: which outcome the practitioner recorded, so the page says the right thing (Carl, 12 Oct 2026). */
+  readonly outcome?: 'went_ahead' | 'did_not_proceed' | 'not_done' | null;
 }
 
 /** A right code. The page key keeps the one page open; it is held in memory only. */
@@ -128,6 +133,8 @@ export interface TelehealthPageView {
   readonly ahpraNumber: string | null;
   /** The TH-XXXX-XXXX reference the patient quotes to the practice (D-2026-10-12-03 item 11). */
   readonly consultationId: string;
+  /** False when someone acting for the patient agrees: the page then asks their full name and mobile (D-2026-10-12-03 item 12). */
+  readonly consenterIsPatient: boolean;
   /** The one statement, from versioned content, as it will be recorded. */
   readonly statement: string;
   readonly consentKey: string;

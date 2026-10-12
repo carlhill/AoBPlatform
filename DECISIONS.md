@@ -4199,6 +4199,25 @@ the Department's answer to G10 changing what the step before the call records.
    Carl considered `TH-<Ahpra>-<practice>-DDMMYYYY-<random>` and chose the short
    form (\"keep it short\"): it has to be read out on the phone, and the doctor,
    practice and date are on the session anyway.
+12. **Who agrees is named in the statement; someone acting for the patient
+   types their full name and a mobile** (Carl, 12 Oct 2026; reverses
+   D-2026-10-12-02 item 7, "the carer path records no name"). Content
+   `telehealth-2026-10-12-3`, key `telehealth_consult_v3`. The patient:
+   "I, {patient's full name from the record}, want to start my telehealth
+   consultation with {provider} now." Someone else: "I, {typed name},
+   {relationship phrase} {patient given names}, want to start the telehealth
+   consultation for {given names} with {provider} now." (phrases per assignor
+   relationship in the content, e.g. "carer for"). The mobile is MANDATORY,
+   even if it is the patient's own number: the practice may need to reach them,
+   in an emergency above all. Both are stored on the session
+   (`consenterName`, `consenterMobile`, migration 20261012040000), shown to the
+   provider beside the session, never in a vault payload (hard rule 9). The
+   staff-list check on the name still runs at the DB4 (step 3).
+13. **Small wording, same evening:** the code is the "telehealth access code"
+   on the page and in the message (template `telehealth_link_v2`); a closed
+   link says which outcome closed it (complete / did not go ahead / recorded);
+   "telehealth" is one word everywhere; "Not done, with a reason" asks no date
+   (the panel shows today's calls; the recorded time is kept anyway).
 
 **Status:** items 1-5 and 9 build now (display and content only). Items 6-8 build in a fresh
 session from the brief `TELEHEALTH-REGISTER-BRIEF.md`.

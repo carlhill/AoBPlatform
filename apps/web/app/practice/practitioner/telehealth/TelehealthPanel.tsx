@@ -553,6 +553,10 @@ export function TelehealthPanel() {
               <span className={th.reference} data-testid={`telehealth-id-${s.id}`}>
                 {p.consultationId(s.consultationId)}
               </span>
+              {/* Who agreed for the patient, and how to reach them (D-2026-10-12-03 item 12). */}
+              {s.consenterName && (
+                <span data-testid={`telehealth-consenter-${s.id}`}>{p.consenter(s.consenterName, s.consenterMobile ?? '')}</span>
+              )}
               <Chip tone={s.state === 'agreed' || s.state === 'went_ahead' ? 'ok' : s.state === 'not_done' || s.state === 'did_not_proceed' ? 'neutral' : 'warn'}>
                 <span data-testid={`telehealth-status-${s.id}`}>{p.status[s.state] ?? s.state}</span>
               </Chip>
@@ -611,8 +615,8 @@ export function TelehealthPanel() {
 /**
  * "NOT DONE, WITH A REASON" (§4). The reasons in content-file order with
  * labels from the string table; the note only for the reason that takes one,
- * with the warning against identifiers beside it; the consultation time
- * optional, because the recorded time is kept regardless.
+ * with the warning against identifiers beside it. NO DATE (Carl, 12 Oct 2026):
+ * the panel shows today's calls, and the time it is recorded is kept anyway.
  */
 export function NotDoneForm({
   busy,
@@ -625,7 +629,6 @@ export function NotDoneForm({
 }) {
   const [reason, setReason] = useState('');
   const [note, setNote] = useState('');
-  const [at, setAt] = useState('');
   const takesNote = TELEHEALTH_NOT_DONE_REASONS.find((r) => r.key === reason)?.takesNote ?? false;
   const ready = reason !== '' && (!takesNote || note.trim().length > 0);
 
@@ -658,11 +661,6 @@ export function NotDoneForm({
           )}
         </Field>
       )}
-      <Field label={p.consultationAtLabel}>
-        {({ id, describedBy }) => (
-          <TextInput id={id} describedBy={describedBy} type="datetime-local" value={at} onChange={(e) => setAt(e.target.value)} data-testid="telehealth-consultation-at" />
-        )}
-      </Field>
       <Button
         variant="primary"
         disabled={!ready || busy}
@@ -670,7 +668,6 @@ export function NotDoneForm({
           onSave({
             reason,
             ...(takesNote ? { note: note.trim() } : {}),
-            ...(at ? { consultationAt: new Date(at).toISOString() } : {}),
           })
         }
         data-testid="telehealth-save-not-done"

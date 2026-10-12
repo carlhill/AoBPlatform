@@ -26,6 +26,9 @@ import {
   maskEmail,
   maskMobile,
   mayMoveTelehealthSession,
+  isPlausibleConsenterName,
+  isWellFormedMobile,
+  normalisePhone,
   telehealthConsentStatement,
   telehealthConsultationId,
   telehealthNotDoneReason,
@@ -84,6 +87,9 @@ const NOTE_LOOKS_LIKE_A_VALUE = /\d{6,}|\S+@\S+\.\S+/;
  * NO IDENTIFIER VALUE, CONTACT VALUE OR CODE IS LOGGED, STORED OR RETURNED TO
  * THE PATIENT'S PAGE. The code is returned once, to the provider.
  */
+/** The states a practitioner records that close the link: the page says which (Carl, 12 Oct 2026). */
+const TELEHEALTH_OUTCOME_STATES: readonly string[] = ['went_ahead', 'did_not_proceed', 'not_done'];
+
 @Injectable()
 export class TelehealthService {
   constructor(
@@ -592,7 +598,10 @@ export class TelehealthService {
       const session = await tx.telehealthSession.findFirst({ where: { linkTokenHash: parsed.tokenHash } });
       if (!session) throw new NotFoundException({ code: 'link_invalid', message: 'This link is not valid.' });
       const practice = await tx.practice.findFirst({ select: { name: true } });
-      return { state: this.linkState(session), practiceName: practice?.name ?? null };
+      const state = this.linkState(session);
+      // Which outcome closed it, so the page can say the right thing (Carl, 12 Oct 2026). Nothing about the patient.
+      const outcome = state === 'closed' && TELEHEALTH_OUTCOME_STATES.includes(session.state) ? session.state : null;
+      return { state, practiceName: practice?.name ?? null, outcome: outcome as TelehealthLinkLanding['outcome'] };
     });
   }
 
@@ -722,9 +731,31 @@ export class TelehealthService {
    * the server's words at the server's version, never text from the page.
    * Pressing twice is the same answer, not a second record.
    */
-  async agree(pageKey: string | undefined, consentKey: string): Promise<TelehealthPageView> {
+  async agree(
+    pageKey: string | undefined,
+    consentKey: string,
+    consenter: { name?: string; mobile?: string } = {},
+  ): Promise<TelehealthPageView> {
     this.assertEnabled();
     const { practiceId, session } = await this.byPageKey(pageKey);
+    /*
+     * SOMEONE ACTING FOR THE PATIENT NAMES THEMSELVES, WITH A MOBILE (Carl, 12 Oct
+     * 2026, D-2026-10-12-03 item 12): their own declaration, made on their page
+     * before the tick, and a number the practice can reach them on. The patient
+     * agreeing for themselves is asked for neither.
+     */
+    const carer = session.consenterIsPatient === false;
+    const consenterName = carer ? (consenter.name ?? '').trim().replace(/\s+/g, ' ') : null;
+    const consenterMobile = carer ? normalisePhone(consenter.mobile ?? '') : null;
+    if (carer && !isPlausibleConsenterName(consenterName ?? '')) {
+      throw new BadRequestException({ code: 'consenter_name_needed', message: 'Type your full name.' });
+    }
+    if (carer && !isWellFormedMobile(consenterMobile ?? '')) {
+      throw new BadRequestException({
+        code: 'consenter_mobile_needed',
+        message: 'Type a mobile number starting 04, so the practice can reach you.',
+      });
+    }
     if (consentKey !== TELEHEALTH_CONTENT.consent.key) {
       throw new ConflictException({
         code: 'wording_changed',
@@ -750,10 +781,10 @@ export class TelehealthService {
         });
       }
       if (current.state === 'agreed') return this.pageView(tx, current);
-      if (current.state === 'not_done' || current.state === 'did_not_proceed') {
+      if (current.state === 'not_done' || current.state === 'did_not_proceed' || current.state === 'went_ahead') {
         // Said by code, so the page shows what the practitioner recorded, not "the wording changed".
         throw new ConflictException({
-          code: current.state === 'not_done' ? 'session_not_done' : 'session_did_not_proceed',
+          code: `session_${current.state}`,
           message: 'Your practitioner has already recorded this consultation.',
         });
       }
@@ -763,6 +794,8 @@ export class TelehealthService {
         data: {
           state: 'agreed',
           agreedAt: new Date(),
+          consenterName,
+          consenterMobile,
           consentKey: TELEHEALTH_CONTENT.consent.key,
           contentVersion: TELEHEALTH_CONTENT_VERSION,
         },
@@ -868,9 +901,8 @@ export class TelehealthService {
     const provider = await telehealthProvider(tx, session.practitionerId);
     const providerName = provider?.name ?? null;
     const consenterIsPatient = session.consenterIsPatient ?? true;
-    const patient = consenterIsPatient
-      ? null
-      : await tx.patient.findFirst({ where: { id: session.patientId }, select: { givenNames: true } });
+    // After the code only: the patient's own name in their statement, the given names in a carer's.
+    const patient = await tx.patient.findFirst({ where: { id: session.patientId }, select: { givenNames: true, familyName: true } });
     return {
       state: session.state as TelehealthPageView['state'],
       practiceName: practice?.name ?? null,
@@ -881,9 +913,14 @@ export class TelehealthService {
         providerName: providerName ?? 'your practitioner',
         consenterIsPatient,
         patientGivenNames: patient?.givenNames,
+        patientName: patient ? `${patient.givenNames} ${patient.familyName}` : undefined,
+        relationshipKey: session.consenterRelationship,
+        // The name the person typed, once agreed; before that the slot stays for the page to fill.
+        consenterName: session.consenterName ?? undefined,
       }),
       consentKey: TELEHEALTH_CONTENT.consent.key,
       contentVersion: TELEHEALTH_CONTENT_VERSION,
+      consenterIsPatient,
       agreedAt: session.agreedAt?.toISOString() ?? null,
     };
   }
@@ -1024,6 +1061,8 @@ export class TelehealthService {
         agreedAt: row.agreedAt?.toISOString() ?? null,
         notDoneReason: row.notDoneReason,
         notDoneNote: row.notDoneNote,
+        consenterName: row.consenterName,
+        consenterMobile: row.consenterMobile,
         consultationAt: row.consultationAt?.toISOString() ?? null,
         outcomeRecordedAt: row.outcomeRecordedAt?.toISOString() ?? null,
         createdAt: row.createdAt.toISOString(),

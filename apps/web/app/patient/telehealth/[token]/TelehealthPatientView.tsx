@@ -29,7 +29,12 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { ShieldCheck } from 'lucide-react';
-import { TELEHEALTH_CONTENT } from '@aobplatform/domain';
+import {
+  TELEHEALTH_CONSENTER_NAME_SLOT,
+  TELEHEALTH_CONTENT,
+  isPlausibleConsenterName,
+  isWellFormedMobile,
+} from '@aobplatform/domain';
 import type { TelehealthLinkLanding, TelehealthPageView } from '@aobplatform/contracts';
 import { Button, Checkbox, Field, Notice, Shell, TextInput, ui } from '../../../ui';
 import { strings } from '../../../strings';
@@ -116,6 +121,9 @@ export function TelehealthPatientView({ token }: { token: string }) {
   const [agreeError, setAgreeError] = useState<string | null>(null);
   /** The patient's own tick beside the statement; Start stays off until it is ticked. */
   const [ticked, setTicked] = useState(false);
+  /** Someone acting for the patient names themselves and gives a mobile before the tick (D-2026-10-12-03 item 12). */
+  const [consenterName, setConsenterName] = useState('');
+  const [consenterMobile, setConsenterMobile] = useState('');
 
   useEffect(() => {
     void (async () => {
@@ -180,14 +188,19 @@ export function TelehealthPatientView({ token }: { token: string }) {
       const res = await fetch(`${CORE_URL}/telehealth/page/agree`, {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-telehealth-page-key': pageKey },
-        body: JSON.stringify({ consentKey: page.consentKey }),
+        body: JSON.stringify({
+          consentKey: page.consentKey,
+          ...(page.consenterIsPatient ? {} : { consenterName: consenterName.trim(), consenterMobile: consenterMobile.trim() }),
+        }),
       }).catch(() => null);
       if (!res) return setStop('unreachable');
       if (!res.ok) {
         const code = await codeOf(res);
         if (code === 'wording_changed') return setAgreeError(t.wordingChanged);
+        if (code === 'consenter_name_needed') return setAgreeError(t.consenterNameNeeded);
+        if (code === 'consenter_mobile_needed') return setAgreeError(t.consenterMobileNeeded);
         // The practitioner recorded the consultation meanwhile: show what they recorded.
-        if (code === 'session_not_done' || code === 'session_did_not_proceed') return loadPage(pageKey);
+        if (code === 'session_not_done' || code === 'session_did_not_proceed' || code === 'session_went_ahead') return loadPage(pageKey);
         return refuse(res.status, code);
       }
       setPage((await res.json()) as TelehealthPageView);
@@ -215,7 +228,11 @@ export function TelehealthPatientView({ token }: { token: string }) {
       <Shell title={t.title}>
         {practiceLine(landing?.practiceName)}
         <Notice tone={words.tone} title={words.title} data-testid={`telehealth-${stop}`}>
-          {stop === 'unmapped' ? t.unmappedBody(unmappedCode ?? '') : words.body}
+          {stop === 'unmapped'
+            ? t.unmappedBody(unmappedCode ?? '')
+            : stop === 'closed'
+              ? t.closedBodyFor(landing?.outcome ?? null)
+              : words.body}
         </Notice>
       </Shell>
     );
@@ -223,6 +240,9 @@ export function TelehealthPatientView({ token }: { token: string }) {
 
   if (page) {
     const provider = page.providerName ?? '';
+    // The tick waits for a full name and a mobile from someone acting for the patient; the patient needs neither.
+    const consenterReady =
+      page.consenterIsPatient || (isPlausibleConsenterName(consenterName) && isWellFormedMobile(consenterMobile));
     /*
      * WHO THE PROVIDER IS, AND WHERE TO CHECK (Carl, D-2026-10-12-03 item 10):
      * only when core says the registration was sighted and is current. The
@@ -254,11 +274,44 @@ export function TelehealthPatientView({ token }: { token: string }) {
              * started" box. If the send fails the tick comes off again, so the
              * box never shows agreement that was not recorded.
              */}
+            {!page.consenterIsPatient && (
+              <>
+                <p>{t.consenterIntro}</p>
+                <Field label={t.consenterNameLabel}>
+                  {({ id, describedBy }) => (
+                    <TextInput
+                      id={id}
+                      describedBy={describedBy}
+                      value={consenterName}
+                      autoComplete="name"
+                      maxLength={100}
+                      onChange={(e) => setConsenterName(e.target.value)}
+                      data-testid="telehealth-consenter-name"
+                    />
+                  )}
+                </Field>
+                <Field label={t.consenterMobileLabel} hint={t.consenterMobileHint}>
+                  {({ id, describedBy }) => (
+                    <TextInput
+                      id={id}
+                      describedBy={describedBy}
+                      type="tel"
+                      inputMode="tel"
+                      autoComplete="tel"
+                      maxLength={20}
+                      value={consenterMobile}
+                      onChange={(e) => setConsenterMobile(e.target.value)}
+                      data-testid="telehealth-consenter-mobile"
+                    />
+                  )}
+                </Field>
+              </>
+            )}
             <div className={styles.tick}>
               <Checkbox
-                label={page.statement}
+                label={page.statement.replace(TELEHEALTH_CONSENTER_NAME_SLOT, consenterName.trim() || t.consenterNameSlot)}
                 checked={ticked}
-                disabled={busy}
+                disabled={busy || !consenterReady}
                 onCheckedChange={(on) => {
                   if (!on || busy) return;
                   setTicked(true);

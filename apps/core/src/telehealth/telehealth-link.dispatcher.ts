@@ -7,7 +7,7 @@ import { EmailComposer } from '../messaging/composer.service';
 import type { EmailBlock } from '../messaging/template';
 
 /** The template the link message is rendered from (versioned content). */
-export const TELEHEALTH_LINK_TEMPLATE_KEY = 'telehealth_link_v1';
+export const TELEHEALTH_LINK_TEMPLATE_KEY = 'telehealth_link_v2';
 /** Appended only when the provider's Ahpra registration was sighted and is current (D-2026-10-12-03 item 10). */
 export const TELEHEALTH_AHPRA_LINE_TEMPLATE_KEY = 'telehealth_ahpra_line_v1';
 /** Appended to every telehealth link: the reference the patient quotes to the practice (D-2026-10-12-03 item 11). */
