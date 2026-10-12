@@ -66,6 +66,35 @@ panel). Full brief: `TELEHEALTH-REGISTER-BRIEF.md` piece 2.
 
 ---
 
+## Telehealth for a patient who is not on the practice's records (12 Oct 2026)
+
+**Agreed by Carl, 12 Oct 2026: needs solving, design first.** Today's telehealth
+flow assumes the patient is already a patient of the practice: the doctor finds
+them in the PMS sync, compares what they say with the record, and sends the link
+to the mobile or email on file. Carl estimates about 0.01% of telehealth calls
+are with someone who is NOT on the practice's records (a new patient, a visitor,
+a locum's call). For them there is nothing to find, nothing to check against,
+and no contact on file.
+
+**Questions to answer before building:**
+1. Does the practice create the patient in the PMS first (the PMS is the source
+   of truth, REQ-DATA-10; we never create patients ourselves), and the flow then
+   proceeds as today once the sync brings them through? If so, the fix may be
+   only a clear "not found: add them in the PMS, then search again" path.
+2. If the call cannot wait for the PMS, what does the doctor check identity
+   against (hard rule 9: types, never values), and where does the link go when
+   there is no contact on file (D-2026-09-11-03: contacts are never typed on a
+   patient surface)?
+3. Does "not done, with a reason" (`no_contact_on_file`, or a new reason
+   `not_a_patient_yet`) cover it until the record exists, with the DB4
+   afterwards through the normal routes?
+4. How does the later DB4 match a session that started with no patient id?
+
+**Why deferred:** rare (about 0.01%), and the answer depends on how practices
+add a new patient to the PMS during a call. Not scheduled.
+
+---
+
 ## Size both telehealth pages for a mobile phone (12 Oct 2026)
 
 **Agreed by Carl, 12 Oct 2026.** The patient's page
