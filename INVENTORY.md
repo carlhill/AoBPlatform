@@ -17,11 +17,11 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 | | Count |
 |---|---|
-| Exported symbols indexed | 2509 |
-| Files scanned for exports | 583 |
-| Files scanned for imports | 626 |
-| Exports with no comment of their own | 1019 |
-| Exports imported nowhere else | 1038 |
+| Exported symbols indexed | 2534 |
+| Files scanned for exports | 584 |
+| Files scanned for imports | 627 |
+| Exports with no comment of their own | 1032 |
+| Exports imported nowhere else | 1063 |
 
 ## Sections
 
@@ -29,9 +29,9 @@ This is required reading before you write a component, a hook or a helper (wow.m
 - [Web hooks](#web-hooks) — 16
 - [Web helpers and constants](#web-helpers-and-constants) — 319
 - [Web types](#web-types) — 122
-- [Domain functions](#domain-functions) — 405
-- [Domain constants and content](#domain-constants-and-content) — 265
-- [Domain types](#domain-types) — 299
+- [Domain functions](#domain-functions) — 412
+- [Domain constants and content](#domain-constants-and-content) — 278
+- [Domain types](#domain-types) — 304
 - [Contracts types](#contracts-types) — 121
 - [Contracts functions and constants](#contracts-functions-and-constants) — 37
 - [Core services, controllers and modules](#core-services-controllers-and-modules) — 290
@@ -766,7 +766,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Domain functions
 
-405 exports.
+412 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -1122,6 +1122,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `isSignatureRefusalReason` | domain:tablet-session.ts |  | 0 |
 | `isSurfaceProfile` | domain:practice-surfaces.ts | True for a value this platform recognises as a profile. | 0 |
 | `isTabletSessionState` | domain:tablet-session.ts |  | 0 |
+| `isTelehealthSessionState` | domain:telehealth.ts |  | 0 |
 | `isValidAcnChecksum` | domain:abn.ts | ASIC's ACN check digit: complement of the weighted sum modulo 10. | 0 |
 | `isValidPostcodeFormat` | domain:address.ts | Four digits. | 0 |
 | `isVerbalCaptureAllowed` | domain:guards.ts |  | 0 |
@@ -1134,6 +1135,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `matchOrganisationName` | domain:abn.ts |  | 0 |
 | `mayAttemptConfirmation` | domain:pending-email-change.ts |  | 0 |
 | `mayChase` | domain:correspondence-log.ts | May this be chased? | 0 |
+| `mayMoveTelehealthSession` | domain:telehealth.ts | True only for a move the table lists. | 0 |
 | `monthLabel` | domain:reporting.ts |  | 0 |
 | `needsExternalAttestation` | domain:departure-notice.ts | Does this departure need the practice to attest to notice given elsewhere? | 0 |
 | `noticeDays` | domain:affiliation.ts |  | 0 |
@@ -1150,6 +1152,8 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `parsePracticeTimezoneContent` | domain:practice-timezones.ts | Exhaustive, and it throws rather than repairing — see the file comment. | 0 |
 | `parseServiceDescriptionContent` | domain:service-descriptions.ts |  | 0 |
 | `parseSignedDb4Content` | domain:signed-db4-content.ts | Exhaustive, and it throws rather than repairing — the same contract as `parseAssignorRelationshipContent`, and for the same reason: the whole point of an editable file is that somebody will edit it. | 0 |
+| `parseTelehealthContent` | domain:telehealth.ts |  | 0 |
+| `parseTelehealthNotDoneReasonContent` | domain:telehealth.ts |  | 0 |
 | `parseUnsignedDraftClosureContent` | domain:unsigned-draft-closure.ts | Exhaustive, and it throws rather than repairing: a bad edit is a mistake to surface. | 0 |
 | `parseVisitPolicyContent` | domain:visit-policy.ts | Exhaustive, and it throws rather than repairing — the same posture `parseAssignorRelationshipContent` takes and for the same reason: the file is editable precisely because somebody will edit it, and a default quietly applied to a bad edit is a decision nobody made. | 0 |
 | `parseVisitStateContent` | domain:visit-states.ts | Exhaustive, and it throws rather than repairing. | 0 |
@@ -1171,6 +1175,9 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `surfaceOfEndpointIn` | domain:practice-surfaces.ts | Which surface owns a core route, or `always`, or null when nobody has said. | 0 |
 | `surfaceOfPageIn` | domain:practice-surfaces.ts | Which surface owns a console page, or `always`, or null when nobody has said. | 0 |
 | `tabletSessionIsStale` | domain:tablet-session.ts |  | 0 |
+| `telehealthConsentStatement` | domain:telehealth.ts | The statement exactly as the patient sees it — one function, so the page and the record cannot word it differently. | 0 |
+| `telehealthNotDoneReason` | domain:telehealth.ts |  | 0 |
+| `telehealthTransports` | domain:telehealth.ts | Which transports a channel choice uses, in a fixed order. | 0 |
 | `transition` | domain:lifecycle.ts |  | 0 |
 | `visitStateOption` | domain:visit-states.ts |  | 0 |
 | `weekOfMonth` | domain:reporting.ts | Which week of its own month a date falls in, 1..5. | 0 |
@@ -1178,7 +1185,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Domain constants and content
 
-265 exports.
+278 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -1198,6 +1205,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `ADDRESS_CHECK_VERSION` | domain:address-check.ts | The catalogue version. | **2** · core:organisations/organisations.controller.ts, core:organisations/organisations.service.ts |
 | `AFFILIATION_VELOCITY_WINDOW_DAYS` | domain:affiliation.ts |  | **2** · core:affiliations/affiliations.service.ts, core:identity-dashboard/identity-dashboard.service.ts |
 | `AOBPRINTER_OFFLINE_AFTER_MS` | domain:aobprinter-host.ts | OFFLINE AFTER FIFTEEN MINUTES whatever the interval (D-2026-10-10-02, decision 2). | **2** · core:aobprinter-hosts/aobprinter-hosts.service.ts, web:practice/aobprinter-host/AobPrinterHostView.tsx |
+| `APPROVED_IDENTIFIER_TYPES` | domain:identifiers.ts |  | **2** · web:practice/channels/ChannelsView.tsx, domain:telehealth.ts |
 | `AU_STATES` | domain:address.ts |  | **2** · web:apply/ApplyForm.tsx, web:status/[token]/correct/CorrectView.tsx |
 | `BILLING_ROLE_KEYS` | domain:billing-roles.ts | Just the keys, in order — the shape a `<select>` and a CHECK constraint want. | **2** · core:affiliations/affiliations.controller.ts, core:affiliations/affiliations.service.ts |
 | `CORRECTABLE_PATIENT_FIELDS` | domain:tablet-session.ts | WHAT RECEPTION MAY CORRECT ON THE PLATFORM'S MIRROR, and the list is the whole of it (TODO.md "Check-your-details", Carl 4 Sep 2026). | **2** · core:patients/patients.service.ts, web:practice/tablet/pushDesk.tsx |
@@ -1237,7 +1245,6 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `AOBPRINTER_REBASELINE_REASONS_VERSION` | domain:aobprinter-rebaseline-reasons.ts | The version of the list a re-baseline was made from. | **1** · core:aobprinter-hosts/aobprinter-hosts.service.ts |
 | `AOBPRINTER_REBASELINE_REASON_KEYS` | domain:aobprinter-rebaseline-reasons.ts | Just the keys, in order — what a `<select>` and a DTO's `@IsIn` want. | **1** · web:platform/practices/[practiceId]/aobprinter-host/RebaselinePanel.tsx |
 | `AOBPRINTER_VAULT_ANCHOR_MIN_INTERVAL_MS` | domain:aobprinter-host.ts | `aobprinter.chain_anchored` reaches the vault at most this often (D-2026-10-10-02, decision 5). | **1** · core:aobprinter-hosts/aobprinter-hosts.service.ts |
-| `APPROVED_IDENTIFIER_TYPES` | domain:identifiers.ts |  | **1** · web:practice/channels/ChannelsView.tsx |
 | `ARTEFACT_PURPOSES` | domain:artefact.ts | What an artefact is evidence OF. | **1** · core:artefacts/artefacts.controller.ts |
 | `ASSOCIATION_CANDIDATE_TYPES` | domain:pre-agreement-association.ts | ONLY A PRE-AGREEMENT IS ASSOCIATED. | **1** · core:agreements/pre-agreement-association.ts |
 | `AUTOMATIC_CESSATION_TRIGGERS` | domain:enduring.ts | The six automatic cessation triggers (65CA(8), Addendum v2 §3.3). | **1** · core:enduring/enduring.controller.ts |
@@ -1438,6 +1445,19 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `SUPPRESSIONS_SHOWN_ON_LOG` | domain:correspondence-log.ts | A send that never happened, and why. | 0 |
 | `TABLET_SESSION_PATIENT_FIELDS` | domain:tablet-session.ts | WHAT THE TABLET IS SHOWN ABOUT THE PATIENT, and the list is the contract. | 0 |
 | `TABLET_SESSION_STATES` | domain:tablet-session.ts |  | 0 |
+| `TELEHEALTH_CHANNELS` | domain:telehealth.ts | How the link goes. | 0 |
+| `TELEHEALTH_CODE_LOCKED_TASK_KIND` | domain:review-tasks.ts | The kind a locked telehealth code raises. | 0 |
+| `TELEHEALTH_CONTENT` | domain:telehealth.ts |  | 0 |
+| `TELEHEALTH_CONTENT_VERSION` | domain:telehealth.ts |  | 0 |
+| `TELEHEALTH_IDENTITY_CHECKLIST` | domain:telehealth.ts | WHAT THE PROVIDER TICKS ON THE CALL: identifier TYPES, from the approved six, never values (hard rules 1 and 9; REQ-VER-02/-04). | 0 |
+| `TELEHEALTH_LINK_STATES` | domain:telehealth.ts | States in which the patient's page is still live and a fresh link may be sent. | 0 |
+| `TELEHEALTH_NEUTRAL_WORDING_FORBIDDEN` | domain:telehealth.ts | WORDS THE CONSENT STATEMENT AND THE LINK MESSAGE MAY NEVER USE, until the Department answers G10 (TELEHEALTH-PLAN.md §9). | 0 |
+| `TELEHEALTH_NOT_DONE_NOTE_MAX` | domain:telehealth.ts | The longest note the panel accepts. | 0 |
+| `TELEHEALTH_NOT_DONE_REASONS` | domain:telehealth.ts | In file order, which is screen order. | 0 |
+| `TELEHEALTH_NOT_DONE_REASONS_VERSION` | domain:telehealth.ts |  | 0 |
+| `TELEHEALTH_NOT_DONE_REASON_KEYS` | domain:telehealth.ts |  | 0 |
+| `TELEHEALTH_SESSION_MOVES` | domain:telehealth.ts | THE MOVES, AND ONLY THESE. | 0 |
+| `TELEHEALTH_SESSION_STATES` | domain:telehealth.ts | WHERE A SESSION HAS GOT TO. | 0 |
 | `UNSIGNED_DRAFT_CLOSURE_REASONS` | domain:unsigned-draft-closure.ts | WHY AN AGREEMENT WAS CLOSED. | 0 |
 | `USER_SCOPES` | domain:practice-users.ts | Where a user's access sits. | 0 |
 | `VISIT_AGREEMENT_TYPES` | domain:visit-policy.ts | The three answers. | 0 |
@@ -1450,7 +1470,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Domain types
 
-299 exports.
+304 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -1462,11 +1482,11 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `IsoDate` | domain:ids.ts | Calendar date, `YYYY-MM-DD`, in the practice's timezone. | **7** · connector:mock-adapter.ts, core:auto-capture/auto-capture.controller.ts, core:auto-capture/auto-capture.service.ts, +4 more |
 | `KioskScreen` | domain:kiosk.ts |  | **7** · core:devices/devices.service.ts, core:kiosk/kiosk.controller.ts, core:kiosk/kiosk.service.ts, +4 more |
 | `AgreementStatus` | domain:agreement.ts | REQ-REC-02 + design decisions §7, incl. | **6** · core:agreements/agreements.service.ts, core:retention/retention-sweep.service.ts, domain:assignor.ts, +3 more |
+| `ApprovedIdentifierType` | domain:identifiers.ts |  | **5** · core:kiosk/kiosk.service.ts, core:verification/identifier-matching.ts, core:verification/verification.service.ts, +2 more |
 | `EnduringPathway` | domain:agreement.ts |  | **5** · core:agreements/agreements.service.ts, core:enduring/enduring.service.ts, core:notices/notices.service.ts, +2 more |
 | `KioskCommand` | domain:kiosk.ts |  | **5** · core:devices/devices.service.ts, core:kiosk/kiosk.service.ts, web:kiosk/Ceremony.tsx, +2 more |
 | `KioskWaitingRow` | domain:kiosk.ts |  | **5** · core:kiosk/kiosk.service.ts, web:kiosk/Ceremony.tsx, web:kiosk/api.ts, +2 more |
 | `AobPrinterChainPoint` | domain:aobprinter-host.ts | A position in a host's audit chain: a seq and the hash stored there (null where there is none). | **4** · aobprinter:heartbeat.ts, core:aobprinter-hosts/aobprinter-hosts.service.ts, web:practice/aobprinter-host/AobPrinterHostView.tsx, +1 more |
-| `ApprovedIdentifierType` | domain:identifiers.ts |  | **4** · core:kiosk/kiosk.service.ts, core:verification/identifier-matching.ts, core:verification/verification.service.ts, +1 more |
 | `DisputeResolutionOutcome` | domain:tablet-session.ts |  | **4** · core:patients/patients.service.ts, core:tablet-sessions/dispute-resolution.dto.ts, core:tablet-sessions/tablet-sessions.service.ts, +1 more |
 | `DrawnSignatureCapture` | domain:signature.ts | What the tablet sends with a `drawn` signature. | **4** · core:agreements/agreements.service.ts, web:kiosk/components/SignaturePad.tsx, web:kiosk/rules/signature-payload.ts, +1 more |
 | `ProviderType` | domain:parties.ts | Drives Basic Service Description categories and the enduring GP-only rule (REQ-END-01a). | **4** · core:agreements/agreements.service.ts, core:enduring/enduring.service.ts, domain:billing-roles.ts, +1 more |
@@ -1740,6 +1760,11 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `SurfaceProfile` | domain:practice-surfaces.ts |  | 0 |
 | `TabletSessionAssignor` | domain:tablet-session.ts | WHO IS SIGNING, as the tablet is told it. | 0 |
 | `TabletSessionPatientField` | domain:tablet-session.ts |  | 0 |
+| `TelehealthChannel` | domain:telehealth.ts |  | 0 |
+| `TelehealthContent` | domain:telehealth.ts |  | 0 |
+| `TelehealthNotDoneReason` | domain:telehealth.ts |  | 0 |
+| `TelehealthNotDoneReasonContent` | domain:telehealth.ts |  | 0 |
+| `TelehealthSessionState` | domain:telehealth.ts |  | 0 |
 | `UnsignedDraftClosureContent` | domain:unsigned-draft-closure.ts |  | 0 |
 | `UploadCandidate` | domain:artefact.ts |  | 0 |
 | `UserScope` | domain:practice-users.ts |  | 0 |
