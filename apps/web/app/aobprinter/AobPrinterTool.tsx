@@ -231,13 +231,18 @@ const EMPTY_SERVICE: ServiceRow = {
  * LOAD TEST AGREEMENTS (Carl, 12 October 2026: *"put a button at the top of
  * the test tool for me to load test agreements"*).
  *
- * ONE PRESS, FIVE DB4s, FIVE AGREEMENTS ON THE DESK — and still through the
- * one door. Core's dev-only `POST /dev/aobprinter-test-patients` ensures the
- * five fake patients exist (a DB4 matches a patient and never creates one)
- * and says which servicing provider numbers the practice knows; everything
- * after that is this tool printing forms exactly as a tester would, through
- * `postDraft` — the same `envelopeWithHash` and the same
+ * ONE PRESS, FIVE DB4s, FIVE AGREEMENTS ON THE DESK — and only through
+ * ordinary doors. A DB4 matches a patient already on file and never creates
+ * one, so the button first makes sure each patient exists the way
+ * `scripts/dev/db4-round-trip.sh` does: `GET /patients/search` for the chart
+ * number, and only if it is missing, `POST /arrivals` with a fixed
+ * idempotency key, which mirrors the patient. Then it prints one DB4 per
+ * patient through `postDraft` — the same `envelopeWithHash` and the same
  * `POST /inbound/print-jobs` the Print to AoB button uses.
+ *
+ * NOTHING ELSE IS CREATED. The servicing provider is the presets' 9999999X,
+ * and if the practice has no affiliation that resolves it the button says so
+ * and names the script whose seed step creates one, rather than making one.
  *
  * ONLY PRESETS THAT PLACE. Each shape below becomes an agreement; the
  * "refused at the door" presets do not, and a button called "load test
@@ -247,16 +252,70 @@ const EMPTY_SERVICE: ServiceRow = {
  * ------------------------------------------------------------------------ */
 const LOAD_TEST_PRESET_KEYS = ['clean', 'ragged-amounts', 'long-form', 'no-amount', 'no-irn'] as const;
 
-/** What the endpoint answers. Dev only, which is why it may carry names. */
-interface TestPatients {
-  readonly patients: ReadonlyArray<{
-    patientRecordNumber: string;
-    givenNames: string;
-    familyName: string;
-    dateOfBirth: string;
-  }>;
-  readonly servicingProviderNumbers: readonly string[];
-  readonly created: number;
+/**
+ * THE FIVE PATIENTS, ALREADY FAMILIAR FROM THE DEV SCRIPTS. The first is the
+ * printed fixture's patient in `db4-round-trip.sh`; the other four are
+ * `stage-kiosk-patients.sh`'s identities under the chart numbers that script
+ * gives them. Reusing them means a patient either script already made is
+ * found, not duplicated. Fake throughout (CLAUDE.md §7c); no contact details
+ * are sent, so nothing on these arrivals can reach a phone or an inbox.
+ */
+const LOAD_TEST_PATIENTS: ReadonlyArray<{
+  readonly patientRecordNumber: string;
+  readonly givenNames: string;
+  readonly familyName: string;
+  readonly dateOfBirth: string;
+  readonly address: string;
+}> = [
+  {
+    patientRecordNumber: '09911',
+    givenNames: 'Testalina',
+    familyName: 'Fakesurname',
+    dateOfBirth: '1972-02-02',
+    address: '3 Imaginary Ave, Fakevale NSW 2999',
+  },
+  {
+    patientRecordNumber: 'DEV-RILEY-EXAMPLE',
+    givenNames: 'Riley',
+    familyName: 'Example',
+    dateOfBirth: '1988-03-09',
+    address: '7 Sample Road, Sampletown NSW 2000',
+  },
+  {
+    patientRecordNumber: 'DEV-ALEX-FICTIONAL',
+    givenNames: 'Alex',
+    familyName: 'Fictional',
+    dateOfBirth: '1954-12-01',
+    address: '12 Placeholder Street, Sampletown NSW 2000',
+  },
+  {
+    patientRecordNumber: 'DEV-KIM-SPECIMEN',
+    givenNames: 'Kim',
+    familyName: 'Specimen',
+    dateOfBirth: '2001-07-21',
+    address: '3 Dummy Lane, Sampletown NSW 2000',
+  },
+  {
+    patientRecordNumber: 'DEV-NOOR-ILLUSTRATIVE',
+    givenNames: 'Noor',
+    familyName: 'Illustrative',
+    dateOfBirth: '1976-05-15',
+    address: '9 Example Street, Sampletown NSW 2000',
+  },
+];
+
+/** The presets' servicing provider number — what every DB4 the button prints names. */
+const LOAD_TEST_PROVIDER_NUMBER = BLANK.providers.find((p) => p.role === 'servicing')?.providerNumber ?? '';
+
+/** Where the fix is when no affiliation resolves that number (the script's own seed step). */
+const PROVIDER_FIX =
+  'The seed step of bash scripts/dev/db4-round-trip.sh creates it (POST /practitioners, then POST /practices/<id>/providers), or says by name why it cannot for this practice.';
+
+/** Core's refusal body, said back verbatim. */
+function said(body: unknown): string {
+  const b = body as { message?: unknown; reason?: unknown } | null;
+  const message = typeof b?.message === 'string' ? b.message : JSON.stringify(b?.message ?? b ?? '');
+  return typeof b?.reason === 'string' ? `${b.reason}: ${message}` : message;
 }
 
 /** One form of a press, and what became of it. */
@@ -267,20 +326,15 @@ interface LoadRow {
   readonly httpStatus: number;
   readonly error?: string;
   readonly state?: string;
+  /** Set when no read of the job back from core succeeded: what the last attempt saw. */
+  readonly unread?: string;
   readonly placed?: boolean;
   readonly reason?: string | null;
 }
 
 type LoadResult =
   | { readonly kind: 'refused'; readonly text: string }
-  | { readonly kind: 'done'; readonly created: number; readonly providerNumber: string; readonly rows: LoadRow[] };
-
-/** The tester's local date, YYYY-MM-DD — the desk reads today's visits. */
-function localDate(): string {
-  const now = new Date();
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-}
+  | { readonly kind: 'done'; readonly created: readonly string[]; readonly rows: LoadRow[] };
 
 /** How many times a press reads a job back, and how long between reads. */
 const LOAD_POLLS = 10;
@@ -291,6 +345,9 @@ function loadRowInWords(row: LoadRow): string {
   if (row.error !== undefined) return `refused at the door, HTTP ${row.httpStatus}: ${row.error}`;
   if (row.placed === true) return 'placed — an agreement is on the desk.';
   if (row.placed === false) return `nothing was placed — ${row.reason ?? 'core recorded no reason code'}.`;
+  if (row.unread !== undefined) {
+    return `the tool could not read this job back from core (${row.unread}). Use Check again on its row below.`;
+  }
   return `core had not finished with it after ${LOAD_POLLS} reads (state: ${row.state ?? 'unknown'}). Use Check again on its row below.`;
 }
 
@@ -381,22 +438,28 @@ export function AobPrinterTool() {
   }, []);
 
   /** What became of it — state and CODES, never the stored envelope. Null when it could not be read. */
-  const readOutcome = useCallback(async (jobId: string, practiceId: string) => {
-    try {
-      const res = await fetch(`${coreBaseUrl()}/inbound/print-jobs/${jobId}`, {
-        headers: { 'x-practice-id': practiceId },
-      });
-      if (!res.ok) return null;
-      return (await res.json()) as { state?: string; outcome?: unknown };
-    } catch {
-      /* The tool is a bench instrument; a failed poll is not worth a banner. */
-      return null;
-    }
-  }, []);
+  const readOutcome = useCallback(
+    async (
+      jobId: string,
+      practiceId: string,
+    ): Promise<{ row: { state?: string; outcome?: unknown } | null; failure?: string }> => {
+      try {
+        const res = await fetch(`${coreBaseUrl()}/inbound/print-jobs/${jobId}`, {
+          headers: { 'x-practice-id': practiceId },
+        });
+        if (!res.ok) return { row: null, failure: `HTTP ${res.status}` };
+        return { row: (await res.json()) as { state?: string; outcome?: unknown } };
+      } catch (err) {
+        /* The tool is a bench instrument; a failed poll is not worth a banner. */
+        return { row: null, failure: err instanceof Error ? err.message : String(err) };
+      }
+    },
+    [],
+  );
 
   const refreshOutcome = useCallback(
     async (jobId: string, practiceId: string) => {
-      const row = await readOutcome(jobId, practiceId);
+      const { row } = await readOutcome(jobId, practiceId);
       if (!row) return;
       setSent((rows) =>
         rows.map((r) => (r.jobId === jobId ? { ...r, state: row.state, outcome: row.outcome } : r)),
@@ -517,48 +580,87 @@ export function AobPrinterTool() {
     setLoading(true);
     setLoadResult(null);
     try {
-      let res: Response;
-      try {
-        res = await fetch(`${coreBaseUrl()}/dev/aobprinter-test-patients`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json', 'x-practice-id': practiceId },
-          body: '{}',
-        });
-      } catch (err) {
-        setLoadResult({
-          kind: 'refused',
-          text: `Could not reach core at ${coreBaseUrl()} (${err instanceof Error ? err.message : String(err)}). Nothing was sent.`,
-        });
-        return;
-      }
-      const answer = (await res.json().catch(() => ({}))) as Partial<TestPatients> & {
-        reason?: string;
-        message?: unknown;
+      const headers = { 'content-type': 'application/json', 'x-practice-id': practiceId };
+      /** Is this chart number on file? The script's own question, asked the same way. */
+      const onFile = async (chart: string): Promise<{ found: boolean; failure?: string }> => {
+        const res = await fetch(`${coreBaseUrl()}/patients/search?q=${encodeURIComponent(chart)}`, { headers });
+        if (!res.ok) return { found: false, failure: `HTTP ${res.status}: ${said(await res.json().catch(() => null))}` };
+        const rows = (await res.json()) as Array<{ patientRecordNumber?: string | null }>;
+        return { found: rows.some((r) => r.patientRecordNumber === chart) };
       };
-      if (!res.ok) {
-        const said = typeof answer.message === 'string' ? answer.message : JSON.stringify(answer.message ?? answer);
-        setLoadResult({
-          kind: 'refused',
-          text: `Core refused to set up the test patients (HTTP ${res.status}${answer.reason ? `, ${answer.reason}` : ''}): ${said} Nothing was sent.`,
+
+      const created: string[] = [];
+      for (const p of LOAD_TEST_PATIENTS) {
+        const name = `${p.givenNames} ${p.familyName}`;
+        let before: { found: boolean; failure?: string };
+        try {
+          before = await onFile(p.patientRecordNumber);
+        } catch (err) {
+          setLoadResult({
+            kind: 'refused',
+            text: `Could not reach core at ${coreBaseUrl()} (${err instanceof Error ? err.message : String(err)}). Nothing was sent.`,
+          });
+          return;
+        }
+        if (before.failure) {
+          setLoadResult({
+            kind: 'refused',
+            text: `Core refused the patient search for ${p.patientRecordNumber} (${before.failure}). Nothing was sent.`,
+          });
+          return;
+        }
+        if (before.found) continue;
+
+        /*
+         * THE ARRIVAL IS HOW A PATIENT IS MIRRORED, exactly as the script does
+         * it: a fixed instant and a fixed idempotency key, so a second press
+         * tops up rather than raising a second arrival for the same "visit".
+         * What counts is whether the patient exists afterwards — an arrival
+         * can be refused at the lock after the patient row is committed.
+         */
+        const arrival = await fetch(`${coreBaseUrl()}/arrivals`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            pmsPatientRecordNumber: p.patientRecordNumber,
+            familyName: p.familyName,
+            givenNames: p.givenNames,
+            dateOfBirth: p.dateOfBirth,
+            address: p.address,
+            providerNumber: LOAD_TEST_PROVIDER_NUMBER,
+            arrivedAt: '2026-01-01T00:00:00.000Z',
+            source: 'dev',
+            idempotencyKey: `dev-aobprinter-tool-${p.patientRecordNumber}`,
+          }),
         });
-        return;
-      }
-      const patients = answer.patients ?? [];
-      const numbers = answer.servicingProviderNumbers ?? [];
-      // The presets' own servicing number when the practice knows it, so the page matches the presets.
-      const servicing = PRESETS[0]!.apply(BLANK).providers.find((p) => p.role === 'servicing')?.providerNumber;
-      const providerNumber = servicing && numbers.includes(servicing) ? servicing : numbers[0];
-      if (!providerNumber || patients.length === 0) {
+        const arrivalBody = await arrival.json().catch(() => null);
+        const after = await onFile(p.patientRecordNumber);
+        if (after.found) {
+          created.push(name);
+          continue;
+        }
+        /*
+         * THE PATIENT DID NOT LAND. `POST /arrivals` resolves the provider
+         * number before it mirrors the patient (`findAnchor` before
+         * `mirrorPatient` in arrivals.service.ts), and its 404 is that lookup
+         * finding no affiliation for the number — the one case with a known
+         * fix. Any other refusal is said back as core said it, with no remedy.
+         */
+        const providerMissing = arrival.status === 404;
         setLoadResult({
           kind: 'refused',
-          text: `Core answered with ${patients.length} test patient(s) and ${numbers.length} servicing provider number(s), so there was nothing to print. Nothing was sent.`,
+          text:
+            `${name} (${p.patientRecordNumber}) is not on file and POST /arrivals did not create them ` +
+            `(HTTP ${arrival.status}: ${said(arrivalBody)}). Nothing was sent.` +
+            (providerMissing
+              ? ` No affiliation at this practice resolves servicing provider number ${LOAD_TEST_PROVIDER_NUMBER}. ${PROVIDER_FIX}`
+              : ''),
         });
         return;
       }
 
-      const today = localDate();
       const stamp = Date.now().toString(36).toUpperCase();
-      const forms = patients.map((p, i) => {
+      const forms = LOAD_TEST_PATIENTS.map((p, i) => {
         const preset =
           PRESETS.find((x) => x.key === LOAD_TEST_PRESET_KEYS[i % LOAD_TEST_PRESET_KEYS.length]) ?? PRESETS[0]!;
         const started = startFromPreset(preset, {
@@ -572,9 +674,6 @@ export function AobPrinterTool() {
           ...started,
           dateOfBirth: p.dateOfBirth,
           formReference: `LOAD-${stamp}-${String(i + 1).padStart(2, '0')}`,
-          serviceDate: today,
-          services: started.services.map((s) => ({ ...s, serviceDate: today })),
-          providers: started.providers.map((pr) => (pr.role === 'servicing' ? { ...pr, providerNumber } : pr)),
         };
         return { outgoing, patientName: `${p.givenNames} ${p.familyName}`, presetLabel: preset.label };
       });
@@ -595,13 +694,17 @@ export function AobPrinterTool() {
       /* The handler runs after the 202, so read each job back until core has finished with it. */
       const finished = new Map<string, { state?: string; outcome?: unknown }>();
       const lastState = new Map<string, string | undefined>();
+      const lastFailure = new Map<string, string>();
       const pending = () =>
         posted.flatMap((p) => (p.record?.jobId && !finished.has(p.record.jobId) ? [p.record.jobId] : []));
       for (let attempt = 0; attempt < LOAD_POLLS && pending().length > 0; attempt++) {
         if (attempt > 0) await new Promise((r) => window.setTimeout(r, LOAD_POLL_MS));
         for (const id of pending()) {
-          const row = await readOutcome(id, practiceId);
-          if (!row) continue;
+          const { row, failure } = await readOutcome(id, practiceId);
+          if (!row) {
+            lastFailure.set(id, failure ?? 'no answer');
+            continue;
+          }
           if (row.state === 'done' || row.state === 'dead') finished.set(id, row);
           else lastState.set(id, row.state);
         }
@@ -623,7 +726,12 @@ export function AobPrinterTool() {
         if (record.error !== undefined) return { ...base, httpStatus: record.httpStatus, error: record.error };
         const row = record.jobId ? finished.get(record.jobId) : undefined;
         if (!row) {
-          return { ...base, httpStatus: record.httpStatus, state: record.jobId ? lastState.get(record.jobId) : undefined };
+          const id = record.jobId ?? '';
+          // "Not finished" only if core actually answered with a state; otherwise say the read failed.
+          if (!lastState.has(id)) {
+            return { ...base, httpStatus: record.httpStatus, unread: lastFailure.get(id) ?? 'no job id was returned' };
+          }
+          return { ...base, httpStatus: record.httpStatus, state: lastState.get(id) };
         }
         const db4 = ((row.outcome as Record<string, unknown> | null)?.db4 ?? null) as Db4Part | null;
         return {
@@ -634,7 +742,7 @@ export function AobPrinterTool() {
           reason: db4 ? (db4.reason ?? null) : `job ${row.state} with no DB4 outcome`,
         };
       });
-      setLoadResult({ kind: 'done', created: answer.created ?? 0, providerNumber, rows });
+      setLoadResult({ kind: 'done', created, rows });
       void loadList(practiceId);
     } finally {
       setLoading(false);
@@ -702,11 +810,14 @@ export function AobPrinterTool() {
             </button>
           </div>
           <p className={styles.actionsNote}>
-            Prints five DB4s for practice <code>{draft.practiceId || '(none set)'}</code>, one per fake test
-            patient (PMS patient IDs <code>DB4TEST-01</code> to <code>DB4TEST-05</code>, created by core the first
-            time and reused after), through the same <code>/inbound/print-jobs</code> door as Print to AoB. The
-            five shapes are ones that place: {LOAD_TEST_PRESET_KEYS.map((k) => PRESETS.find((p) => p.key === k)?.label ?? k).join('; ')}. Each press uses new form references and today&rsquo;s date, so it adds five
-            new agreements rather than reprinting the last five.
+            Prints five DB4s for practice <code>{draft.practiceId || '(none set)'}</code>, one per fake patient
+            from the dev scripts ({LOAD_TEST_PATIENTS.map((p) => `${p.givenNames} ${p.familyName} (${p.patientRecordNumber})`).join(', ')}),
+            through the same <code>/inbound/print-jobs</code> door as Print to AoB. A patient not yet on file is
+            mirrored first through <code>POST /arrivals</code>, as <code>db4-round-trip.sh</code> does. Every DB4
+            names servicing provider number <code>{LOAD_TEST_PROVIDER_NUMBER}</code>. The five shapes are ones
+            that place: {LOAD_TEST_PRESET_KEYS.map((k) => PRESETS.find((p) => p.key === k)?.label ?? k).join('; ')}.
+            Each press uses new form references, so it adds five new agreements rather than reprinting the last
+            five.
           </p>
           <div aria-live="polite">
             {loadResult?.kind === 'refused' ? <p className={styles.outcomeLeadBad}>{loadResult.text}</p> : null}
@@ -720,8 +831,15 @@ export function AobPrinterTool() {
                   {`Sent ${loadResult.rows.filter((r) => r.error === undefined).length} of ${loadResult.rows.length} to core; ${loadResult.rows.filter((r) => r.placed === true).length} placed an agreement.`}
                 </p>
                 <p className={styles.outcomeNote}>
-                  {`Servicing provider number ${loadResult.providerNumber}. ${loadResult.created === 0 ? 'The test patients were already on file.' : `Core created ${loadResult.created} test patient(s) first.`}`}
+                  {loadResult.created.length === 0
+                    ? 'All five patients were already on file.'
+                    : `Mirrored through POST /arrivals first: ${loadResult.created.join(', ')}.`}
                 </p>
+                {loadResult.rows.some((r) => r.reason === 'provider_not_found') ? (
+                  <p className={styles.outcomeLeadBad}>
+                    {`provider_not_found: no affiliation at this practice resolves servicing provider number ${LOAD_TEST_PROVIDER_NUMBER}. ${PROVIDER_FIX}`}
+                  </p>
+                ) : null}
                 <ul className={styles.outcomeNote}>
                   {loadResult.rows.map((r) => (
                     <li key={r.formReference}>
