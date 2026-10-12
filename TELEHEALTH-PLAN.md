@@ -220,7 +220,7 @@ up any DB4 that was not signed at the practice.
    live status, and the "not done" reasons.** *Built 12 Oct 2026 on
    `feat/telehealth-session`, behind `TELEHEALTH_ENABLED` (default off). Its
    vault event types were approved by Carl on 12 Oct 2026 (D-2026-10-12-02)
-   and are wired to the outbox (PR #32), so the flag alone gates it.*
+   and are wired to the outbox (PR #33), so the flag alone gates it.*
 3. **The DB4 into the waiting page.** Scenario A complete.
 4. **Next-day matching, and reception's phone follow-up.** Scenario B complete.
 5. **The language layer.** This can start alongside step 1, and every string
