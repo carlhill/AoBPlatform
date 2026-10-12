@@ -95,6 +95,14 @@ Open http://localhost:3100/aobprinter. Choose a preset and send it; it goes
 through the same `POST /inbound/print-jobs` path a real print does.
 Needs: core :3001, web :3100.
 
+**Load test agreements** (the button at the top): makes sure five fake
+patients are on file (the `db4-round-trip` fixture patient on chart 09911 plus
+the four `stage-kiosk-patients` people), adding any that are missing through
+`POST /arrivals` as the script does, then sends one DB4 each from five presets
+and says how many placed. Each press adds five new agreements. It never creates
+a servicing provider: if 9999999X is not set up, it says so and points at
+`db4-round-trip`'s seed step.
+
 ---
 
 ## Test runs
