@@ -1,0 +1,18 @@
+{
+  "$comment": "VERSIONED CONTENT, NOT CODE (D-2026-10-10-03; CLAUDE.md section 7c, option lists are content). The IANA zones a practice may say its day is measured in. A practice's 'today' on the front desk, the tablet's waiting list and the earlier-days notice all turn at midnight in the zone chosen from this list. Order here IS the order on screen; the default leads because it is what every practice has until somebody changes it. Australian mainland, Tasmanian and Lord Howe zones only: Broken Hill (NSW, keeps Adelaide time), Lindeman (Whitsundays, Queensland time) and Eucla (WA, +8:45) are here because a zone is NOT derivable from the state (D-2026-09-12-17). The external territories (Norfolk Island, Christmas Island, Cocos) are not listed; adding one is an edit here plus the CHECK on practices.timezone. THE DISPLAY WORDS ARE NOT HERE: they live in the string table keyed by zone name (REQ-LANG-01). THE DATABASE CHECK copies this list (migration 20261010030000_practice_timezone); an edit here needs a migration that widens it. Bump `version` on every edit.",
+  "version": "practice-timezones-2026-10-1",
+  "default": "Australia/Sydney",
+  "zones": [
+    "Australia/Sydney",
+    "Australia/Melbourne",
+    "Australia/Brisbane",
+    "Australia/Adelaide",
+    "Australia/Darwin",
+    "Australia/Perth",
+    "Australia/Hobart",
+    "Australia/Broken_Hill",
+    "Australia/Lindeman",
+    "Australia/Eucla",
+    "Australia/Lord_Howe"
+  ]
+}

@@ -2965,6 +2965,589 @@ work on this realm for anybody.
 **What would reopen it:** a realm or identity provider that cannot emit
 `amr`, which would need a different way to prove the method.
 
+---
+
+## D-2026-10-10-08 - A DB4 amount keeps the $ exactly as PracSoft printed it
+
+**Date:** 10 October 2026. **Decided by:** Carl, *"yes 45.05 no $ - go ahead
+and keep the $"*, after seeing a tablet show `45.05` for a row the practice's
+DB4 prints as `$45.05`. **Built on:** branch `fix/db4-amount-keeps-dollar`,
+based on `feat/aobprinter-heartbeat`.
+
+**What was wrong.** A real PracSoft DB4 prints the benefit as `$45.05` (the
+probe page, `apps/aobprinter/test-fixtures/pracsoft3-db4-probe.source.txt`,
+lines 25-26). AOBPRINTER's parser template `pracsoft3-db4-2026-09-1` matched
+the `$` outside the captured group and applied the `money` transform, which
+strips `$`, commas and spaces, so the DB4 Print Record carried `45.05`. The
+kiosk shows the string exactly as received and never adds a currency symbol
+(`AmountAsPrinted`), so the patient saw `45.05`: not what their form says.
+
+**What changed.**
+- A new template version, `apps/aobprinter/content/pracsoft3-db4-2026-10-1.json`
+  (hard rule 14: the old file is not edited). It is identical to -09-1 except
+  the service-rows extractor: the `$` is inside the `benefitAssigned` group,
+  and the transform is `collapseSpaces`, which trims and folds runs of
+  whitespace and keeps every other character. `$45.05` stays `$45.05`;
+  `$1,045.05` stays `$1,045.05`. A test pins that the two templates differ in
+  nothing else.
+- `DEFAULT_TEMPLATE_VERSION` in `apps/aobprinter/src/template.ts` is now -10-1.
+  The template in use is chosen by `templateVersion` in AOBPRINTER's
+  `config.json`, falling back to that default; a host whose config names -09-1
+  explicitly keeps parsing with it until that line changes.
+- -09-1 stays built into the program, so a record stamped with it can still be
+  re-read against the template that made it. The `money` transform stays
+  because -09-1 uses it.
+- The AOBPrinter test tool's presets send `$45.05` / `$7.15`, and its default
+  `parserTemplateVersion` is -10-1, because the tool stands in for AOBPRINTER.
+
+**Records already stored keep their old string.** Nothing rewrites a stored
+DB4 Print Record or a rendered Signed-DB4. A record captured under -09-1 says
+`45.05` and its `parserTemplateVersion` says why; only forms printed after a
+host runs the new default carry the `$`. The Signed-DB4 draws the string
+verbatim, so two renders of the same record stay byte-identical (hard rule 13),
+and existing records render exactly as before.
+
+**One other change on the row, for one shape only.** Where PracSoft prints a
+space after the `$` (`$ 45.05`), -09-1 left the `$` on the end of the
+description; -10-1 takes it into the amount, so the description no longer ends
+in a stray `$`. Every other part of the row is captured as before.
+
+**Nothing in AoB originates or parses a figure.** Hard rule 4 as narrowed by
+D-2026-09-14-02 lets AoB reproduce the amount the practice's billing software
+printed and nothing else. This decision makes the reproduction more faithful;
+it adds no figure. No consumer parses `benefitAssigned`: the core DTO takes a
+string of up to 20 characters with no pattern, the Send-to-tablet check
+(`print_record_benefit_missing`, D-2026-09-27-06) asks only whether a row has
+an amount at all, the kiosk splits the string at its last `.` for alignment
+and joins it back unchanged, and the Signed-DB4 prints it as given. None adds a
+second `$`.
+
+**What would reopen it:** the first real PracSoft print showing the amount in
+a different shape (no `$`, a space after it, or a column header carrying the
+symbol instead), which would need a new template version, not an edit; or
+Carl preferring one uniform presentation for amounts captured under both
+templates, which would mean a display rule and a decision about hard rule 4.
+
+---
+
+## D-2026-10-10-11 - A DB4 whose printed patient name differs from the matched patient record is flagged at the desk; staff correct the PMS and print again
+
+**Date:** 10 October 2026. **Decided by:** Carl, *"B and tell the user to
+resend to AOBPrinter from PMS"*, choosing between four options after a code
+trace. **Built on:** branch `feat/db4-printed-name-mismatch`, based on
+`feat/aobprinter-heartbeat`.
+
+**The trace that raised it.** A DB4 Print Record is matched to a patient by
+chart number only (`db4-assignment.handler.ts`, the `patientRecordNumber`
+lookup). After the match, two different names are in use:
+- the NAME PRINTED ON THE FORM: the tablet's picture of the DB4
+  (`db4-form-view.ts`, `patientOf`) and the Signed-DB4
+  (`signed-db4-document.ts`);
+- the PATIENT RECORD's name: who-is-signing, the details check
+  (`apps/web/app/kiosk/rules/pushed-details.ts`, `tablet-sessions.service.ts`), the step headings and the
+  Assignment Agreement (`agreements.service.ts`).
+
+So when PracSoft printed one name and the record holds another, one signing
+shows two names.
+
+**Decided (option B).** The mismatch is shown to staff and never blocks:
+- **Matching stays by chart number.** A name is not an identifier we match on.
+- **A WARNING band, not a refusal.** It appears on the agreement's staff row
+  wherever `AgreementBands` renders: `/practice/tablet` (the push desk, where
+  Send to tablet is), `/practice/frontdesk` and `/practice/frontdesksmall`.
+  Send to tablet stays enabled and signing is never blocked (hard rule 8).
+  It is not one of `DB4_PRINT_RECORD_CHECKS`, which are the refusals.
+- **It names what was observed and shows both names.** This is a
+  practice-scoped staff surface behind RLS, where the patient's name already
+  appears. The comparison never reaches a tablet payload.
+- **The remedy is Carl's:** correct the name in PracSoft and print the DB4
+  again from PracSoft.
+- **Reason code** `print_record_name_differs`. A code the console has not
+  mapped shows its code and no remedy.
+
+**Refused.**
+- **Option C, a name change supersedes the agreement: refused.** See the
+  reprint rule below.
+- **Option D, the printed name edits the patient record: refused.** A DB4
+  never writes the patient record. The PMS feeds the record through the
+  arrival, and staff can correct it in the console. A printed form overwriting
+  it would let a wrong chart number rename the wrong patient.
+
+**The patient-name reprint rule, written down here for the first time (it
+lived only in a comment at `db4-assignment.handler.ts`, `lockedParticularsOf`).**
+When a corrected DB4 arrives for an existing agreement, `decideDb4Reprint`
+(`db4-reprint.ts`) compares the PATIENT by `patientId`, the identity the chart
+number resolved to, and not by the printed name: *"a name is a rendering of a
+person and two people may share one."* A reprint whose only change is the
+printed name is therefore `repointed` with `changed: []`. The agreement is not
+superseded; its `sourcePrintJobId` moves to the new print. A different chart
+number is a `patient` change and does supersede. A signed agreement is never
+repointed (`refused_signed`).
+
+**The comparison** (`packages/contracts/src/db4-printed-name.ts`). Given names
+and family name are compared separately, printed part against recorded part,
+so a swap flags both parts. Each part is reduced by `comparableNamePart`:
+NFC, case, surrounding and internal whitespace (any Unicode space), typographic
+apostrophes and dashes read as `'` and `-`, and spacing around them ignored.
+Two parts match only when the reductions are equal. It does **not** drop
+punctuation (`OBrien` is not `O'Brien`), does not strip accents, does not
+ignore a missing middle name, and does no fuzzy or phonetic matching. Any of
+those could hide a genuinely different name, and a false warning costs a
+glance, never a patient. A part the form did not print is not compared,
+because there is then no second name on screen.
+
+**Is "this notice clears" true? Only in one of the two cases, and the band says
+so.** The check is recomputed on every desk poll against the agreement's
+CURRENT print (`sourcePrintJobId`) and the CURRENT patient record.
+- **PracSoft held the wrong name.** Correct it in PracSoft and print again.
+  The new bytes are a new print job (`sourceSha256` differs), the unsigned
+  agreement is `repointed` to it (or superseded and relinked, if a particular
+  changed too), and the band clears. **True end to end.**
+- **PracSoft was right and the record here is stale or different.** Printing
+  again prints the same name, so the bytes are identical and the reprint is
+  deduplicated at the door. Even a changed print would not touch the record:
+  `PmsSyncService.ensurePatient` creates a missing mirror row and never updates
+  an existing one, and DB4 ingest selects only the patient's id. The record's
+  name changes only through an arrival (`ArrivalsService.mirrorPatient`) or a
+  staff correction (`PatientsService`). **The band does not clear.**
+- So the staff wording promises clearing only when *"the newly printed name
+  matches the patient record"*. It also says that the record is not updated
+  from a DB4, and that if PracSoft already shows the right name, printing again
+  will not clear the notice. It offers no guessed remedy for that case
+  (wow.md section 13).
+
+**Hard rule 9.** The comparison is computed for a screen and nothing is
+written: no vault event and no outcome JSON. The core never logs either name.
+`parts` (`given_names`, `family_name`) is the only field that would be safe
+outside the staff row.
+
+**Enforced by:** `packages/contracts/src/db4-printed-name.test.ts` (the
+comparison), `apps/core/src/agreements/db4-printed-name.spec.ts` (the desk
+read, no names in logs, the row stays sendable, and a `tsc` check that
+`TabletSessionPayload` has no field for it), and the
+`a DB4 whose printed name differs from the patient record` block in
+`apps/web/app/practice/tablet/tablet.test.tsx`.
+
+**What would reopen it:**
+- Carl wanting a link from the band to the patient's record correction for the
+  "PracSoft is already right" case.
+- A PracSoft template that systematically drops apostrophes or hyphens, which
+  would make the strict punctuation rule noisy.
+- A PMS patient sync that updates existing mirror rows. "Clears" would then be
+  true in both cases, and the band's last sentence would need rewording.
+
+
+---
+
+## D-2026-10-10-09 - Unsigned drafts: link to the service when the invoice arrives (option 2), then close after N days with no service (option 3), N = 7 and configurable
+
+**Date:** 10 October 2026. **Decided by:** Carl, verbatim: *"do option 2 first,
+N is 7 days - make N a configurable setting"*. This picks up options 2 and 3
+that D-2026-10-10-01 deferred to `TODO.md`.
+
+**What was decided:**
+- **Option 2 first.** When an invoice arrives, pms-sync links an unsigned draft
+  for the same patient, provider and day to the service record, so that the
+  draft reaches `/practice/reconciliation` and is no longer orphaned.
+- **Then option 3.** An unsigned agreement that has no linked service after
+  N days is closed as "not needed: no service recorded". This is a state
+  change with a vault event, never a delete.
+- **N = 7 days by default, and configurable.** The default is versioned content
+  (hard rule 14), and a practice can set its own value, which overrides it.
+
+**The rule for option 2 (the coordinator's choice; Carl to confirm).**
+- Link the draft only when exactly ONE unsigned agreement matches. To match, it
+  must have no service record linked to it, and it must share the practice, the
+  patient, the servicing provider and the practice's local day.
+- If more than one matches, link none. The service then appears on
+  Reconciliation as needing a person to choose, and the candidate drafts are
+  named.
+- A service record is never linked to two agreements.
+- Signed and stored agreements behave exactly as before.
+
+### The measurement: how one visit comes to have more than one unsigned draft
+
+The dev database was not queried (the brief does not allow it). This analysis
+comes from the code paths that create a draft on this branch
+(`feat/aobprinter-heartbeat`, at 4bfc00e).
+
+| Path | What it drafts | Linked to a service record when it is created? |
+|---|---|---|
+| Arrival (`ArrivalsService.receive`) | `episodic_pre` or `enduring`, per the visit-agreement policy | No. It is idempotent on `idempotencyKey` only, so a second arrival for the same visit under another key (the PMS pushes one, reception types one) drafts again |
+| Appointment auto-capture (`AutoCaptureService.captureForAppointment`) | `episodic_pre`, linked to the appointment | No. An arrival for the same visit does not look for this draft, so a booked patient who also arrives can have two |
+| Desk "New agreement" (`POST /agreements`) | any type | No |
+| Moving a visit to another practitioner (`draftForMovedVisit`) | a new draft for the new practitioner | No. The old draft stays unsigned, but it is anchored on the other practitioner, so it does not match on provider |
+| Tablet "episodic instead" after an ongoing agreement is declined (`draftEpisodicInstead`) | `episodic_pre` | No. The enduring draft stays unsigned with its capture cancelled. Same patient, same practitioner, same day: **two unsigned drafts for one visit by design** |
+| Supersession (`createSupersedingDraft`) | the successor | It inherits the predecessor's service links. The predecessor stays unsigned, but it has a successor |
+| Service rendered (`ArrivalsService.serviceRendered`), auto-capture for an orphan invoice (`captureForServiceRecord`), DB4 print record | `episodic_post` | **Yes**: linked at creation (for a DB4 Print Record, through the service record it creates). These are never candidates for option 2 |
+| A retried in-practice capture | a second draft after the first capture request timed out or was cancelled | No. `withoutDeadEnds` in `tablet-sessions.service.ts` documents this case |
+
+So duplicates are ordinary, not rare: a booking plus an arrival, a declined
+ongoing agreement, a retry. Under the literal rule, each of those produces
+"more than one matches", and a person has to choose.
+
+### FINDING - the build stopped here, before any code, for Carl's answer
+
+**Linking an unsigned `episodic_pre` to the service record contradicts how the
+platform already treats a pre-agreement that was not signed before the service,
+and it switches off the post-agreement for that visit.**
+
+1. **What the code already says.** `agreement.ts` defines `episodic_pre` as
+   "s 65C(4) item 5 - basic service description, *before the service*", and
+   `episodic_post` as item 6, "after the service". The rules engine's C5 refuses
+   a pre-agreement whose D5 is before its D2. `preAgreementForTheDay` in
+   `arrivals.service.ts` counts only a SIGNED pre-agreement as covering a
+   service ("an agreement nobody put their name to assigns nothing"). For an
+   unsigned one, `serviceRendered` drafts an `episodic_post` and links that
+   instead. The unsigned pre-agreement is left alone. That is the design, not a
+   gap.
+2. **What option 2 would change.** `service_records.agreementId` is one column.
+   If pms-sync puts the unsigned pre-agreement in it, then:
+   - `AutoCaptureService.syncInvoicesAndCapture` and the print-job processor
+     treat the record as already linked (`captureForServiceRecord` returns
+     `alreadyLinked`).
+   - No post-agreement is drafted for that visit, and no remote request is sent.
+   - Reconciliation's one-click resend then opens a capture for a
+     pre-agreement, for a service that has already been rendered.
+
+   The visits this affects are the commonest orphans: a desk draft, an invoice,
+   and nobody signed.
+3. **Why this is a question and not a fix.** The brief says *"when in doubt on
+   regulation: stop, cite the requirement, and ask"* (CLAUDE.md §1 and §7c).
+   The requirements involved are REQ-REG-01 (D2/D3/D5), rule C5, and
+   REQ-SCOPE-01 (practitioner x patient x day linking).
+
+**Options for Carl:**
+- **(a) Link as decided, for `episodic_post` only.** It is the only type that
+  can still be signed for a service already rendered. Almost no orphans are
+  unsigned `episodic_post` drafts, so option 2 would rarely fire.
+- **(b) Associate, do not link (Claude's recommendation).** Leave
+  `agreementId` free for the post-agreement that auto-capture drafts. Record
+  instead which service the unsigned pre-agreement's visit belongs to, either
+  as a column or as a read. Then:
+  - the tablet's "Unsigned from earlier days" line says what was observed: a
+    service for this visit was recorded, the pre-agreement was not signed
+    before it, and the service is on Reconciliation;
+  - the line links to that Reconciliation item;
+  - more than one candidate is shown on the item, so a person can choose.
+
+  Option 3 then closes the pre-agreement once the visit's service is covered
+  some other way, or after N days with no service. Each closure reason states
+  what was observed (wow.md §13).
+- **(c) Link the pre-agreement, as the brief says, and accept** that the visit
+  gets no post-agreement and that Reconciliation offers to resend a
+  pre-agreement after the service.
+
+**Option 3 also depends on the answer.** "Not needed: no service recorded" is
+true only where no service record matches the visit. Where one does but is
+covered by a post-agreement, the reason must say that instead (wow.md §13).
+Carl's choice of N (7 days, configurable per practice) does not depend on it.
+
+**Notes for the build once answered:**
+- This branch has no per-practice zone. `readPracticeDay` and `practiceDayOf`
+  are on `fix/tablet-day-boundary` and `fix/d2-practice-date`. Here,
+  `packages/domain/src/practice-day.ts` has `practiceToday(at)` and
+  `practiceDayWindow(day)` in the one `PRACTICE_TIMEZONE` (Australia/Sydney).
+  Use those, and switch to `practiceDayOf(at, practice.timezone)` when those
+  branches merge.
+- A terminal state already exists: the lifecycle allows
+  `draft | verification_pending | verification_failed | awaiting_signature ->
+  expired`, and nothing sets it today. Option 3 can use `expired` with a closure
+  reason, rather than adding a status.
+- The scheduler pattern is `@nestjs/schedule`, as in `RetentionSweepService`
+  (`@Cron`) and `PostServiceChaseSweep` (`@Interval`).
+
+**Carl's answer (10 Oct 2026): option (b).** Verbatim: *"go with option b for
+unsigned drafts - add a todo we will need to come back to this so that we can
+reconcile between the PMS, AOBPrinter and AOBPlatform"*. So:
+- an unsigned pre-agreement is **associated** with the visit's service record,
+  never linked to it, so the post-service agreement is still drafted, linked
+  and chased;
+- exactly one candidate: the association is recorded and the tablet's
+  "Unsigned from earlier days" entry says what was found and links to the
+  Reconciliation item;
+- more than one candidate: every candidate is named on that item for a person
+  to choose; nothing is associated automatically;
+- option 3 closes (`expired`, with a closure reason) only a draft with **no**
+  matching service after N days (default 7, versioned content, overridable per
+  practice). A draft associated with a service is not auto-closed; it waits for
+  the three-way reconciliation on the TODO.
+
+**Confirmed by Carl after the build (10 Oct 2026):** *"confirm all three,
+rebuild the vault and include all decisions made"*.
+1. **Choosing between drafts.** A visit is listed for a person to choose
+   whenever any unassociated draft matches it, including a draft created after
+   the service arrived. Automatic association happens only at the moment the
+   service arrives.
+2. **The close is more cautious than "neither linked nor associated".** A
+   draft also stays open if any service record matches its visit, if it was
+   superseded, if a remote capture link is still live, or if it is on legal
+   hold.
+3. **Treatment plans are never closed automatically** (they span six months).
+   Unsigned ongoing (enduring) drafts close after N days like episodic ones.
+
+**The three new vault event types are approved** (Carl: "rebuild the vault"):
+`agreement.service_associated`, `agreement.closed_unsigned` and
+`practice.unsigned_draft_closure_days_set`. They were added only to
+`VAULT_EVENT_TYPES` in `packages/contracts/src/vault.ts`, which the vault's
+whitelist is built from; nothing inside `apps/vault` changed. The vault is a
+human-authored zone, so this approval is recorded here.
+
+**What would reopen it:** the PMS / AOBPRINTER / AoBPlatform reconciliation on
+the TODO; anything that lets a pre-agreement signed after the service cover
+it.
+
+**Built (11 Oct 2026, branch `feat/unsigned-drafts-link-and-close`).** The
+choices the build made, each for Carl to confirm or overturn:
+- **Association storage: a table, `pre_agreement_associations`**, not a column
+  on `agreements`. It carries its own facts (`automatic` or `chosen`, who
+  chose, how many drafts matched), it keeps them off the row the HARD-01/02
+  triggers guard, and two UNIQUE indexes make it one draft per service and one
+  service per draft. Vault event: `agreement.service_associated`.
+- **Every path that creates a service record associates**: the invoice sync
+  and the DB4 print record (both through `upsertServiceRecord`), and the
+  service-rendered push. `service_records.agreementId` is never touched.
+- **A service is listed for a person to choose when ANY unassociated draft
+  matches it**, not only when two did at arrival: a draft that appears after
+  the service is a choice too, because the platform never associates
+  automatically after the moment of arrival.
+- **Option 3 is more conservative than "neither linked nor associated".** A
+  draft is also left open when any service record matches its visit (same
+  patient, provider and day) though nothing is associated with it, because
+  "no service recorded" would then be untrue (wow.md §13). Also never closed:
+  a superseded draft (its story is "replaced"), a draft with a live remote
+  capture link, and one on legal hold.
+- **Closable types are content** (`unsigned-draft-closure.json`:
+  `episodic_pre`, `episodic_post`, `enduring`). `treatment_plan` is left out:
+  it spans six months, so "no service on its day" does not mean "not needed".
+- **Open in-practice capture requests on a closed agreement are left as they
+  are** (they belong to the capture module). The tablet list already drops an
+  expired agreement; whether to cancel them is a follow-up.
+
+---
+
+## D-2026-10-10-05 - The kiosk tablet is locked with Android screen pinning, not a lockdown launcher
+
+**Date:** 10 October 2026. **Decided by:** Carl, *"Pinning - do it"*, after
+asking whether screen pinning was the better option than an app-like full
+screen.
+
+**Decision.** The kiosk's "locked-down launcher, no OS escape" requirement is
+met by **Android screen pinning**, a setting built into Android. The setup and
+daily steps are in `apps/web/app/kiosk/README.md` ("Locking the tablet to the
+kiosk") and `PRACTICE-ONBOARDING.md` (§6). No code changes.
+
+**Why.** Pinning installs nothing, so the zero-footprint kiosk rule (Carl,
+3 Sep 2026) still holds. It stops a patient reaching the home screen,
+notifications or another app, and unpinning needs the tablet's PIN. An
+app-like full screen only hides the browser bars, and a swipe brings them back.
+An installed web app (PWA) would need HTTPS in the practice and puts something
+on the device, so it would reopen the zero-footprint decision.
+
+**Known limit, accepted.** Pinning locks the tablet to the browser app, not to
+the kiosk page. A patient can still open a tab or type an address, and the
+kiosk's auto-reset does not run on a page that is not the kiosk.
+
+**Amended the same day: full screen is built, and pinning is optional.**
+Carl, on learning that pinning is done by hand on each tablet: *"in that case
+write code to make the app full screen. We cannot have dependency on the
+tablet"*. The kiosk now asks for full screen on the patient's first tap
+(branch `feat/kiosk-fullscreen`). Recorded with it, so nobody reads more into
+it than it gives:
+- **A tap is needed to start.** Browsers refuse full screen without a user
+  gesture, so it cannot happen when the page loads.
+- **The patient can always leave it.** A system swipe brings back Android's
+  bars, and no web page can prevent that. The next tap goes full screen again.
+- **No web page can turn on pinning.** Android lets only an installed app or
+  device management start a lock. Automatic lockdown therefore needs something
+  installed on the tablet, which would reopen the zero-footprint decision
+  (Carl, 3 Sep 2026). Not decided; Carl was told the options.
+
+Pinning stays documented as optional extra lockdown for a practice that wants
+it.
+
+**What would reopen it:** patients leaving the kiosk page inside the browser in
+real use, or a practice that needs the tablet locked to one page. The next step
+would be a managed kiosk mode such as Samsung Knox, a device-management product
+that needs its own decision against the zero-footprint rule.
+
+---
+
+## D-2026-10-10-07 - The 14" kiosk tablet is designed portrait first; landscape still works
+
+**Date:** 10 October 2026. **Decided by:** Carl, *"yes switch to portrait
+first"*, after asking whether portrait or landscape is better for the patient
+on the 14" Galaxy Tab S10.
+
+**Decision.** For the 14" tablet, the kiosk is designed for **portrait first**:
+one readable column, the DB4 text at the top, the tick boxes and Back/Continue
+always in view below it, and a full-width signature pad. Landscape must still
+work well, with the two-column layout. The orientation is never locked (WCAG
+1.3.4): a patient with the tablet on their lap may turn it either way.
+
+**Why.** It is not more screen; the area is the same. But the content is a
+form, and the DB4 is an A4 portrait page: in portrait more of each page shows
+at once, and lines stay a readable length without columns. A 14" tablet handed
+to a patient is held like a clipboard. The signature pad is wider in portrait
+(about 850px) than it was in landscape, and the on-screen keyboard takes a
+smaller share of the screen.
+
+**What it supersedes.** The 27 Sep premise that the kiosk is designed for a
+10-11in tablet in landscape (~1180x820), for the 14" device only. The type
+scale, 44px targets and 18px floor from that decision are unchanged.
+
+**Practice setup to note:** a 14" tablet in portrait on a desk stand is about
+36 cm tall, so the stand's height and angle matter for seated and wheelchair
+users (see the physical-impairment entry in TODO.md).
+
+**Built on:** branch `fix/kiosk-tablet-fit`.
+
+**What would reopen it:** practices choosing a 10-11in tablet, or real patients
+finding portrait harder to sign on.
+
+---
+
+## D-2026-10-10-10 - Ticking stays as it is, no box on a kiosk page scrolls, and the tablet stays zero-footprint
+
+**Date:** 10 October 2026. **Decided by:** Carl: *"keep ticking as is, stay
+zero-footprint"* and *"Ticking before reading: Do not have boxes that
+scroll."*
+
+**1. Ticking stays as it is.** A patient may tick a page's affirmations
+without scrolling through its text first. There is no scroll-to-end gating.
+Each DB4 page's Continue still waits for that page's ticks (D-2026-09-27-07).
+
+**2. No box on a kiosk page scrolls.** Every ceremony page fits whole on the
+tablet screen. The DB4 text does not sit in its own scrolling box beside or
+above the tick boxes. Where a page's text is too long to fit at the kiosk type
+scale, it splits onto more pages, each with its own Back, Continue and ticks,
+decided by `rules/db4-pages.ts` (presentation, never the instrument). The one
+exception is a genuinely tiny viewport or heavy zoom (under 480px tall), where
+the whole page scrolls like an ordinary web page, as WCAG 1.4.10 requires.
+That is the page scrolling, not a box.
+
+**3. The tablet stays zero-footprint** (Carl, 3 Sep 2026, confirmed). Full
+screen on the first tap is the default; Android screen pinning is optional
+(D-2026-10-10-05). Automatic lockdown by an installed app is recorded on the
+TODO, not built.
+
+**Amended the same day: pages are sized to the screen** (Carl: *"go with
+option 1 for page sizing"*). With the scrolling box gone, even a normal
+three-page DB4 overflowed at every target size, because each page repeats its
+heading and form header. So the DB4 is split into blocks (heading lines,
+practice and patient details, each provider, each service row, each privacy
+paragraph, each statement), and the kiosk fills each page by measuring the
+space on the screen:
+- each section's ticks sit on that section's last page, and each page's
+  Continue waits for its own ticks;
+- page counts differ between portrait and landscape, and turning the tablet
+  re-flows the pages, keeping the patient's place and the ticks already given;
+- `rules/db4-pages.ts` still decides which blocks and ticks belong to which
+  section; measuring only decides where pages break;
+- where nothing can be measured, it falls back to the three fixed pages;
+- on a test device, whose developer panels cannot fit, the whole page may
+  scroll, never a box inside it.
+
+Declined: fixed splits sized for the smallest screen (option 2), and freeing
+height as a separate choice (option 3).
+
+**The smallest screen the rule holds on: 1280×800** (Carl: *"1280×800 is
+fine"*). At 1280×800 and larger, including every size of the 14" tablet, every
+page fits whole and nothing scrolls. Below that (shorter than 800px, or
+narrower than 1280px in landscape), a DB4 page that cannot fit may scroll as a
+whole page, never a box inside it. The signature step fits at 1280×800 and up.
+Below that it falls just short (25px at 1024×600, 52px at 960×600, with Edge's
+bars showing); there the signature page scrolls as a whole and every control
+stays reachable. Carl chose to accept this rather than shrink the kiosk footer:
+*"go with (a) for the signature step"*. Landscape on the 14" tablet confirmed
+working by Carl the same night.
+
+**Built on:** `fix/kiosk-tablet-fit` (items 1 and 2).
+
+**What would reopen it:** evidence that patients tick without reading in a
+way that matters to a dispute (item 1); a practice whose tablets must lock
+without staff action (item 3, see the TODO).
+
+---
+
+## D-2026-10-10-12 - The tablet's "Rotate" button reads "Re-Pair Tablet"
+
+**Date:** 10 October 2026. **Decided by:** Carl, *"make the button label read
+'Re-Pair Tablet'"*, after asking what Rotate meant on `/practice/devices`.
+
+**Decision.** The control that gives a tablet a new pairing credential is
+labelled **Re-Pair Tablet**, and every staff-facing sentence that said "rotate"
+says "re-pair" (the code shown once, the code expired, the confirm text, the
+progress label, the revoked status). "Rotate" read as turning the screen, which
+the kiosk's portrait/landscape work made worse.
+
+**Unchanged:** the act itself (a new credential; the old one stops at once; the
+device keeps its record and history), the string keys and the
+`POST /devices/:id/rotate` route. Re-pairing still does not ask for a fresh
+second factor, because the tablet stays in use and only its key changes.
+
+**What would reopen it:** practices still confusing it with screen rotation,
+or a second credential act that needs its own name.
+
+---
+
+## D-2026-10-10-03 - A practice's day is its own local day, in its own IANA timezone
+
+**Date:** 10 October 2026. **Decided by:** Carl: *"per-practice timezone, do
+it now on its own branch"*, after Claude found that the desk worked out
+"today" two different ways and both were wrong in Sydney every morning.
+
+**What was true before.** `tablet-sessions.service.ts` had two clocks.
+`today()` was the UTC date (`toISOString().slice(0, 10)`), compared with an
+appointment's calendar date; `startOfDay` was the server's local midnight
+(`setHours(0, 0, 0, 0)`). Under daylight saving Sydney is UTC+11, so the UTC
+date is still yesterday until 11am local time: every morning, today's
+appointment-linked agreements were missing from the desk and yesterday's still
+showed as today's. Production runs on UTC, so production had it as well as
+development.
+
+**The decision.**
+
+- **A practice's "day" is its own local day.**
+- **Each practice has an IANA timezone**, `practices.timezone`, defaulting to
+  `Australia/Sydney`. It is the zone NAME, never an offset (D-2026-09-12-17).
+- **Why per practice and not one constant.** Sydney, Brisbane, Adelaide,
+  Darwin, Perth and Hobart differ, and only some of them observe daylight
+  saving. A Perth practice's midnight is three hours after Sydney's in summer
+  and two in winter; a Brisbane practice's is an hour after Sydney's for half
+  the year and the same for the other half.
+- **Every desk day boundary uses that timezone:** the tablet's waiting list
+  (`readPushableRows`), "Unsigned from earlier days" (`unsignedEarlierDays`),
+  the post-service "covered today" read, the per-visit idempotency check, and
+  the agreement and service dates the desk writes when it locks particulars.
+- **The list of zones is versioned content**
+  (`packages/domain/content/practice-timezones.json`); a practice admin chooses
+  one on `/practice/channels`, and a change writes `practice.timezone_set`
+  through the outbox.
+
+**How it relates to D-2026-09-12-17.** That decision put a zone on every
+location AND on the practice, with the location's winning for anything that
+happened at a location. This builds the practice half only. The location half
+is not built; when it is, the location's zone should take precedence over this
+one for a desk at that location.
+
+**Enforced by:** `practiceDayOf` and `startOfPracticeDay`
+(`packages/domain/src/practice-day.ts`, tests across both daylight-saving
+changes); the `practices_timezone_check` CHECK and `@IsIn` on the DTO, both
+from the content list; `apps/core/test/practice-day-boundary.e2e-spec.ts`
+(`an_appointment_today_shows_on_the_desk_before_11am_sydney_time`,
+`a_perth_practice_uses_perth_midnight` and others; and, for the dates a lock
+writes, `a_push_before_11am_sydney_locks_d2_and_d5_on_the_practice_date`,
+`the_per_visit_offer_locks_d2_and_d5_on_the_practice_date`,
+`a_perth_push_locks_on_the_perth_date` and
+`a_perth_per_visit_offer_locks_on_the_perth_date`).
+
+**What would reopen it:** a practice spanning timezones (which is D-2026-09-12-17's
+location zone, still to build), or a telehealth service rendered for a patient
+in another state.
+
+---
+
 ## D-2026-10-11-01 - No password grant at the token endpoint, on any client, in either realm
 
 **Date:** 11 October 2026. **Decided by:** Carl, *"go with a+c, include

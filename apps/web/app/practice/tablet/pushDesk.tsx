@@ -30,7 +30,12 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { ArrowRight, Check, CheckCheck, PencilLine, RotateCcw, Send, UserRound } from 'lucide-react';
-import { DB4_PRINT_RECORD_REFUSED_CODE, type Db4PrintRecordIdentity } from '@aobplatform/contracts';
+import {
+  DB4_PRINT_RECORD_REFUSED_CODE,
+  DB4_PRINTED_NAME_DIFFERS_CODE,
+  type Db4PrintRecordIdentity,
+  type Db4PrintedNameDifference,
+} from '@aobplatform/contracts';
 import {
   ASSIGNOR_RELATIONSHIPS_VERSION,
   ASSIGNOR_RELATIONSHIP_OPTIONS,
@@ -177,6 +182,12 @@ export interface PushableRow {
    * on the row instead of discovering it by pressing Send.
    */
   printRecord?: { checks: string[]; print?: Db4PrintRecordIdentity } | null;
+  /**
+   * THE NAME PRINTED ON THE DB4 IS NOT THE PATIENT RECORD'S (D-2026-10-10-11).
+   * A WARNING: it never makes the row unsendable. Both names, because this is
+   * the practice's own staff list; never sent to a tablet.
+   */
+  printedNameDiffers?: Db4PrintedNameDifference | null;
   particularsLocked: boolean;
   /**
    * WHEN A PERSON SAID WHO IS SIGNING — `null` until somebody has (Carl, 7 Sep
@@ -562,6 +573,82 @@ export function destination(
  * somebody folds in which service or whose name — the words are a fixed
  * string-table entry per code, with no interpolation but the code itself.
  */
+/**
+ * THE PRINTED-NAME WARNING, IN OUR WORDS (D-2026-10-10-11) — `null` when the
+ * row carries none. A code this build has not met shows its code (CLAUDE.md
+ * §7c), and the fix is offered only under the code it is true for.
+ */
+export function describePrintedNameDifference(
+  difference: Pick<Db4PrintedNameDifference, 'code' | 'parts' | 'printed' | 'recorded'> | null | undefined,
+): {
+  code: string;
+  known: boolean;
+  printed: string;
+  recorded: string;
+  differs: string | null;
+} | null {
+  if (!difference) return null;
+  const copy = strings.tablet.printedName;
+  const known = difference.code === DB4_PRINTED_NAME_DIFFERS_CODE;
+  const joined = (given: string | null | undefined, family: string | null | undefined) =>
+    [given ?? copy.notPrinted, family ?? copy.notPrinted].join(' ');
+  const parts = (difference.parts ?? []).map((part) => copy.parts[part] ?? part);
+  return {
+    code: difference.code,
+    known,
+    printed: joined(difference.printed?.givenNames, difference.printed?.familyName),
+    recorded: joined(difference.recorded?.givenNames, difference.recorded?.familyName),
+    differs: parts.length > 0 ? copy.differs(parts.join(', ')) : null,
+  };
+}
+
+/**
+ * THE BAND ITSELF — a WARNING under the row, beside (never instead of) any
+ * reason it cannot go. Nothing in it disables anything.
+ */
+export function PrintedNameBand({
+  row,
+}: {
+  row: Pick<PushableRow, 'agreementId' | 'printedNameDiffers' | 'pushable'>;
+}) {
+  const info = describePrintedNameDifference(row.printedNameDiffers);
+  if (!info) return null;
+  const copy = strings.tablet.printedName;
+  const testId = `printed-name-${row.agreementId}`;
+  return (
+    <div className={rowStyles.band}>
+      {/*
+        `status`, not the Notice default `alert`: a warning that never blocks
+        should not interrupt a screen reader assertively on every row that has one.
+      */}
+      <Notice tone="warn" title={copy.title} role="status" data-testid={testId} data-code={info.code}>
+        {info.known ? (
+          <>
+            <p>{copy.observed}</p>
+            <dl data-testid={`${testId}-names`}>
+              <dt>{copy.printedLabel}</dt>
+              <dd data-testid={`${testId}-printed`}>{info.printed}</dd>
+              <dt>{copy.recordedLabel}</dt>
+              <dd data-testid={`${testId}-recorded`}>{info.recorded}</dd>
+            </dl>
+            {info.differs && <p>{info.differs}</p>}
+            {/*
+              TRUE FOR THIS ROW (wow.md §13). "Send to tablet still works" on a
+              row blocked for another reason would contradict the blocked band.
+            */}
+            <p data-testid={`${testId}-send`}>{row.pushable ? copy.stillSends : copy.notTheBlock}</p>
+            <p>{copy.patientSees}</p>
+            <p data-testid={`${testId}-fix`}>{copy.fix}</p>
+            <p>{copy.limit}</p>
+          </>
+        ) : (
+          <p>{copy.other(info.code)}</p>
+        )}
+      </Notice>
+    </div>
+  );
+}
+
 export function describePrintRecordCheck(code: string): { code: string; text: string } {
   return { code, text: strings.tablet.printRecordChecks[code] ?? strings.tablet.printRecordCheckOther(code) };
 }
@@ -637,6 +724,13 @@ export function describeRefusal(
         text: strings.tablet.blocked.agreement_not_pushable,
         link: destination('/practice/reconciliation', strings.tablet.toReconciliationRow, ctx),
       };
+    /*
+     * CLOSED BY THE SWEEP BETWEEN THE LIST AND SEND (D-2026-10-10-09 option 3).
+     * NO LINK: whether this visit needs another agreement is not something the
+     * refusal can know (wow.md §13), and the row leaves the list on the next read.
+     */
+    case 'agreement_closed_unsigned':
+      return { reason, text: strings.tablet.blocked.agreement_closed_unsigned };
     /*
      * NO LINK, AND THAT IS THE POINT (CLAUDE.md §7). The fix is not on another
      * screen: it is the control `fixFor` puts in this band, on this row. A
@@ -3513,6 +3607,11 @@ export function AgreementBands({
           </Notice>
         </div>
       )}
+      {/*
+        THE PRINTED NAME IS NOT THE RECORD'S (D-2026-10-10-11) — a warning on
+        any row, sendable or not. It disables nothing (hard rule 8).
+      */}
+      <PrintedNameBand row={row} />
       {outcome && (
         <div className={rowStyles.band}>
           <Notice

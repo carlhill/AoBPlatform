@@ -298,6 +298,30 @@ export const VAULT_EVENT_TYPES = [
    */
   'reconciliation.decided',
   /**
+   * AN UNSIGNED PRE-AGREEMENT WAS ASSOCIATED WITH ITS VISIT'S SERVICE RECORD
+   * (D-2026-10-10-09, Carl's option (b)). Associated, never linked: the
+   * service record's `agreementId` is left for the post-service agreement,
+   * which is still drafted, linked and chased. This records which service the
+   * unsigned draft's visit became, so the draft is no longer orphaned.
+   *
+   * `how` is `automatic` (exactly one draft matched as the service arrived)
+   * or `chosen` (a person picked one of several on Reconciliation). Subject is
+   * the agreement. IDS, THE DAY AND COUNTS ONLY: the service record id, the
+   * service day, how many drafts matched, and who chose where a person did.
+   * No name, no identifier value, no item number, no amount (hard rules 4, 9).
+   */
+  'agreement.service_associated',
+  /**
+   * AN UNSIGNED AGREEMENT CLOSED AS NOT NEEDED (D-2026-10-10-09, option 3).
+   * The closure sweep moved it to `expired` because no service was recorded
+   * for its visit -- none linked, none associated, none matching -- after N
+   * practice-local days. Written beside `agreement.status_changed`, in the
+   * same transaction. Carries the reason code, the content version and the N
+   * applied, and whether N was the practice's own or the default. CODES, DAYS
+   * AND VERSIONS ONLY: no name, no identifier value, no amount.
+   */
+  'agreement.closed_unsigned',
+  /**
    * A PERSON at the practice chased the patient — rang them, texted them,
    * caught them at the desk, put a letter in the post — and said what came of
    * it. The platform's own attempts are already evidenced by
@@ -533,6 +557,13 @@ export const VAULT_EVENT_TYPES = [
    */
   'practice.kiosk_idle_timeout_set',
   /**
+   * HOW MANY DAYS AN UNSIGNED AGREEMENT WAITS, WITH NO SERVICE RECORDED,
+   * BEFORE IT IS CLOSED (D-2026-10-10-09, option 3). The practice's own N, or
+   * a return to the versioned default. A number of days is not PII, so the
+   * new and previous values travel in the payload with the content version.
+   */
+  'practice.unsigned_draft_closure_days_set',
+  /**
    * WHICH AGREEMENT THE PRE-STEP OFFERS BY DEFAULT (Carl, 4 Sep 2026;
    * GA-PLAN B6).
    *
@@ -570,6 +601,17 @@ export const VAULT_EVENT_TYPES = [
    * evidence of anything.
    */
   'practice.surface_profile_set',
+  /**
+   * THE ZONE A PRACTICE'S DAY IS MEASURED IN (D-2026-10-10-03).
+   *
+   * Every desk day boundary turns at midnight in this zone: which agreements
+   * are today's on the tablet's list, which fall to "Unsigned from earlier
+   * days", and the date the desk writes as D2 when it locks particulars.
+   * Moving it moves every one of those lines, so who moved it, from what, to
+   * what, and from which version of the zone list is evidence. A zone name is
+   * not PII (REQ-LOG-08).
+   */
+  'practice.timezone_set',
   /**
    * THE PATIENT WOULD RATHER AGREE EACH VISIT (Carl, 4 Sep 2026).
    *

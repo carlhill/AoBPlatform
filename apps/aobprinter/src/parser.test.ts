@@ -29,12 +29,15 @@ import { DEFAULT_TEMPLATE_VERSION, parseTemplate, templateFor } from './template
 const FIXTURE = join(__dirname, '..', 'test-fixtures', 'pracsoft3-db4-probe.pdf');
 const CAPTURED_AT = '2026-09-17T00:00:00.000Z';
 
-function parseFixture() {
+/** The template every earlier record was stamped with; it stays loadable (hard rule 14). */
+const SEPTEMBER_TEMPLATE_VERSION = 'pracsoft3-db4-2026-09-1';
+
+function parseFixture(version: string = DEFAULT_TEMPLATE_VERSION) {
   const bytes = readFileSync(FIXTURE);
   const text = readPdfText(bytes);
   if (!text) throw new Error('the fixture has no readable text layer');
-  const template = templateFor(DEFAULT_TEMPLATE_VERSION);
-  if (!template) throw new Error('the default template is missing');
+  const template = templateFor(version);
+  if (!template) throw new Error(`the template ${version} is missing`);
   return parseDb4(template, { lines: text.lines, sourceSha256: sha256Hex(bytes), capturedAt: CAPTURED_AT });
 }
 
@@ -49,7 +52,7 @@ describe('the DB4 parser, over a page actually printed to AOBPRINTER', () => {
   });
 
   it('reads the form block, including the amounts PracSoft printed', () => {
-    const record = parseFixture()!;
+    const record = parseFixture(SEPTEMBER_TEMPLATE_VERSION)!;
     expect(record.form).toEqual({
       formCode: 'DB4',
       currency: 'AUD',
@@ -77,6 +80,57 @@ describe('the DB4 parser, over a page actually printed to AOBPRINTER', () => {
         benefitAssigned: '22.40',
       },
     ]);
+  });
+
+  it('db4_amount_keeps_the_dollar_exactly_as_printed (D-2026-10-10-08)', () => {
+    // Carl, 10 Oct 2026: "yes 45.05 no $ - go ahead and keep the $". The page
+    // prints `$45.05`; the default template now carries those characters,
+    // symbol included, and the screen and the Signed-DB4 reproduce them.
+    // Nothing is parsed to a number (hard rule 4 as narrowed by D-2026-09-14-02).
+    const record = parseFixture()!;
+    expect(record.parserTemplateVersion).toBe('pracsoft3-db4-2026-10-1');
+    expect(record.services?.map((s) => s.benefitAssigned)).toEqual(['$45.05', '$22.40']);
+    // Everything else on the row is unchanged from the September template.
+    const september = parseFixture(SEPTEMBER_TEMPLATE_VERSION)!;
+    expect(record.services?.map(({ benefitAssigned: _b, ...rest }) => rest)).toEqual(
+      september.services?.map(({ benefitAssigned: _b, ...rest }) => rest),
+    );
+  });
+
+  it('the -10-1 template keeps grouping commas and collapses stray spaces, and adds nothing', () => {
+    const template = templateFor('pracsoft3-db4-2026-10-1')!;
+    const record = parseDb4(template, {
+      lines: [
+        'Form Reference: HSS0610099099099099099',
+        '12/09/2026 12:03   14206   Iron infusion        $1,045.05',
+        '12/09/2026 12:03   23      Level B Surgery      $  45.05',
+        '12/09/2026 12:03   10990   Incentive            7.15',
+        '[X] I assign my right to benefits to the health professional who rendered the services.',
+      ],
+      sourceSha256: 'c'.repeat(64),
+      capturedAt: CAPTURED_AT,
+    })!;
+    expect(record.services?.map((s) => s.benefitAssigned)).toEqual(['$1,045.05', '$ 45.05', '7.15']);
+    // With a space after the `$`, -09-1 left the `$` on the end of the
+    // description; -10-1 takes it into the amount, so the description is clean.
+    expect(record.services?.[1]?.description).toBe('Level B Surgery');
+  });
+
+  it('the two templates differ ONLY in how the amount is carried', () => {
+    const september = templateFor(SEPTEMBER_TEMPLATE_VERSION)!;
+    const october = templateFor('pracsoft3-db4-2026-10-1')!;
+    const services = (t: typeof september) =>
+      t.extractors.findIndex((e) => e.kind === 'rows' && e.path === 'services');
+    const strip = (t: typeof september) =>
+      JSON.stringify(
+        t.extractors.filter((_, i) => i !== services(t)),
+        (_k, v: unknown) => (v instanceof RegExp ? v.source : v),
+      );
+    expect(services(october)).toBe(services(september));
+    expect(strip(october)).toBe(strip(september));
+    expect(october.constants).toEqual(september.constants);
+    expect(october.pms).toBe(september.pms);
+    expect(october.documentType).toBe(september.documentType);
   });
 
   it('reads the four heading lines in order, rejoining the one that wrapped', () => {
@@ -223,7 +277,10 @@ describe('the template is content, and a bad edit fails loudly', () => {
 
   it('the shipped template declares the version that travels on every record', () => {
     const template = templateFor(DEFAULT_TEMPLATE_VERSION)!;
-    expect(template.version).toBe('pracsoft3-db4-2026-09-1');
+    expect(template.version).toBe('pracsoft3-db4-2026-10-1');
+    // The superseded version stays built in, so a record stamped with it can
+    // still be re-read against the template that made it (hard rule 14).
+    expect(templateFor(SEPTEMBER_TEMPLATE_VERSION)?.version).toBe(SEPTEMBER_TEMPLATE_VERSION);
     expect(templateFor('pracsoft3-db4-2099-12-9')).toBeNull();
   });
 });
