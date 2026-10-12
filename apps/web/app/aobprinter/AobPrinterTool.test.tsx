@@ -9,9 +9,7 @@
  * and placed from what core recorded, and name a refusal by what core said —
  * with the script's fix only where that fix is true (wow.md §13).
  *
- * NOT IN THE WEB VITEST INCLUDE LIST, like `presets.test.ts` beside it:
- * `vitest.config.ts` does not name app/aobprinter, and adding it is Carl's
- * call (CLAUDE.md §7a rule 6). Run with a config that widens `include`.
+ * In the web Vitest include list since 12 October 2026, so CI runs it.
  *
  * Fake identities throughout (CLAUDE.md §7c).
  */
@@ -43,12 +41,17 @@ interface StubOptions {
   unplaced?: { chart: string; reason: string };
   /** A chart whose job cannot be read back. */
   unreadableChart?: string;
+  /** POST /arrivals never answers: the connection drops. */
+  arrivalUnreachable?: boolean;
+  /** The search AFTER an arrival fails with this status (the arrival itself succeeds). */
+  recheckFailsWith?: number;
 }
 
 function stubCore(opts: StubOptions = {}) {
   const calls: Call[] = [];
   const onFile = new Set(opts.onFile ?? []);
   const chartOfJob = new Map<string, string>();
+  const arrived = new Set<string>();
   const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
     const method = init?.method ?? 'GET';
     const body = typeof init?.body === 'string' ? JSON.parse(init.body) : undefined;
@@ -57,10 +60,13 @@ function stubCore(opts: StubOptions = {}) {
     const search = /\/patients\/search\?q=([^&]+)$/.exec(url);
     if (search) {
       const chart = decodeURIComponent(search[1]!);
+      if (opts.recheckFailsWith && arrived.has(chart)) return reply(opts.recheckFailsWith, { message: 'search broke' });
       return reply(200, onFile.has(chart) ? [{ id: `p-${chart}`, patientRecordNumber: chart }] : []);
     }
     if (url.endsWith('/arrivals') && method === 'POST') {
+      if (opts.arrivalUnreachable) throw new TypeError('Failed to fetch');
       if (opts.arrivalRefusal) return reply(opts.arrivalRefusal.status, opts.arrivalRefusal.body);
+      arrived.add((body as { pmsPatientRecordNumber: string }).pmsPatientRecordNumber);
       onFile.add((body as { pmsPatientRecordNumber: string }).pmsPatientRecordNumber);
       return reply(201, { arrivalId: 'a-1' });
     }
@@ -224,4 +230,25 @@ describe('Load test agreements', () => {
     );
     expect(screen.queryByText(/core had not finished/)).toBeNull();
   }, 20_000);
+});
+
+describe('Load test agreements: says only what it observed (review, wow.md 13)', () => {
+  it('a dropped connection on the arrival says core could not be reached, and sends nothing', async () => {
+    const { calls } = stubCore({ arrivalUnreachable: true });
+    render(<AobPrinterTool />);
+    fireEvent.click(screen.getByRole('button', { name: 'Load test agreements' }));
+    await waitFor(() => expect(screen.getByText(/Could not reach core/)).toBeTruthy());
+    expect(screen.getByText(/Nothing was sent\./)).toBeTruthy();
+    expect(printsOf(calls)).toHaveLength(0);
+  });
+
+  it('a failed re-check says the re-check failed, never that the arrival did not create the patient', async () => {
+    const { calls } = stubCore({ recheckFailsWith: 500 });
+    render(<AobPrinterTool />);
+    fireEvent.click(screen.getByRole('button', { name: 'Load test agreements' }));
+    await waitFor(() => expect(screen.getByText(/could not check whether/)).toBeTruthy());
+    expect(screen.queryByText(/did not create them/)).toBeNull();
+    expect(screen.queryByText(/No affiliation/)).toBeNull();
+    expect(printsOf(calls)).toHaveLength(0);
+  });
 });

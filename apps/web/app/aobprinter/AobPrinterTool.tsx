@@ -618,23 +618,45 @@ export function AobPrinterTool() {
          * What counts is whether the patient exists afterwards — an arrival
          * can be refused at the lock after the patient row is committed.
          */
-        const arrival = await fetch(`${coreBaseUrl()}/arrivals`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({
-            pmsPatientRecordNumber: p.patientRecordNumber,
-            familyName: p.familyName,
-            givenNames: p.givenNames,
-            dateOfBirth: p.dateOfBirth,
-            address: p.address,
-            providerNumber: LOAD_TEST_PROVIDER_NUMBER,
-            arrivedAt: '2026-01-01T00:00:00.000Z',
-            source: 'dev',
-            idempotencyKey: `dev-aobprinter-tool-${p.patientRecordNumber}`,
-          }),
-        });
-        const arrivalBody = await arrival.json().catch(() => null);
-        const after = await onFile(p.patientRecordNumber);
+        let arrival: Response;
+        let arrivalBody: unknown;
+        let after: { found: boolean; failure?: string };
+        try {
+          arrival = await fetch(`${coreBaseUrl()}/arrivals`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+              pmsPatientRecordNumber: p.patientRecordNumber,
+              familyName: p.familyName,
+              givenNames: p.givenNames,
+              dateOfBirth: p.dateOfBirth,
+              address: p.address,
+              providerNumber: LOAD_TEST_PROVIDER_NUMBER,
+              arrivedAt: '2026-01-01T00:00:00.000Z',
+              source: 'dev',
+              idempotencyKey: `dev-aobprinter-tool-${p.patientRecordNumber}`,
+            }),
+          });
+          arrivalBody = await arrival.json().catch(() => null);
+          after = await onFile(p.patientRecordNumber);
+        } catch (err) {
+          setLoadResult({
+            kind: 'refused',
+            text:
+              `Could not reach core at ${coreBaseUrl()} while adding ${name} (${p.patientRecordNumber}) ` +
+              `(${err instanceof Error ? err.message : String(err)}). Nothing was sent.`,
+          });
+          return;
+        }
+        if (after.failure) {
+          setLoadResult({
+            kind: 'refused',
+            text:
+              `POST /arrivals for ${name} (${p.patientRecordNumber}) answered HTTP ${arrival.status}, but the tool ` +
+              `could not check whether the patient is now on file (${after.failure}). Nothing was sent.`,
+          });
+          return;
+        }
         if (after.found) {
           created.push(name);
           continue;
