@@ -6,9 +6,9 @@ import { enqueueVaultEvent } from '@aobplatform/vault-client';
 /**
  * THE VAULT EVENTS A TELEHEALTH SESSION EMITS — APPROVED BY CARL, 12 OCT 2026
  * (TELEHEALTH-PLAN.md §6 item 8; DECISIONS.md D-2026-10-12-02, "Carl's ruling"
- * item 1).
+ * item 1; the eighth, `telehealth.code_wrong`, item 8, later the same day).
  *
- * The seven types below are in `VAULT_EVENT_TYPES` (packages/contracts), so
+ * The eight types below are in `VAULT_EVENT_TYPES` (packages/contracts), so
  * the vault's whitelist accepts them. Every domain write in `TelehealthService`
  * hands its event to `record` INSIDE THE SAME TRANSACTION as the write, and
  * `record` enqueues it on the vault outbox with that same `tx`: the domain
@@ -45,6 +45,8 @@ export type TelehealthVaultEvent =
     }
   | { type: 'telehealth.link_sent'; payload: { channel: string; sendCount: number; codeExpiresAt: string } }
   | { type: 'telehealth.code_checked'; payload: { attempts: number } }
+  /** A wrong code still under the limit: the count after this attempt. Never the code or the digits entered. */
+  | { type: 'telehealth.code_wrong'; payload: { attempts: number } }
   | { type: 'telehealth.code_locked_out'; payload: { attempts: number; reviewTaskId: string } }
   | { type: 'telehealth.consent_recorded'; payload: { consentKey: string; contentVersion: string; consenterIsPatient: boolean } }
   | {
@@ -64,6 +66,7 @@ export const TELEHEALTH_EVENT_TYPES = [
   'telehealth.session_opened',
   'telehealth.link_sent',
   'telehealth.code_checked',
+  'telehealth.code_wrong',
   'telehealth.code_locked_out',
   'telehealth.consent_recorded',
   'telehealth.not_done',

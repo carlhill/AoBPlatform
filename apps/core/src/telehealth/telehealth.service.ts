@@ -566,6 +566,19 @@ export class TelehealthService {
           });
           return refuse(423, 'locked', 0);
         }
+        /*
+         * VAULTED WHEN IT HAPPENS (D-2026-10-12-02 ruling item 8), on this
+         * same `tx` as the count above, so the count and its event commit
+         * together or not at all (hard rule 11). Without it a wrong attempt
+         * reached the vault only through a later `code_checked` or
+         * `code_locked_out`, and a fresh send that resets the count lost it.
+         * The attempt that reaches the limit is `code_locked_out` alone,
+         * which already carries the count: one attempt, one event.
+         */
+        await this.record(tx, session.id, { principalType: 'system', id: 'core' }, {
+          type: 'telehealth.code_wrong',
+          payload: { attempts },
+        });
         return refuse(400, 'wrong_code', limit - attempts);
       }
 
