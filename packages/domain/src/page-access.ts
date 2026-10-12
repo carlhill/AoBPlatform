@@ -474,6 +474,16 @@ export const PAGES: Readonly<Record<string, PageRule>> = {
    * widening invisible, and an unclassified child must fail closed rather than
    * be answered for by its parent.
    */
+  /*
+   * TELEHEALTH (TELEHEALTH-PLAN.md §8 step 2). PRACTITIONER ONLY for now: the
+   * practitioner on the call checks identity and reads out the code. Reception's
+   * phone follow-up (step 4) widens this, by its own entry, when it is built.
+   */
+  '/practice/practitioner/telehealth': {
+    audiences: ['practitioner'],
+    why: 'A practitioner on a phone or video call checks who they are speaking to, sends a link to the contact on the record, reads out the code, and sees when the patient has agreed. It never stops a consultation: the step can always be recorded as not done, with a reason.',
+  },
+
   '/practice/practitioner/waiting': {
     audiences: ['practitioner', 'practice'],
     why: 'Who is waiting today and whether their paperwork is done. A practitioner sees only their own list; an administrator, manager or receptionist sees every practitioner’s, grouped, because knowing who is waiting for whom is the front desk’s job. It reports and never gates — nothing on it can stop a patient being seen.',

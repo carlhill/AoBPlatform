@@ -4055,3 +4055,78 @@ as built, with why, and what would reopen it.
 **What would reopen it:** Carl wanting the phone to show its own layout rather
 than the tablet's; a decision that a link should never take a drawn signature;
 or a practice wanting reception's resend to open a link without sending one.
+
+## D-2026-10-12-02 - APPROVED by Carl (12 Oct 2026): the vault event types for a telehealth session, and the seven provisional choices
+
+**Date:** 12 October 2026. **Proposed by:** Claude, building TELEHEALTH-PLAN.md §8
+step 2. **Status: APPROVED by Carl, 12 October 2026 ("agree to all"), see
+"Carl's ruling" below.** Until the wiring PR lands, what follows still holds:
+the feature is behind `TELEHEALTH_ENABLED` (default off), and while
+`TELEHEALTH_VAULT_EVENTS_APPROVED` in `apps/core/src/telehealth/telehealth-evidence.ts`
+is false core runs it only when `NODE_ENV` is `development` or `test`; it fails
+closed everywhere else, staging and an unset `NODE_ENV` included.
+
+**Why it needs a decision.** Additions to `VAULT_EVENT_TYPES` need human
+approval (the vault is a human-authored zone, CLAUDE.md §7c). Every telehealth
+write already hands its event to `TelehealthEvidence.record` inside its own
+transaction; on approval the sink becomes `enqueueVaultEvent` and the outbox
+does the rest (hard rule 11).
+
+**Already vaulted, no new type needed:** the practitioner's identity check on
+the call is `verification.staff_verified` (channel `telehealth`, identifier
+types joined, never values), through `VerificationService.recordStaffVerified`.
+
+**The proposed types.** Subject `TelehealthSession`. Payloads are ids, types,
+codes, counts and times only: never the 6-digit code, a contact, a name or the
+`other` note (`assertNoValues` refuses such keys).
+
+| Type | Actor | Payload |
+|---|---|---|
+| `telehealth.session_opened` | practitioner | patientId, practitionerId, affiliationId, verificationEventId, identifierTypeCount, consenterIsPatient, channel, contentVersion |
+| `telehealth.link_sent` | practitioner | channel, sendCount, codeExpiresAt |
+| `telehealth.code_checked` | system | attempts |
+| `telehealth.code_locked_out` | system | attempts, reviewTaskId |
+| `telehealth.consent_recorded` | system | consentKey, contentVersion, consenterIsPatient |
+| `telehealth.not_done` | practitioner | reason, reasonsVersion, hasNote, fromState, consultationAt, recordedAt |
+| `telehealth.did_not_proceed` | practitioner | fromState, consultationAt, recordedAt |
+
+**Also for Carl, decided provisionally in the build and easy to change:**
+- the code locks after 5 wrong attempts (the D-06 default the identity
+  challenge uses); the plan says "a few". Content: `telehealth.json`;
+- the page stays open 12 hours after the code (`pageHours`), so one page
+  covers a consultation day. No requirement names this number;
+- the telehealth email uses a neutral footer: the shared footer's tagline
+  ("Medicare assignment of benefit") and never-ask line ("a Medicare number")
+  are replaced for this message only, because of G10;
+- the telehealth page sits in the `practitioner_pages` surface, so a practice
+  on the `db4` profile does not see it. Telehealth may want its own surface;
+- the consent wording: "Yes, start my telehealth consultation with
+  {providerName}", and a carer form. TELEHEALTH-PLAN.md §9 leaves the wording
+  to Carl;
+- **the name "AoBPlatform" (AoB = Assignment of Benefit) against G10**: it is
+  still the email footer's organisation, the Shell wordmark on the patient
+  page, and the product name elsewhere. The page's own title and description
+  are neutral now; the name itself is Carl's call;
+- **no age check when the patient consents for themselves.** A patient under
+  14 can be recorded as agreeing to the consultation. TELEHEALTH-PLAN.md §3
+  step 4 says the signer rules apply (14+ may self-assign); nothing was changed
+  pending Carl's ruling.
+
+**Carl's ruling (12 October 2026, "agree to all").** Every item above is
+approved as proposed:
+1. the seven `telehealth.*` event types and payloads in the table. The wiring
+   (add them to `VAULT_EVENT_TYPES`, replace the sink with `enqueueVaultEvent`,
+   set `TELEHEALTH_VAULT_EVENTS_APPROVED` to true, all in one commit) follows in
+   its own PR from `main`, so this PR stays as reviewed;
+2. the name "AoBPlatform" stays in the email footer and the Shell wordmark;
+3. no age check when the patient consents for themselves to the consultation.
+   This is consent to the call only: the DB4 signed in step 3 still applies the
+   signer rules (14+ may self-assign, hard rule 10);
+4. 5 wrong attempts lock the code, and the page stays open 12 hours;
+5. telehealth stays in the `practitioner_pages` surface;
+6. the English consent wording as written, carer form included;
+7. the carer path records no name; the staff-list block runs at the DB4 in
+   step 3.
+
+**What would reopen it:** Carl choosing different event names or payloads, or
+the Department's answer to G10 changing what the step before the call records.

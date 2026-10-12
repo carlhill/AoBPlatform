@@ -139,7 +139,19 @@ export class VerificationService {
   async recordStaffVerified(
     tx: Prisma.TransactionClient,
     practiceId: string,
-    input: { patientId: string; identifierTypes: string[]; staffId: string; channel?: string },
+    input: {
+      patientId: string;
+      identifierTypes: string[];
+      staffId: string;
+      channel?: string;
+      /**
+       * WHO MADE THE CHECK, AS A PRINCIPAL TYPE. Reception across the desk is
+       * `staff` (the default, unchanged for every existing caller); the
+       * practitioner on a telehealth call is `practitioner` (TELEHEALTH-PLAN.md
+       * §3 step 3). The vault event names the real principal.
+       */
+      principalType?: 'staff' | 'practitioner';
+    },
   ): Promise<{ verificationEventId: string; identifierTypes: string[] }> {
     try {
       assertValidIdentifierSet(input.identifierTypes);
@@ -188,7 +200,7 @@ export class VerificationService {
     });
     await enqueueVaultEvent(tx, {
       type: 'verification.staff_verified',
-      actor: { principalType: 'staff', id: input.staffId },
+      actor: { principalType: input.principalType ?? 'staff', id: input.staffId },
       subject: { type: 'VerificationEvent', id: event.id },
       payload: {
         outcome: 'passed',
