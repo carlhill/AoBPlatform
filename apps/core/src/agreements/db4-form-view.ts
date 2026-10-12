@@ -6,6 +6,7 @@ import type {
   Db4PrintRecordCheck,
   PrintJobEnvelope,
 } from '@aobplatform/contracts';
+import { db4PrintedNamePartsDiffering } from '@aobplatform/contracts';
 
 /* ---------------------------------------------------------------------------
  * THE DB4 AS THE PATIENT READS IT — built here, on the server, once.
@@ -441,6 +442,12 @@ function anyServiceDateIn(source: Record<string, unknown>): string | undefined {
   return read(form.serviceDate) ?? rows(source.services).map((service) => read(service.serviceDate)).find(Boolean);
 }
 
+/** The name of the patient the agreement is FOR, as our record holds it. */
+export interface PatientNameOnRecord {
+  readonly givenNames?: string | null;
+  readonly familyName?: string | null;
+}
+
 /**
  * THE CHECKS THIS PRINT RECORD FAILS, ALL OF THEM, IN THE DECLARED ORDER.
  *
@@ -462,7 +469,15 @@ function anyServiceDateIn(source: Record<string, unknown>): string | undefined {
  * item number or an amount, which is what makes them safe in an HTTP body, a
  * log line and a vault event.
  */
-export function checkDb4PrintRecord(envelope: PrintJobEnvelope): readonly Db4PrintRecordCheck[] {
+export function checkDb4PrintRecord(
+  envelope: PrintJobEnvelope,
+  /*
+   * THE PATIENT ON RECORD, when the caller has one. Optional because the
+   * envelope alone cannot say who the agreement is for; a caller that does
+   * not pass it is not asked the name question (D-2026-10-11-06).
+   */
+  onRecord?: PatientNameOnRecord | null,
+): readonly Db4PrintRecordCheck[] {
   const source = (envelope ?? {}) as unknown as Record<string, unknown>;
   const patient = (source.patient ?? {}) as Record<string, unknown>;
   const services = rows(source.services);
@@ -570,6 +585,42 @@ export function checkDb4PrintRecord(envelope: PrintJobEnvelope): readonly Db4Pri
    */
   if (typeof source.unparsedServiceLines === 'number' && source.unparsedServiceLines > 0) {
     failed.push('print_record_service_lines_unread');
+  }
+
+  /*
+   * THE PRINTED NAME AGAINST THE PATIENT ON RECORD (Carl, 11 October 2026:
+   * *"STOP and tell Reception that PMS is sending a diff name for PMSID xxx.
+   * Is this correct?"*; D-2026-10-11-06).
+   *
+   * Ingest matched this form to a patient on the PMS patient ID alone (hard
+   * rule 1), so nothing upstream ever compared the names.
+   *
+   * ONE RULE, SHARED WITH THE DESK'S WARNING BAND (D-2026-10-10-11). The
+   * comparison is `db4PrintedNamePartsDiffering` from contracts, the same
+   * function that decides `nameDiffers` on the row, so the band and this
+   * refusal can never disagree (Carl, 11 October 2026). Only a part that was
+   * PRINTED is compared; when both were, the same whole name split at a
+   * different space is the same name; case, spacing, NFC and typographic
+   * apostrophes and dashes are ignored, and nothing else is.
+   *
+   * THE RECORDED NAME IS READ AS THE DESK ROW READS IT: any string, an empty
+   * one included. Treating '' as "no record" here while the band compared it
+   * would draw a band saying Send is stopped on a row Send could reach. No
+   * record passed in at all is a caller that cannot say.
+   *
+   * A CODE, NEVER EITHER NAME (hard rule 9).
+   */
+  const recordedGiven = onRecord?.givenNames;
+  const recordedFamily = onRecord?.familyName;
+  if (
+    typeof recordedGiven === 'string' &&
+    typeof recordedFamily === 'string' &&
+    db4PrintedNamePartsDiffering(
+      { givenNames: text(patient.givenNames) ?? null, familyName: text(patient.familyName) ?? null },
+      { givenNames: recordedGiven, familyName: recordedFamily },
+    ).length > 0
+  ) {
+    failed.push('print_record_patient_name_differs');
   }
 
   return failed;

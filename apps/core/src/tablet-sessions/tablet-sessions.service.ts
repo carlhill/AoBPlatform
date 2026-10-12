@@ -201,9 +201,11 @@ export interface PushableRow {
   printRecord: { checks: readonly Db4PrintRecordCheck[]; print: Db4PrintRecordIdentity } | null;
   /**
    * THE NAME PRINTED ON THE DB4 IS NOT THE PATIENT RECORD'S NAME
-   * (D-2026-10-10-11). A WARNING, NEVER A REASON: it never touches `pushable`
-   * or `blockedReason`, so Send to tablet stays live and signing is never
-   * blocked (hard rule 8). It carries both names because this is the
+   * (D-2026-10-10-11). THE WARNING, SHOWN BESIDE ANY REASON. This field
+   * itself never touches `pushable` or `blockedReason`; since D-2026-10-11-06
+   * the same comparison ALSO puts `print_record_patient_name_differs` in
+   * `checks`, and that is what stops Send to tablet — never the visit (hard
+   * rule 8). It carries both names because this is the
    * practice's own staff list, behind RLS, where the name already appears; it
    * is never on a tablet payload, in a log or in an event. `null` when the
    * names match, the form printed none, or the row did not come off a DB4.
@@ -1578,7 +1580,7 @@ export class TabletSessionsService {
       if (!answer) continue;
       /* WHICH PAGE, ALWAYS — a fact about provenance, not about a fault. */
       if (answer.identity) row.printRecord = { checks: answer.checks, print: answer.identity };
-      /* A WARNING ON ANY ROW, BLOCKED OR NOT, AND NEVER A STOP (D-2026-10-10-11). */
+      /* THE WARNING, ON ANY ROW, BLOCKED OR NOT (D-2026-10-10-11). The stop is in `checks`. */
       row.printedNameDiffers = answer.nameDiffers ?? null;
       if (answer.checks.length === 0 || !canBeStopped.has(row.agreementId)) continue;
       row.pushable = false;

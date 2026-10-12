@@ -17,7 +17,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 | | Count |
 |---|---|
-| Exported symbols indexed | 2508 |
+| Exported symbols indexed | 2509 |
 | Files scanned for exports | 583 |
 | Files scanned for imports | 626 |
 | Exports with no comment of their own | 1019 |
@@ -35,7 +35,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 - [Contracts types](#contracts-types) — 121
 - [Contracts functions and constants](#contracts-functions-and-constants) — 37
 - [Core services, controllers and modules](#core-services-controllers-and-modules) — 290
-- [Core helpers, constants and types](#core-helpers-constants-and-types) — 230
+- [Core helpers, constants and types](#core-helpers-constants-and-types) — 231
 - [AOBPRINTER (the desktop print channel)](#aobprinter-the-desktop-print-channel-) — 163
 
 ## Web components
@@ -1908,6 +1908,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `VAULT_EVENT_TYPES` | contracts:vault.ts | Event type registry. | **1** · vault:events/create-event.dto.ts |
 | `answersEnduringRules` | contracts:rules-engine.ts | DID THE RULE SET ANSWER THE ENDURING QUESTIONS AT ALL? | **1** · core:agreements/agreements.service.ts |
 | `db4PrintedNameDifference` | contracts:db4-printed-name.ts | The staff-desk warning, or `null` when the printed name matches the record. | **1** · core:agreements/agreements.service.ts |
+| `db4PrintedNamePartsDiffering` | contracts:db4-printed-name.ts | Which parts differ, in `DB4_NAME_PARTS` order. | **1** · core:agreements/db4-form-view.ts |
 | `isSilentRestoreClient` | contracts:auth.ts |  | **1** · web:AccessGuard.tsx |
 | `withSilentRestore` | contracts:auth.ts | Add the marker to a URL an invitation will return to. | **1** · auth-client:keycloak-admin.ts |
 | `ARRIVAL_MOVE_REFUSALS` | contracts:arrivals.ts | WHY A ROW COULD NOT BE MOVED — a CODE the console maps to words and a destination, never prose (CLAUDE.md §7, "shortcuts to the answer"). | 0 |
@@ -1924,7 +1925,6 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `SIGNATURE_METHODS` | contracts:signature.ts | REQ-SIG-01 — the five recognised marks. | 0 |
 | `SILENT_RESTORE_CLIENTS` | contracts:auth.ts | The Keycloak clients an invitation may name. | 0 |
 | `comparableNamePart` | contracts:db4-printed-name.ts | One name part reduced for comparison. | 0 |
-| `db4PrintedNamePartsDiffering` | contracts:db4-printed-name.ts | Which parts differ, in `DB4_NAME_PARTS` order. | 0 |
 
 ## Core services, controllers and modules
 
@@ -2225,7 +2225,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Core helpers, constants and types
 
-230 exports.
+231 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -2398,6 +2398,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `PAIRING_ATTEMPT_LIMIT` | core:devices/pairing-rate-limit.ts | Ten wrong codes in ten minutes from one address. | 0 |
 | `PAIRING_ATTEMPT_WINDOW_MS` | core:devices/pairing-rate-limit.ts |  | 0 |
 | `PORTAL_PASSKEY_ATTEMPT_WINDOW_MS` | core:portal/portal-passkey-rate-limit.ts |  | 0 |
+| `PatientNameOnRecord` | core:agreements/db4-form-view.ts | The name of the patient the agreement is FOR, as our record holds it. | 0 |
 | `PendingServiceDescriptionRow` | core:service-descriptions/service-descriptions.service.ts |  | 0 |
 | `PortalAuthenticationContext` | core:portal/portal-authenticator.ts |  | 0 |
 | `PortalAuthenticationOutcome` | core:portal/portal-authenticator.ts |  | 0 |

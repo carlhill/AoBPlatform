@@ -2762,6 +2762,58 @@ describe('the refusal words', () => {
     expect(identity.textContent).not.toContain(strings.tablet.printRecordId.noFileNote);
   });
 
+  /*
+   * THE PRINTED NAME IS NOT THE NAME ON RECORD (Carl, 11 October 2026:
+   * "STOP and tell Reception that PMS is sending a diff name for PMSID xxx.
+   * Is this correct?"; D-2026-10-11-06).
+   */
+  it('printed_name_differs_asks_reception_naming_the_pms_patient_id_and_the_record', () => {
+    const info = describeRefusal('print_record_incomplete', {
+      checks: ['print_record_patient_name_differs'],
+      pmsPatientId: 'DESK-EMIN-DUMMYFIELD',
+      recordName: 'Emin Dummyfield',
+      patientId: 'patient-1',
+    });
+    const [line] = info.checks ?? [];
+    expect(line?.text).toBe(
+      strings.tablet.printRecordPatientNameDiffers('DESK-EMIN-DUMMYFIELD', 'Emin Dummyfield'),
+    );
+    expect(line?.text).toContain('PMS patient ID DESK-EMIN-DUMMYFIELD');
+    expect(line?.text).toContain('(Emin Dummyfield)');
+    expect(line?.text).toContain('Is this the right patient?');
+    // The fix for "our record is wrong" is the patient, where the name is corrected.
+    expect(line?.link?.href).toBe('/practice/patients/patient-1');
+    // The sentence and title ask; neither promises a reprint fixes it.
+    expect(info.title).toBe(strings.tablet.blocked.print_record_patient_name_differsTitle);
+    expect(info.text).toBe(strings.tablet.blocked.print_record_patient_name_differs);
+    expect(`${info.title} ${info.text}`).not.toMatch(/reprint/i);
+    expect(info.text).toMatch(/seen and billed either way/);
+  });
+
+  it('printed_name_differs_outranks_unread_lines_for_the_sentence_and_keeps_both_lines', () => {
+    const info = describeRefusal('print_record_incomplete', {
+      checks: ['print_record_service_lines_unread', 'print_record_patient_name_differs'],
+      print: UNREAD_PRINT,
+    });
+    expect(info.title).toBe(strings.tablet.blocked.print_record_patient_name_differsTitle);
+    expect(info.checks?.map((c) => c.code)).toEqual([
+      'print_record_service_lines_unread',
+      'print_record_patient_name_differs',
+    ]);
+    // Without the row's facts the question still reads, and offers no dead link.
+    expect(info.checks?.[1]?.text).toBe(strings.tablet.printRecordPatientNameDiffers(undefined, undefined));
+    expect(info.checks?.[1]?.link).toBeUndefined();
+  });
+
+  it('who_is_signing_title_asks_to_check_the_patient_when_the_name_differs', () => {
+    expect(
+      whoBlockedTitle({
+        blockedReason: 'print_record_incomplete',
+        printRecord: { checks: ['print_record_patient_name_differs'] },
+      }),
+    ).toBe(strings.tablet.whoBlockedByPatientNameDiffers);
+  });
+
   it('unparsed_service_lines_without_a_count_falls_back_to_the_plain_line', () => {
     // A refusal that lost its identity block still says what is wrong.
     const info = describeRefusal('print_record_incomplete', { checks: ['print_record_service_lines_unread'] });
@@ -3334,8 +3386,10 @@ describe('/practice/tablet — unsigned from earlier days', () => {
 /*
  * THE PRINTED NAME AGAINST THE PATIENT RECORD (D-2026-10-10-11; Carl, 10
  * October 2026: "B and tell the user to resend to AOBPrinter from PMS").
- * A WARNING band on the staff row: both names, the PracSoft reprint, and
- * Send to tablet left exactly as live as it was (hard rule 8).
+ * A WARNING band on the staff row: both names and the PracSoft reprint. Since
+ * D-2026-10-11-06 (Carl, 11 Oct 2026) the same comparison also refuses Send to
+ * tablet, so the row the server sends is blocked as a print-record refusal and
+ * the band says so. The patient is still seen and billed (hard rule 8).
  * Fixture names are obviously fake; no test name carries one.
  */
 describe('a DB4 whose printed name differs from the patient record', () => {
@@ -3344,10 +3398,13 @@ describe('a DB4 whose printed name differs from the patient record', () => {
     session = null;
   });
 
+  /** What the server sends now: the name check in `checks`, and the row blocked by it. */
   const DIFFERS = {
     ...READY,
+    pushable: false,
+    blockedReason: 'print_record_incomplete' as const,
     printRecord: {
-      checks: [] as string[],
+      checks: ['print_record_patient_name_differs'] as string[],
       print: {
         printJobId: 'job-fake',
         sourceSha256: 'd'.repeat(64),
@@ -3365,13 +3422,23 @@ describe('a DB4 whose printed name differs from the patient record', () => {
 
   it('no band when the row carries no difference', async () => {
     signedInAtPractice();
-    stubFetch({ rows: [{ ...DIFFERS, printedNameDiffers: null }] });
+    stubFetch({
+      rows: [
+        {
+          ...DIFFERS,
+          pushable: true,
+          blockedReason: null,
+          printRecord: { ...DIFFERS.printRecord, checks: [] },
+          printedNameDiffers: null,
+        },
+      ],
+    });
     render(<TabletView practiceId={PRACTICE} />);
     await waitFor(() => expect(screen.getByTestId(`pushable-${READY.agreementId}`)).toBeTruthy());
     expect(screen.queryByTestId(`printed-name-${READY.agreementId}`)).toBeNull();
   });
 
-  it('shows both names, what differs and the PracSoft reprint, with Send still live', async () => {
+  it('shows both names, what differs and the PracSoft reprint, and the row cannot be sent', async () => {
     signedInAtPractice();
     stubFetch({ rows: [DIFFERS] });
     render(<TabletView practiceId={PRACTICE} />);
@@ -3389,25 +3456,38 @@ describe('a DB4 whose printed name differs from the patient record', () => {
     expect(strings.tablet.printedName.fix).toContain('PracSoft');
     expect(strings.tablet.printedName.fix).toContain('AOBPrinter');
 
-    // NOT A REFUSAL: no blocked band, and Send goes live once a tablet is chosen.
-    expect(screen.queryByTestId(`blocked-${READY.agreementId}`)).toBeNull();
-    fireEvent.change(screen.getByTestId(`target-${READY.agreementId}`), { target: { value: TABLET.id } });
-    await waitFor(() =>
-      expect((screen.getByTestId(`send-${READY.agreementId}`) as HTMLButtonElement).disabled).toBe(false),
+    /*
+     * AND A REFUSAL (D-2026-10-11-06). This used to assert the opposite — no
+     * blocked band and a live Send — which was D-2026-10-10-11's rule. The
+     * blocked band asks "Is this the right patient?", Send stays dead, and the
+     * warning band says why rather than claiming Send still works.
+     */
+    expect(screen.getByTestId(`printed-name-${READY.agreementId}-send`).textContent).toBe(
+      strings.tablet.printedName.stopsSend,
     );
+    expect(screen.getByTestId(`blocked-${READY.agreementId}`).textContent).toContain(
+      strings.tablet.blocked.print_record_patient_name_differsTitle,
+    );
+    expect((screen.getByTestId(`send-${READY.agreementId}`) as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it('on a row blocked for another reason it never says Send still works', async () => {
+  it('on a row blocked for another reason too, the band still only says what is true', async () => {
     // wow.md §13: the blocked band says this row cannot be sent; this band must not contradict it.
     signedInAtPractice();
-    stubFetch({ rows: [{ ...DIFFERS, pushable: false, blockedReason: 'service_description_missing' as const }] });
+    /*
+     * A ROW THE SERVER CAN ACTUALLY SEND: `patient_confidential` is not one of
+     * the reasons the print-record refusal takes over, so the row keeps it and
+     * the name check rides in `printRecord.checks` beside the band. (An
+     * earlier version used `service_description_missing`, which the server
+     * replaces with `print_record_incomplete`, so it tested a row that cannot
+     * happen.)
+     */
+    stubFetch({ rows: [{ ...DIFFERS, pushable: false, blockedReason: 'patient_confidential' as const }] });
     render(<TabletView practiceId={PRACTICE} />);
     await waitFor(() => expect(screen.getByTestId(`printed-name-${READY.agreementId}`)).toBeTruthy());
     const send = screen.getByTestId(`printed-name-${READY.agreementId}-send`);
-    expect(send.textContent).toBe(strings.tablet.printedName.notTheBlock);
-    expect(screen.getByTestId(`printed-name-${READY.agreementId}`).textContent).not.toContain(
-      strings.tablet.printedName.stillSends,
-    );
+    expect(send.textContent).toBe(strings.tablet.printedName.stopsSend);
+    expect(screen.getByTestId(`printed-name-${READY.agreementId}`).textContent).not.toMatch(/still works/i);
   });
 
   it('is announced politely, not as an alert', async () => {
@@ -3416,9 +3496,6 @@ describe('a DB4 whose printed name differs from the patient record', () => {
     render(<TabletView practiceId={PRACTICE} />);
     await waitFor(() => expect(screen.getByTestId(`printed-name-${READY.agreementId}`)).toBeTruthy());
     expect(screen.getByTestId(`printed-name-${READY.agreementId}`).getAttribute('role')).toBe('status');
-    expect(screen.getByTestId(`printed-name-${READY.agreementId}-send`).textContent).toBe(
-      strings.tablet.printedName.stillSends,
-    );
   });
 
   it('an unmapped notice code shows its code, and no remedy it was not written for', async () => {

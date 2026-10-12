@@ -83,6 +83,19 @@ describe('the printed name against the patient record', () => {
     expect(db4PrintedNamePartsDiffering(swapped, record)).toEqual(['given_names', 'family_name']);
   });
 
+  it('the same whole name split at a different space is no difference (D-2026-10-11-06)', () => {
+    // The template splits a printed name at its last space; a family name with
+    // a space in it then comes off the page split differently from the record.
+    const spaced = { givenNames: 'Testa', familyName: 'Van Der Fakename' };
+    expect(db4PrintedNameDifference({ givenNames: 'Testa Van Der', familyName: 'Fakename' }, spaced)).toBeNull();
+    expect(db4PrintedNameDifference({ givenNames: 'TESTA  van der', familyName: 'fakename' }, spaced)).toBeNull();
+    // A genuinely different whole name still differs, part by part.
+    expect(db4PrintedNamePartsDiffering({ givenNames: 'Testa Van De', familyName: 'Fakename' }, spaced)).toEqual([
+      'given_names',
+      'family_name',
+    ]);
+  });
+
   it('a part the form did not print is not compared - there is no second name on screen', () => {
     expect(db4PrintedNameDifference({ familyName: record.familyName }, record)).toBeNull();
     expect(db4PrintedNameDifference({ givenNames: '  ', familyName: undefined }, record)).toBeNull();

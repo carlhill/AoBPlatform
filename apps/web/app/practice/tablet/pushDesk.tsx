@@ -184,8 +184,10 @@ export interface PushableRow {
   printRecord?: { checks: string[]; print?: Db4PrintRecordIdentity } | null;
   /**
    * THE NAME PRINTED ON THE DB4 IS NOT THE PATIENT RECORD'S (D-2026-10-10-11).
-   * A WARNING: it never makes the row unsendable. Both names, because this is
-   * the practice's own staff list; never sent to a tablet.
+   * The warning band reads this; the stop arrives separately, as
+   * `print_record_patient_name_differs` in `printRecord.checks`
+   * (D-2026-10-11-06). Both names, because this is the practice's own staff
+   * list; never sent to a tablet.
    */
   printedNameDiffers?: Db4PrintedNameDifference | null;
   particularsLocked: boolean;
@@ -512,6 +514,14 @@ export interface RefusalContext {
   failures?: readonly string[];
   /** The `print` block a `print_record_incomplete` refusal carries. */
   print?: Db4PrintRecordIdentity;
+  /**
+   * THE ROW'S PMS PATIENT ID AND THE NAME ON RECORD, so the printed-name
+   * question can name both (D-2026-10-11-06). Off the ROW, never off the
+   * refusal: the wire carries codes, and the row already shows these two.
+   * `patientName` above is somebody else — whoever is on a busy tablet.
+   */
+  pmsPatientId?: string | null;
+  recordName?: string | null;
 }
 
 /**
@@ -604,8 +614,9 @@ export function PrintedNameBand({
   return (
     <div className={rowStyles.band}>
       {/*
-        `status`, not the Notice default `alert`: a warning that never blocks
-        should not interrupt a screen reader assertively on every row that has one.
+        `status`, not the Notice default `alert`. Since D-2026-10-11-06 the row
+        is also blocked, and the BLOCKED band is the one that alerts; announcing
+        the same fault assertively twice would only bury it.
       */}
       <Notice tone="warn" title={copy.title} role="status" data-testid={testId} data-code={info.code}>
         {info.known ? (
@@ -619,11 +630,11 @@ export function PrintedNameBand({
             </dl>
             {info.differs && <p>{info.differs}</p>}
             {/*
-              TRUE FOR THIS ROW (wow.md §13). "Send to tablet still works" on a
-              row blocked for another reason would contradict the blocked band.
+              TRUE FOR EVERY ROW THAT CARRIES THIS BAND (wow.md §13): the
+              comparison that draws it is the one that refuses the push
+              (`print_record_patient_name_differs`, D-2026-10-11-06).
             */}
-            <p data-testid={`${testId}-send`}>{row.pushable ? copy.stillSends : copy.notTheBlock}</p>
-            <p>{copy.patientSees}</p>
+            <p data-testid={`${testId}-send`}>{copy.stopsSend}</p>
             <p data-testid={`${testId}-fix`}>{copy.fix}</p>
             <p>{copy.limit}</p>
           </>
@@ -652,8 +663,23 @@ export function PrintedNameBand({
  */
 export function describePrintRecordCheck(
   code: string,
-  ctx: Pick<RefusalContext, 'print'> = {},
+  ctx: Pick<RefusalContext, 'print' | 'pmsPatientId' | 'recordName' | 'patientId' | 'audiences' | 'practiceId'> = {},
 ): { code: string; text: string; link?: { href: string; label: string } } {
+  /*
+   * THE NAME QUESTION (D-2026-10-11-06): which PMS patient ID, and whose name
+   * we hold for it, from the row. The link is the patient, because that is
+   * where the name on record is corrected — routed like every other link, so
+   * it is hidden rather than left to refuse.
+   */
+  if (code === 'print_record_patient_name_differs') {
+    return {
+      code,
+      text: strings.tablet.printRecordPatientNameDiffers(ctx.pmsPatientId, ctx.recordName),
+      link: ctx.patientId
+        ? destination(`/practice/patients/${ctx.patientId}`, strings.tablet.toPatient, ctx)
+        : undefined,
+    };
+  }
   /*
    * THE ONE CHECK WHOSE LINE CARRIES MORE THAN ITS CODE (D-2026-10-11-05):
    * how many service lines, on which form, read by which template — a count
@@ -893,14 +919,24 @@ export function describeRefusal(
        * title and sentence are the ones that do not promise a reprint.
        */
       const unread = (ctx.checks ?? []).includes('print_record_service_lines_unread');
+      /*
+       * AND A DIFFERENT NAME OUTRANKS BOTH (D-2026-10-11-06): it is about WHO
+       * the form is for, which matters before what it lists, and its own
+       * sentence promises neither fix because either side may be the wrong one.
+       */
+      const nameDiffers = (ctx.checks ?? []).includes('print_record_patient_name_differs');
       return {
         reason,
-        title: unread
-          ? strings.tablet.blocked.print_record_service_lines_unreadTitle
-          : strings.tablet.blocked.print_record_incompleteTitle,
-        text: unread
-          ? strings.tablet.blocked.print_record_service_lines_unread
-          : strings.tablet.blocked.print_record_incomplete,
+        title: nameDiffers
+          ? strings.tablet.blocked.print_record_patient_name_differsTitle
+          : unread
+            ? strings.tablet.blocked.print_record_service_lines_unreadTitle
+            : strings.tablet.blocked.print_record_incompleteTitle,
+        text: nameDiffers
+          ? strings.tablet.blocked.print_record_patient_name_differs
+          : unread
+            ? strings.tablet.blocked.print_record_service_lines_unread
+            : strings.tablet.blocked.print_record_incomplete,
         checks: (ctx.checks ?? []).map((code) => describePrintRecordCheck(code, ctx)),
         print: ctx.print,
       };
@@ -962,6 +998,9 @@ export function blockedByAnUnreadableForm(row: Pick<PushableRow, 'blockedReason'
  */
 export function whoBlockedTitle(row: Pick<PushableRow, 'blockedReason' | 'printRecord'>): string | undefined {
   if (!blockedByAnUnreadableForm(row)) return undefined;
+  if (row.printRecord?.checks.includes('print_record_patient_name_differs')) {
+    return strings.tablet.whoBlockedByPatientNameDiffers;
+  }
   return row.printRecord?.checks.includes('print_record_service_lines_unread')
     ? strings.tablet.whoBlockedByUnreadServiceLines
     : strings.tablet.whoBlockedByPrintRecord;
@@ -2220,6 +2259,8 @@ export function usePushDesk(practiceId: string): PushDesk {
             sessionId: sessionId ?? busySession?.id,
             providerType: row.providerType,
             patientId: row.patientId,
+            pmsPatientId: row.patientRecordNumber,
+            recordName: row.patientName,
             /*
              * THE SERVER'S OWN SENTENCE, KEPT. A refusal with no `reason`
              * code is not necessarily a refusal with nothing to say — the
@@ -2691,6 +2732,8 @@ export function usePushDesk(practiceId: string): PushDesk {
           info: describeRefusal(reason, {
             providerType: row.providerType,
             patientId: row.patientId,
+            pmsPatientId: row.patientRecordNumber,
+            recordName: row.patientName,
             rawMessage: message,
             checks,
             failures,
@@ -3601,6 +3644,8 @@ export function AgreementBands({
      */
     checks: row.printRecord?.checks,
     print: row.printRecord?.print,
+    pmsPatientId: row.patientRecordNumber,
+    recordName: row.patientName,
     audiences: desk.audiences,
     practiceId: desk.practiceId,
   });
