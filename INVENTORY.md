@@ -17,17 +17,17 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 | | Count |
 |---|---|
-| Exported symbols indexed | 2574 |
+| Exported symbols indexed | 2576 |
 | Files scanned for exports | 595 |
 | Files scanned for imports | 638 |
 | Exports with no comment of their own | 1044 |
-| Exports imported nowhere else | 1064 |
+| Exports imported nowhere else | 1065 |
 
 ## Sections
 
 - [Web components](#web-components) — 246
 - [Web hooks](#web-hooks) — 16
-- [Web helpers and constants](#web-helpers-and-constants) — 321
+- [Web helpers and constants](#web-helpers-and-constants) — 323
 - [Web types](#web-types) — 122
 - [Domain functions](#domain-functions) — 412
 - [Domain constants and content](#domain-constants-and-content) — 278
@@ -316,7 +316,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Web helpers and constants
 
-321 exports.
+323 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -564,6 +564,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `historyLine` | web:practice/patients/PatientWorkView.tsx | One history line: the words for the type, then whatever short codes it carries. | 0 |
 | `isExpiredSessionMessage` | web:apiError.ts | True for the message `explainFailure` produces for an expired session. | 0 |
 | `isTransientFailure` | web:kiosk/rules/retry.ts | Is this worth trying again? | 0 |
+| `isWaiting` | web:practice/practitioner/telehealth/TelehealthPanel.tsx | IS ANYBODY STILL ABOUT TO ACT ON THIS SESSION? | 0 |
 | `liveOnly` | web:practice/tablet/pushDesk.tsx | THE SESSIONS THAT STILL OWN A TABLET. | 0 |
 | `livePractices` | web:practice/practitioner/PractitionerLandingView.tsx | One row per practice they currently work at, de-duplicated by id. | 0 |
 | `logoutHint` | web:auth.ts | The assertion to name at logout, whether or not the session is still live. | 0 |
@@ -618,6 +619,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `queueTone` | web:practice/patients/PatientsQueueView.tsx | Stop-tone for a cross nobody has answered; warn while a tablet is live. | 0 |
 | `readLockFailure` | web:kiosk/Ceremony.tsx |  | 0 |
 | `redirectUri` | web:auth.ts |  | 0 |
+| `refusalFor` | web:patient/telehealth/[token]/TelehealthPatientView.tsx | WHAT A REFUSAL MEANS, FROM ITS CODE — NEVER FROM THE STATUS ALONE (wow.md §13). | 0 |
 | `relationshipDescription` | web:kiosk/rules/assignor.ts | What is actually sent as the relationship: the free text when the option asks for it, otherwise the option's own label. | 0 |
 | `relationshipFromSaved` | web:practice/tablet/pushDesk.tsx | THE SAVED RELATIONSHIP, BACK ONTO THE LIST IT CAME FROM. | 0 |
 | `rememberSignedIn` | web:auth.ts |  | 0 |
@@ -972,6 +974,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `invitationMessage` | domain:invitation.ts | What to tell whoever opened the link. | **1** · core:affiliations/invitation.service.ts |
 | `invitationSummary` | domain:invitation.ts | What the practitioner is being asked to agree to, in one sentence. | **1** · core:affiliations/invitation.service.ts |
 | `isAobPrinterRebaselineReason` | domain:aobprinter-rebaseline-reasons.ts | True only for a code the content file lists. | **1** · core:aobprinter-hosts/aobprinter-hosts.service.ts |
+| `isApprovedIdentifierType` | domain:identifiers.ts |  | **1** · core:telehealth/telehealth.service.ts |
 | `isAustralianState` | domain:public-holidays.ts |  | **1** · core:enduring/enduring.service.ts |
 | `isBusinessDay` | domain:enduring.ts |  | **1** · domain:departure-notice.ts |
 | `isClosureDue` | domain:unsigned-draft-closure.ts | DUE ON DAY `forDay + N`, NOT BEFORE. | **1** · core:unsigned-drafts/unsigned-draft-closure.sweep.ts |
@@ -1109,7 +1112,6 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `isActiveTabletSessionState` | domain:tablet-session.ts |  | 0 |
 | `isAgreementType` | domain:correspondence-log.ts | Is this a type this domain knows? | 0 |
 | `isAmendable` | domain:amendment.ts |  | 0 |
-| `isApprovedIdentifierType` | domain:identifiers.ts |  | 0 |
 | `isAuthorityBasisForAnother` | domain:assignor.ts |  | 0 |
 | `isChaseAttemptChannel` | domain:chase-attempt.ts |  | 0 |
 | `isChaseAttemptOutcome` | domain:chase-attempt.ts |  | 0 |
@@ -1200,6 +1202,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `CONFIRMABLE_DETAIL_TYPES` | domain:tablet-session.ts | WHAT THE PATIENT TICKS, AND WHY IT IS NOT THE IDENTIFIER LIST. | **5** · core:portal/portal-reads.service.ts, core:tablet-sessions/dispute-resolution.dto.ts, core:tablet-sessions/tablet-sessions.dto.ts, +2 more |
 | `MIN_AGE_ASSIGN_FOR_OTHER` | domain:guards.ts |  | **5** · web:kiosk/rules/assignor.ts, web:kiosk/screens/AssignorScreen.tsx, web:practice/patients/NewAgreementPanel.tsx, +2 more |
 | `CHECK_CATALOGUE` | domain:checks.ts | The catalogue. | **4** · core:artefacts/artefacts.service.ts, core:organisations/audit.service.ts, core:organisations/checks.service.ts, +1 more |
+| `APPROVED_IDENTIFIER_TYPES` | domain:identifiers.ts |  | **3** · core:telehealth/telehealth.controller.ts, web:practice/channels/ChannelsView.tsx, domain:telehealth.ts |
 | `ASSIGNOR_RELATIONSHIPS_VERSION` | domain:assignor-relationships.ts | Recorded alongside the assignor, so a stored agreement says which list it was made from. | **3** · web:kiosk/rules/assignor.ts, web:practice/patients/NewAgreementPanel.tsx, web:practice/tablet/pushDesk.tsx |
 | `AUTHORITY_BASES_FOR_ANOTHER` | domain:assignor.ts | The fixed list from REQ-VUL-01, for somebody signing FOR ANOTHER PERSON. | **3** · core:agreements/agreements.dto.ts, core:arrivals/arrivals.dto.ts, domain:assignor-relationships.ts |
 | `BILLING_ROLES_VERSION` | domain:billing-roles.ts | Recorded alongside every role change, so a question asked in 2028 has an answer. | **3** · core:affiliations/affiliations.service.ts, core:arrivals/arrivals.service.ts, core:practices/practices.service.ts |
@@ -1207,12 +1210,12 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `EXTERNAL_LINKS` | domain:external-links.ts |  | **3** · web:OrgConsole.tsx, web:practice/practitioners/PractitionersView.tsx, domain:checks.ts |
 | `MIN_AGE_SELF_ASSIGN` | domain:guards.ts |  | **3** · web:kiosk/rules/assignor.ts, web:practice/patients/NewAgreementPanel.tsx, domain:auto-capture.ts |
 | `SERVICE_DESCRIPTIONS_VERSION` | domain:service-descriptions.ts | Recorded with every description set, so the record says which list it came from. | **3** · core:arrivals/arrivals.service.ts, core:auto-capture/auto-capture.service.ts, core:service-descriptions/service-descriptions.service.ts |
+| `TELEHEALTH_CONTENT` | domain:telehealth.ts |  | **3** · core:telehealth/telehealth.service.ts, web:patient/telehealth/[token]/TelehealthPatientView.tsx, web:practice/practitioner/telehealth/TelehealthPanel.tsx |
 | `UNSIGNED_DRAFT_CLOSURE_MIN_DAYS` | domain:unsigned-draft-closure.ts |  | **3** · core:practices/practices.dto.ts, core:unsigned-drafts/unsigned-draft-closure.sweep.ts, web:practice/channels/ChannelsView.tsx |
 | `ACTING_AS_REASON_KEYS` | domain:acting-as.ts |  | **2** · core:acting-as/acting-as.controller.ts, core:acting-as/acting-as.service.ts |
 | `ADDRESS_CHECK_VERSION` | domain:address-check.ts | The catalogue version. | **2** · core:organisations/organisations.controller.ts, core:organisations/organisations.service.ts |
 | `AFFILIATION_VELOCITY_WINDOW_DAYS` | domain:affiliation.ts |  | **2** · core:affiliations/affiliations.service.ts, core:identity-dashboard/identity-dashboard.service.ts |
 | `AOBPRINTER_OFFLINE_AFTER_MS` | domain:aobprinter-host.ts | OFFLINE AFTER FIFTEEN MINUTES whatever the interval (D-2026-10-10-02, decision 2). | **2** · core:aobprinter-hosts/aobprinter-hosts.service.ts, web:practice/aobprinter-host/AobPrinterHostView.tsx |
-| `APPROVED_IDENTIFIER_TYPES` | domain:identifiers.ts |  | **2** · web:practice/channels/ChannelsView.tsx, domain:telehealth.ts |
 | `AU_STATES` | domain:address.ts |  | **2** · web:apply/ApplyForm.tsx, web:status/[token]/correct/CorrectView.tsx |
 | `BILLING_ROLE_KEYS` | domain:billing-roles.ts | Just the keys, in order — the shape a `<select>` and a CHECK constraint want. | **2** · core:affiliations/affiliations.controller.ts, core:affiliations/affiliations.service.ts |
 | `CORRECTABLE_PATIENT_FIELDS` | domain:tablet-session.ts | WHAT RECEPTION MAY CORRECT ON THE PLATFORM'S MIRROR, and the list is the whole of it (TODO.md "Check-your-details", Carl 4 Sep 2026). | **2** · core:patients/patients.service.ts, web:practice/tablet/pushDesk.tsx |
@@ -1332,7 +1335,6 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `SURFACE_REFUSED_CODE` | domain:practice-surfaces.ts | THE REASON CODE FOR "this practice does not use that part of AoB", named once and read by both sides. | **1** · core:practices/surface.guard.ts |
 | `TABLET_SESSION_IDLE_MS` | domain:tablet-session.ts | THIRTY MINUTES OF NOTHING AND THE SESSION IS OVER. | **1** · core:tablet-sessions/tablet-sessions.service.ts |
 | `TELEHEALTH_CODE_LOCKED_TASK_KIND` | domain:review-tasks.ts | The kind a locked telehealth code raises. | **1** · core:telehealth/telehealth.service.ts |
-| `TELEHEALTH_CONTENT` | domain:telehealth.ts |  | **1** · core:telehealth/telehealth.service.ts |
 | `TELEHEALTH_CONTENT_VERSION` | domain:telehealth.ts |  | **1** · core:telehealth/telehealth.service.ts |
 | `TELEHEALTH_IDENTITY_CHECKLIST` | domain:telehealth.ts | WHAT THE PROVIDER TICKS ON THE CALL: identifier TYPES, from the approved six, never values (hard rules 1 and 9; REQ-VER-02/-04). | **1** · web:practice/practitioner/telehealth/TelehealthPanel.tsx |
 | `TELEHEALTH_LINK_STATES` | domain:telehealth.ts | States in which the patient's page is still live and a fresh link may be sent. | **1** · core:telehealth/telehealth.service.ts |
