@@ -3,7 +3,7 @@
 # packages). See CONVENTIONS.md §8.
 #   docker build -f apps/vault/Dockerfile -t aobplatform/vault .
 
-FROM node:20-alpine AS builder
+FROM node:24-alpine AS builder
 WORKDIR /workspace
 # package.json-first so only dependency changes invalidate the install layer.
 COPY package.json package-lock.json ./
@@ -24,7 +24,7 @@ COPY . .
 RUN npm run prisma:generate -w apps/vault
 RUN npm run build -w packages/domain -w packages/contracts -w apps/vault
 
-FROM node:20-alpine AS runtime
+FROM node:24-alpine AS runtime
 ENV NODE_ENV=production
 WORKDIR /workspace
 COPY --from=builder /workspace /workspace
