@@ -468,6 +468,17 @@ the collision back. The id goes on the database instead.
 - An explicit `E2E_DATABASE_URL` is used as given and nothing is cloned. CI
   works this way.
 - Do not make private test databases by hand any more; the run makes one.
+- **The one exception: the template is behind a migration.** The template is a
+  copy of the dev schema, so a migration that is on `main` or the branch but not
+  yet applied to the dev DB is missing from every clone (12 Oct 2026: the
+  telehealth tables). Then make ONE explicit `aobplatform_<purpose>_test`, run
+  `npx prisma migrate deploy` from `apps/core` with its URL ending
+  `?schema=core` (without it the tables land in `public` and the deploy fails),
+  grant `aob_app` (`GRANT USAGE ON SCHEMA core`, `SELECT, INSERT, UPDATE, DELETE
+  ON ALL TABLES IN SCHEMA core`, `USAGE, SELECT ON ALL SEQUENCES IN SCHEMA
+  core`), run the named spec with `E2E_DATABASE_URL` set to it, and drop it
+  afterwards. Never migrate `aobplatform` or edit the template to get round
+  it: bringing the dev DB up to date is Carl's call, and `test-db.sh` follows it.
 
 **What would reopen it.** A run that needs data shared with another run, or a
 clone that becomes slow enough to matter.
