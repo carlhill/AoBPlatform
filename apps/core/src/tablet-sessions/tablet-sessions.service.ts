@@ -12,8 +12,10 @@ import {
   isServiceDescription,
   latestVisitState,
   mayBeProviderOnAgreement,
+  practiceDayOf,
   projectTabletSessionPatient,
   shownDetailTypesFor,
+  visitDayOf,
   type AgreementType,
   type ConfirmableDetailType,
   type PushBlockedReason,
@@ -21,10 +23,11 @@ import {
   type TabletSessionRow,
   type TabletSessionState,
 } from '@aobplatform/domain';
-import type { Db4PrintRecordCheck, Db4PrintRecordIdentity } from '@aobplatform/contracts';
+import type { Db4PrintRecordCheck, Db4PrintRecordIdentity, Db4PrintedNameDifference } from '@aobplatform/contracts';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import { anchorForAgreement, anchorsForAgreements } from '../affiliations/agreement-anchor';
 import type { Actor } from '../auth/actor.decorator';
+import { readPracticeDay, type PracticeDay } from '../practices/practice-day';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   AgreementsService,
@@ -38,6 +41,7 @@ import { DevicesService, type ResolvedDevice } from '../devices/devices.service'
 import { ServiceDescriptionsService } from '../service-descriptions/service-descriptions.service';
 import { ReconciliationService } from '../reconciliation/reconciliation.service';
 import { pushRefusals } from './push-refusal';
+import { servicesMatchingDraft } from '../agreements/pre-agreement-association';
 import type { DisputeResolutionOutcome } from './dispute-resolution.dto';
 
 /**
@@ -196,6 +200,16 @@ export interface PushableRow {
    */
   printRecord: { checks: readonly Db4PrintRecordCheck[]; print: Db4PrintRecordIdentity } | null;
   /**
+   * THE NAME PRINTED ON THE DB4 IS NOT THE PATIENT RECORD'S NAME
+   * (D-2026-10-10-11). A WARNING, NEVER A REASON: it never touches `pushable`
+   * or `blockedReason`, so Send to tablet stays live and signing is never
+   * blocked (hard rule 8). It carries both names because this is the
+   * practice's own staff list, behind RLS, where the name already appears; it
+   * is never on a tablet payload, in a log or in an event. `null` when the
+   * names match, the form printed none, or the row did not come off a DB4.
+   */
+  printedNameDiffers: Db4PrintedNameDifference | null;
+  /**
    * THE NUMBER ON THE CARD IN THE PATIENT'S HAND (`QUEUE-TICKETS.md`; Carl,
    * 12 September 2026: *"Show the practice-queueid - the card with the number
    * or from the PMS or the Q-id AoB allocated."*).
@@ -279,11 +293,24 @@ export interface CoveredServiceRow {
  *  - `service_decided` — a service record names it, and it is NOT on the
  *    queue because a Reconciliation decision closed it. The decision code
  *    rides along so the console can say which one.
- *  - `no_service_recorded` — no service record names this agreement.
+ *  - `service_associated` — an unsigned pre-agreement ASSOCIATED with the
+ *    visit's service record (D-2026-10-10-09, option (b)): a service was
+ *    recorded, the pre-agreement was not signed before it, and the service is
+ *    the Reconciliation item `serviceRecordId` names. Associated, not linked.
+ *  - `service_choice_needed` — a service was recorded for this visit, no
+ *    draft is associated with it yet, and this draft is one of those that
+ *    match it; Reconciliation lists the service for a person to choose.
+ *  - `service_associated_other` — a service was recorded for this visit and
+ *    a different draft was associated with it.
+ *  - `no_service_recorded` — no service record names this agreement, and
+ *    none matches its visit (same patient, provider and day).
  */
 export const EARLIER_UNSIGNED_REASONS = [
   'service_in_reconciliation',
   'service_decided',
+  'service_associated',
+  'service_choice_needed',
+  'service_associated_other',
   'no_service_recorded',
 ] as const;
 export type EarlierUnsignedReason = (typeof EARLIER_UNSIGNED_REASONS)[number];
@@ -321,6 +348,13 @@ export interface EarlierUnsignedRow {
   serviceRecordId: string | null;
   /** Only for `service_decided`: the latest decision's code, e.g. `forgo_benefit`. */
   reconciliationDecision: string | null;
+  /**
+   * IS THE SERVICE STILL AN ITEM ON RECONCILIATION -- the queue or the choice
+   * list -- so that a `?item=` link to it lands on something (review of
+   * D-2026-10-10-09). False once a stored agreement covers it or a decision
+   * closed it; the console then links to the patient's page instead.
+   */
+  serviceOnReconciliation: boolean;
 }
 
 export interface EarlierUnsignedList {
@@ -396,6 +430,41 @@ export class TabletSessionsService {
      */
     private readonly reconciliation: ReconciliationService,
   ) {}
+
+  /**
+   * NOW, FOR THE DESK'S DAY BOUNDARY ONLY (D-2026-10-10-03).
+   *
+   * A FIELD, NOT A PROVIDER, because it is the smallest seam that lets an e2e
+   * pin "8:30am in Sydney" without faking the process clock under Prisma, the
+   * vault client and supertest (`practice-day-boundary.e2e-spec.ts` sets it).
+   * Read only by `practiceDay`; nothing else in this service consults it.
+   */
+  clock: () => Date = () => new Date();
+
+  /**
+   * THE PRACTICE'S "TODAY", READ ONCE PER REQUEST (D-2026-10-10-03).
+   *
+   * A practice's day is its own local day, in the IANA zone on
+   * `practices.timezone`. `todayIso` is compared with `Appointment.date` (a
+   * calendar date); `startOfDay` is the instant of local midnight, compared
+   * with `createdAt` / `serviceRenderedAt`. Both come from the same zone and
+   * the same instant, so no row can be today by one and yesterday by the
+   * other — which is what the UTC date and the server's midnight did between
+   * them every Sydney morning.
+   *
+   * INSIDE THE CALLER'S TRANSACTION where there is one, so the zone is read
+   * under the same `withPractice` scope as the rows it buckets. A missing row
+   * (it cannot be, inside a practice scope) falls back to the column default
+   * rather than to UTC.
+   */
+  private practiceDay(tx: Prisma.TransactionClient): Promise<PracticeDay> {
+    return readPracticeDay(tx, this.clock());
+  }
+
+  /** `practiceDay` for a caller that has no transaction open. */
+  private practiceDayFor(practiceId: string): Promise<PracticeDay> {
+    return this.prisma.withPractice(practiceId, (tx) => this.practiceDay(tx));
+  }
 
   // -------------------------------------------------------------------------
   // The console
@@ -515,6 +584,8 @@ export class TabletSessionsService {
      * patient the tablet again is not the moment to re-litigate it (HARD-02 —
      * a locked agreement is corrected by superseding, never by editing).
      */
+    // D2 and D5's "today" is the practice's own day (D-2026-10-10-03).
+    const { todayIso } = await this.practiceDayFor(practiceId);
     const prepared: PreparedLock | null = context.agreement.particularsLockedAt
       ? null
       : await this.prepareLockOrRefuse(
@@ -538,8 +609,8 @@ export class TabletSessionsService {
              * to be on or BEFORE its agreement date, and "today" would be a
              * silent lie about a service rendered yesterday afternoon.
              */
-            serviceDate: context.serviceDate ?? context.appointmentDate ?? today(),
-            agreementDate: today(),
+            serviceDate: context.serviceDate ?? context.appointmentDate ?? todayIso,
+            agreementDate: todayIso,
             /*
              * D6b — POST-AGREEMENTS ONLY (REQ-REG-01; s 65C(4) table item 6).
              * `undefined` on every other type, so C7 keeps its "applies to
@@ -1015,10 +1086,15 @@ export class TabletSessionsService {
       if (!agreement) return null;
       const live = await tx.tabletSession.findFirst({ where: { agreementId, endedAt: null } });
       const practice = await tx.practice.findFirst({});
-      return { agreement, live, practiceDefaultD6a: practice?.defaultServiceDescription ?? null };
+      return {
+        agreement,
+        live,
+        practiceDefaultD6a: practice?.defaultServiceDescription ?? null,
+        day: await this.practiceDay(tx),
+      };
     });
     if (!found) throw pushRefusals.agreementNotFound();
-    const { agreement, live, practiceDefaultD6a } = found;
+    const { agreement, live, practiceDefaultD6a, day } = found;
 
     if (live) {
       throw new ConflictException(
@@ -1027,7 +1103,7 @@ export class TabletSessionsService {
       );
     }
 
-    const already = await this.openEpisodicForVisit(practiceId, agreement);
+    const already = await this.openEpisodicForVisit(practiceId, agreement, day);
     if (already) {
       return { agreementId: already, enduringAgreementId: agreement.id, reused: true };
     }
@@ -1054,7 +1130,15 @@ export class TabletSessionsService {
      */
     if (offered.serviceDescription) {
       await this.agreements.transition(practiceId, offered.agreementId, 'awaiting_signature');
-      await this.agreements.lockParticulars(practiceId, offered.agreementId, { serviceDate: today() });
+      /*
+       * D2 IS PASSED AS WELL AS D5, both the practice's today
+       * (D-2026-10-10-03). Left out, `lockParticulars` defaults D2 to the UTC
+       * date, which would put the two on different days every Sydney morning.
+       */
+      await this.agreements.lockParticulars(practiceId, offered.agreementId, {
+        serviceDate: day.todayIso,
+        agreementDate: day.todayIso,
+      });
     }
 
     await this.prisma.withPractice(practiceId, async (tx) => {
@@ -1180,11 +1264,9 @@ export class TabletSessionsService {
   private async openEpisodicForVisit(
     practiceId: string,
     source: Pick<DbAgreement, 'affiliationId' | 'patientId'>,
+    day: PracticeDay,
   ): Promise<string | null> {
     if (!source.affiliationId) return null;
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
-    const todayIso = today();
 
     return this.prisma.withPractice(practiceId, async (tx) => {
       const candidates = await tx.agreement.findMany({
@@ -1207,10 +1289,7 @@ export class TabletSessionsService {
       );
 
       for (const candidate of candidates) {
-        const appointment = appointmentByAgreement.get(candidate.id);
-        const forToday = appointment
-          ? appointment.date.toISOString().slice(0, 10) === todayIso
-          : candidate.createdAt >= startOfDay;
+        const forToday = dayOf(candidate, appointmentByAgreement.get(candidate.id), day) === 'today';
         if (!forToday) continue;
         const open = await tx.captureRequest.findFirst({
           where: { agreementId: candidate.id, status: 'open' },
@@ -1392,10 +1471,8 @@ export class TabletSessionsService {
    */
   async pushable(practiceId: string): Promise<PushableRow[]> {
     await this.settle(practiceId);
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
 
-    const rows = await this.readPushableRows(practiceId, startOfDay);
+    const rows = await this.readPushableRows(practiceId);
 
     /*
      * AND THEN THE ONE QUESTION THE ROWS CANNOT ANSWER THEMSELVES: has the
@@ -1501,6 +1578,8 @@ export class TabletSessionsService {
       if (!answer) continue;
       /* WHICH PAGE, ALWAYS — a fact about provenance, not about a fault. */
       if (answer.identity) row.printRecord = { checks: answer.checks, print: answer.identity };
+      /* A WARNING ON ANY ROW, BLOCKED OR NOT, AND NEVER A STOP (D-2026-10-10-11). */
+      row.printedNameDiffers = answer.nameDiffers ?? null;
       if (answer.checks.length === 0 || !canBeStopped.has(row.agreementId)) continue;
       row.pushable = false;
       row.blockedReason = 'print_record_incomplete';
@@ -1535,10 +1614,8 @@ export class TabletSessionsService {
    * there is no field for one and the service record holds none.
    */
   async coveredToday(practiceId: string): Promise<CoveredServiceRow[]> {
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
-
     return this.prisma.withPractice(practiceId, async (tx) => {
+      const { startOfDay } = await this.practiceDay(tx);
       const records = await tx.serviceRecord.findMany({
         where: {
           visitDecision: { in: ['covered', 'covered_by_enduring'] },
@@ -1608,11 +1685,8 @@ export class TabletSessionsService {
    * a push, a signature or a bill (hard rule 8).
    */
   async unsignedEarlierDays(practiceId: string): Promise<EarlierUnsignedList> {
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
-    const todayIso = today();
-
     const read = await this.prisma.withPractice(practiceId, async (tx) => {
+      const day = await this.practiceDay(tx);
       const candidates = await tx.agreement.findMany({
         where: { status: { in: [...PUSHABLE_STATUSES] }, signatureEventId: null },
         orderBy: { createdAt: 'asc' },
@@ -1628,15 +1702,28 @@ export class TabletSessionsService {
       );
       const earlier = candidates.filter(
         (agreement) =>
-          dayOf(agreement, appointmentByAgreement.get(agreement.id), startOfDay, todayIso) === 'earlier',
+          dayOf(agreement, appointmentByAgreement.get(agreement.id), day) === 'earlier',
       );
       const live = await this.withoutDeadEnds(tx, earlier);
       if (live.length === 0) return null;
 
-      const forDateOf = (agreement: (typeof live)[number]): string => {
-        const appointment = appointmentByAgreement.get(agreement.id);
-        return appointment ? appointment.date.toISOString().slice(0, 10) : localIsoDate(agreement.createdAt);
-      };
+      /*
+       * EACH ROW'S DAY WORKED OUT ONCE, before the sort rather than inside its
+       * comparator, which would ask it O(n log n) times (Opus review,
+       * 10 October 2026).
+       */
+      const forDateById = new Map(
+        live.map((agreement) => {
+          const appointment = appointmentByAgreement.get(agreement.id);
+          return [
+            agreement.id,
+            appointment
+              ? appointment.date.toISOString().slice(0, 10)
+              : practiceDayOf(agreement.createdAt, day.timeZone),
+          ] as const;
+        }),
+      );
+      const forDateOf = (agreement: (typeof live)[number]): string => forDateById.get(agreement.id) as string;
       /* OLDEST FIRST, with ties broken on fields nothing on this list can move. */
       const sorted = [...live].sort(
         (a, b) =>
@@ -1656,6 +1743,40 @@ export class TabletSessionsService {
         select: { id: true, agreementId: true },
         orderBy: [{ serviceDate: 'asc' }, { id: 'asc' }],
       });
+      /*
+       * ASSOCIATED, OR MATCHING A SERVICE (D-2026-10-10-09, option (b)). For
+       * an unsigned pre-agreement no service record links: the service its
+       * visit was associated with, or else whether any service record matches
+       * the visit at all. Read only, like everything else here.
+       */
+      const linkedIds = new Set(services.map((s) => s.agreementId as string));
+      const associations = await tx.preAgreementAssociation.findMany({
+        where: { agreementId: { in: kept.map((a) => a.id) } },
+        select: { agreementId: true, serviceRecordId: true },
+      });
+      const associatedWith = new Map(associations.map((a) => [a.agreementId, a.serviceRecordId]));
+      const matchingByAgreement = new Map<string, { id: string; associatedAgreementId: string | null }[]>();
+      const anchorCache = new Map<string, string | null>();
+      for (const agreement of kept) {
+        if (agreement.type !== 'episodic_pre' || linkedIds.has(agreement.id) || associatedWith.has(agreement.id)) continue;
+        const appointment = appointmentByAgreement.get(agreement.id);
+        const matched = await servicesMatchingDraft(
+          tx,
+          {
+            patientId: agreement.patientId,
+            forDay: visitDayOf(agreement, appointment?.date ?? null),
+            affiliationId: agreement.affiliationId,
+            providerId: agreement.providerId,
+          },
+          anchorCache,
+        );
+        if (matched.length > 0) {
+          matchingByAgreement.set(
+            agreement.id,
+            matched.map((m) => ({ id: m.id, associatedAgreementId: m.preAgreementAssociation?.agreementId ?? null })),
+          );
+        }
+      }
       return {
         total: sorted.length,
         kept,
@@ -1663,6 +1784,8 @@ export class TabletSessionsService {
         patientById: new Map(patients.map((p) => [p.id, p])),
         anchors,
         services,
+        associatedWith,
+        matchingByAgreement,
       };
     });
     if (!read) return { total: 0, rows: [] };
@@ -1676,10 +1799,10 @@ export class TabletSessionsService {
       if (!service.agreementId) continue;
       servicesByAgreement.set(service.agreementId, [...(servicesByAgreement.get(service.agreementId) ?? []), service.id]);
     }
-    const onQueue =
-      read.services.length > 0
-        ? new Set((await this.reconciliation.outstanding(practiceId)).map((item) => item.serviceRecordId))
-        : new Set<string>();
+    const needsQueue = read.services.length > 0 || read.associatedWith.size > 0 || read.matchingByAgreement.size > 0;
+    const onQueue = needsQueue
+      ? new Set((await this.reconciliation.outstanding(practiceId)).map((item) => item.serviceRecordId))
+      : new Set<string>();
 
     const rows: EarlierUnsignedRow[] = [];
     for (const agreement of read.kept) {
@@ -1689,10 +1812,12 @@ export class TabletSessionsService {
       let reason: EarlierUnsignedReason = 'no_service_recorded';
       let serviceRecordId: string | null = null;
       let reconciliationDecision: string | null = null;
+      let serviceOnReconciliation = false;
       if (linked.length > 0) {
         const queued = linked.find((id) => onQueue.has(id));
         serviceRecordId = queued ?? linked[0];
         reason = 'service_in_reconciliation';
+        serviceOnReconciliation = Boolean(queued);
         if (!queued) {
           /*
            * NAMED BY A SERVICE BUT NOT ON THE QUEUE. The queue drops an item
@@ -1707,6 +1832,24 @@ export class TabletSessionsService {
             reconciliationDecision = detail.decisions[0]?.decision ?? null;
           }
         }
+      } else if (read.associatedWith.has(agreement.id)) {
+        /* Associated, never linked: the line links to the service's Reconciliation item, not to the draft. */
+        reason = 'service_associated';
+        serviceRecordId = read.associatedWith.get(agreement.id) ?? null;
+        serviceOnReconciliation = serviceRecordId !== null && onQueue.has(serviceRecordId);
+      } else {
+        const matching = read.matchingByAgreement.get(agreement.id) ?? [];
+        const open = matching.find((m) => m.associatedAgreementId === null);
+        if (open) {
+          // Unassociated with a matching draft: on the choice list by construction (`associationChoices`).
+          reason = 'service_choice_needed';
+          serviceRecordId = open.id;
+          serviceOnReconciliation = true;
+        } else if (matching.length > 0) {
+          reason = 'service_associated_other';
+          serviceRecordId = matching[0]!.id;
+          serviceOnReconciliation = onQueue.has(serviceRecordId);
+        }
       }
       rows.push({
         agreementId: agreement.id,
@@ -1720,6 +1863,7 @@ export class TabletSessionsService {
         reason,
         serviceRecordId,
         reconciliationDecision,
+        serviceOnReconciliation,
       });
     }
     return { total: read.total, rows };
@@ -1813,8 +1957,9 @@ export class TabletSessionsService {
   }
 
   /** The rows themselves — one transaction, no network calls. See `pushable`. */
-  private async readPushableRows(practiceId: string, startOfDay: Date): Promise<PushableRow[]> {
+  private async readPushableRows(practiceId: string): Promise<PushableRow[]> {
     return this.prisma.withPractice(practiceId, async (tx) => {
+      const day = await this.practiceDay(tx);
       const candidates = await tx.agreement.findMany({
         where: { status: { in: [...PUSHABLE_STATUSES] }, signatureEventId: null },
         orderBy: { createdAt: 'asc' },
@@ -1828,10 +1973,8 @@ export class TabletSessionsService {
         appointments.filter((a) => a.agreementId).map((a) => [a.agreementId as string, a]),
       );
 
-      const todayIso = today();
       const dueToday = candidates.filter(
-        (agreement) =>
-          dayOf(agreement, appointmentByAgreement.get(agreement.id), startOfDay, todayIso) === 'today',
+        (agreement) => dayOf(agreement, appointmentByAgreement.get(agreement.id), day) === 'today',
       );
       if (dueToday.length === 0) return [];
 
@@ -2121,6 +2264,7 @@ export class TabletSessionsService {
           /* Filled by `pushable()`'s own pass — see there; the rows themselves
              cannot answer it, because it needs the inbound module's table. */
           printRecord: null,
+          printedNameDiffers: null,
           /* Off the arrival that started the chain — see `ticketFor`. */
           queueTicket: ticketFor(agreement.id),
           /* And where the visit got to, off the same arrival (D-2026-09-12-20). */
@@ -3140,36 +3284,27 @@ export class TabletSessionsService {
   }
 }
 
-/** Today, as the ISO date every particular in this system is written in. */
-function today(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
 /**
  * WHICH DAY AN UNSIGNED AGREEMENT IS FOR, RELATIVE TO TODAY — the one reading
  * of "today" the desk uses (`readPushableRows`, `unsignedEarlierDays`): the
  * appointment's date where the agreement has a booking, and the day the draft
- * was created where it does not. Moved here unchanged from `readPushableRows`
- * (D-2026-10-10-01) so the earlier-days list is exactly what fell off it.
+ * was created where it does not (D-2026-10-10-01), both measured in the
+ * practice's own zone (D-2026-10-10-03).
+ *
+ * `Appointment.date` IS A `@db.Date`, which Prisma hands back as UTC midnight
+ * of that calendar date — so its ISO prefix IS the calendar date, in any zone.
+ * Only "today" needed the practice's clock.
  */
 function dayOf(
   agreement: { createdAt: Date },
   appointment: { date: Date } | undefined,
-  startOfDay: Date,
-  todayIso: string,
+  day: PracticeDay,
 ): 'earlier' | 'today' | 'later' {
   if (appointment) {
     const date = appointment.date.toISOString().slice(0, 10);
-    return date === todayIso ? 'today' : date < todayIso ? 'earlier' : 'later';
+    return date === day.todayIso ? 'today' : date < day.todayIso ? 'earlier' : 'later';
   }
-  return agreement.createdAt >= startOfDay ? 'today' : 'earlier';
-}
-
-/** A timestamp's calendar day on this server's clock — the clock `startOfDay` is set on. */
-function localIsoDate(at: Date): string {
-  const month = String(at.getMonth() + 1).padStart(2, '0');
-  const day = String(at.getDate()).padStart(2, '0');
-  return `${at.getFullYear()}-${month}-${day}`;
+  return agreement.createdAt >= day.startOfDay ? 'today' : 'earlier';
 }
 
 /**

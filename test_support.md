@@ -251,13 +251,25 @@ and the tablet in the drawer is unpaired), templates and the letterhead.
 
 ## Never do this to the e2e database
 
-The e2e suites point at `aobplatform_test` and must never be pointed at
-`aobplatform`, which is the dev database with the seeded data in it. Build the
-test one with:
+The e2e suites must never be pointed at `aobplatform`, which is the dev
+database with the seeded data in it.
+
+Each e2e run makes its own database, `aobplatform_e2e_<time>_<random>_test`,
+copied from the template `aobplatform_e2e_template`, and drops it when the run
+ends. So two agents, or an agent and you, can run e2e at the same time without
+deleting each other's rows. Build or refresh the template after any schema
+change with:
 
 ```bash
 bash scripts/dev/test-db.sh
 ```
+
+Refresh it while no e2e run is starting: a run that copies the template halfway
+through the rebuild gets half a schema.
+
+To keep a run's database afterwards and look at what it left, set
+`E2E_KEEP_DATABASE=1`; the run prints the name. A run that crashed leaves its
+database behind, and a later run drops it once it is twelve hours old.
 
 ## Change log
 | Date | Change |
@@ -265,3 +277,4 @@ bash scripts/dev/test-db.sh
 | 12 Sep 2026 | v1.0. Written when Carl asked for the staging command to live somewhere findable. |
 | 12 Sep 2026 | `seed-busy-day.ts` — ninety arrivals across three queues, for judging a screen at volume rather than at seven. |
 | 27 Sep 2026 | `db4-round-trip.sh` — one command from a physical print to an agreement, naming whichever of six prerequisites is missing rather than leaving Carl to guess. |
+| 11 Oct 2026 | e2e runs each get their own database, copied from `aobplatform_e2e_template`; `test-db.sh` now builds the template. |

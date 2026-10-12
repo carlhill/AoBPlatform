@@ -185,6 +185,24 @@ describe('the AOBPRINTER host twin', () => {
     expect(beginLogin).toHaveBeenCalledWith(undefined, { reauthenticate: true });
   });
 
+  it('an_unrecorded_sign_in_method_is_refused_and_not_called_a_password', async () => {
+    stubFetch(
+      { hosts: [REGRESSED], secondHostReporting: false },
+      { status: 403, body: { message: 'refused', reasonCode: 'sign_in_method_unrecorded' } },
+    );
+    render(<AobPrinterHostTwin practiceId={PRACTICE} />);
+
+    const select = (await screen.findByTestId('aobprinter-rebaseline-reason-host-1')) as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: 'investigated' } });
+    fireEvent.click(screen.getByTestId('aobprinter-rebaseline-action-host-1'));
+
+    const stepUp = await screen.findByTestId('aobprinter-rebaseline-step-up');
+    expect(stepUp.textContent).toContain(t.rebaseline.stepUpMethodUnrecorded);
+    expect(stepUp.textContent).not.toContain(t.rebaseline.stepUpSecondFactorMissing);
+    expect(screen.queryByTestId('aobprinter-rebaseline-step-up-action')).toBeNull();
+    expect(screen.queryByTestId('aobprinter-rebaseline-unmapped')).toBeNull();
+  });
+
   it('an_unmapped_refusal_code_shows_its_code', async () => {
     stubFetch(
       { hosts: [REGRESSED], secondHostReporting: false },

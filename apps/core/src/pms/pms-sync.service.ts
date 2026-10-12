@@ -5,6 +5,7 @@ import type { IsoDate } from '@aobplatform/domain';
 import { PrismaService } from '../prisma/prisma.service';
 import { anchorForLegacyProvider, type LegacyProviderRow } from '../affiliations/agreement-anchor';
 import { PMS_ADAPTER } from './pms.tokens';
+import { associateAfterCommit } from '../agreements/associate-after-commit';
 
 /** How far back the invoice sync reaches — past the 12-month lodgement window with margin. */
 const SYNC_LOOKBACK_DAYS = 400;
@@ -45,10 +46,25 @@ export class PmsSyncService {
         const result = await this.upsertServiceRecord(tx, practiceId, invoice, patient, provider);
         if (result.created) created += 1;
         else updated += 1;
+        return result;
+      }).then(async (result) => {
+        // AFTER the service record has committed, in its own transaction (hard rule 8).
+        if (result.created) await this.associateAfterCommit(practiceId, result.id);
       });
     }
     this.logger.log(`PMS sync for practice ${practiceId}: ${created} created, ${updated} updated`);
     return { created, updated, total: invoices.length };
+  }
+
+  /**
+   * ASSOCIATE AN UNSIGNED PRE-AGREEMENT WITH A SERVICE RECORD THAT HAS ALREADY
+   * COMMITTED (D-2026-10-10-09 option (b)). Its own transaction; a failure is
+   * logged and swallowed, so it can never cost the service record or the
+   * invoices after it (hard rule 8). Called by every path that creates a
+   * service record through `upsertServiceRecord`.
+   */
+  associateAfterCommit(practiceId: string, serviceRecordId: string) {
+    return associateAfterCommit(this.prisma, practiceId, serviceRecordId, this.logger);
   }
 
   /**
@@ -181,6 +197,12 @@ export class PmsSyncService {
         retentionClockSource: this.adapter.capabilities.claimEvents ? 'observed_claim' : 'conservative_default',
       },
     });
+    /*
+     * AN UNSIGNED PRE-AGREEMENT FOR THIS VISIT IS ASSOCIATED, NEVER LINKED
+     * (D-2026-10-10-09, option (b)) -- but NOT HERE. The caller does it with
+     * `associateAfterCommit` once this transaction has committed, so a failed
+     * association can never roll back the service record (hard rule 8).
+     */
     return { id: row.id, created: true };
   }
 }

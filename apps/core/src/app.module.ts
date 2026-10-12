@@ -40,6 +40,7 @@ import { DatabaseExceptionFilter } from './common/database-exception.filter';
 import { MessagingModule } from './messaging/messaging.module';
 import { ArtefactsModule } from './artefacts/artefacts.module';
 import { RetentionModule } from './retention/retention.module';
+import { UnsignedDraftsModule } from './unsigned-drafts/unsigned-drafts.module';
 import { PortalModule } from './portal/portal.module';
 import { AgreementCopyModule } from './agreement-copy/agreement-copy.module';
 
@@ -78,6 +79,7 @@ import { AgreementCopyModule } from './agreement-copy/agreement-copy.module';
     IdentityDashboardModule,
     ArtefactsModule,
     RetentionModule,
+    UnsignedDraftsModule,
     PmsModule,
     AutoCaptureModule,
     ArrivalsModule,

@@ -20,6 +20,7 @@ import { CaptureService } from '../capture/capture.service';
 import { EnduringService } from '../enduring/enduring.service';
 import { OutboundService } from '../outbound/outbound.service';
 import { CaptureLinkDispatcher } from './capture-link.dispatcher';
+import { readPracticeDay } from '../practices/practice-day';
 
 const SYSTEM_ACTOR = { principalType: 'system', id: 'core' } as const;
 
@@ -77,6 +78,13 @@ export class AutoCaptureService {
     private readonly outbound: OutboundService,
     private readonly links: CaptureLinkDispatcher,
   ) {}
+
+  /**
+   * NOW, FOR `syncAppointments`' DEFAULT DAY (D-2026-10-10-03), read as the
+   * practice's own date. The same smallest seam as
+   * `TabletSessionsService.clock`.
+   */
+  clock: () => Date = () => new Date();
 
   // -------------------------------------------------------------------------
   // POST-consultation: an invoice with nothing behind it
@@ -257,7 +265,12 @@ export class AutoCaptureService {
     if (!this.adapter.capabilities.readAppointments) {
       throw new NotFoundException('The connected PMS adapter does not expose appointments.');
     }
-    const day = date ?? (new Date().toISOString().slice(0, 10) as IsoDate);
+    // "Today" is the PRACTICE's date, never the UTC one — which in Sydney is
+    // yesterday until 11am, so the morning sync read yesterday's book
+    // (D-2026-10-10-03). An explicit date always wins.
+    const day =
+      date ??
+      ((await this.prisma.withPractice(practiceId, (tx) => readPracticeDay(tx, this.clock()))).todayIso as IsoDate);
     const appointments = await this.adapter.readAppointments(day);
 
     let created = 0;

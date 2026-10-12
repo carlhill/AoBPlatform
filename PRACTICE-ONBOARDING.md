@@ -153,6 +153,32 @@ not stored anywhere at all.
 
 ---
 
+## 6. The reception tablet
+
+`/practice/devices` → **Add tablet**, then type the code into the tablet's
+browser at `/kiosk`.
+
+**Lock the tablet to the browser with Android screen pinning** before a patient
+uses it (D-2026-10-10-05). It is a built-in setting and nothing is installed.
+Once a tablet is pinned, a patient cannot leave the browser for the home
+screen, another app or the notifications without the tablet's PIN. Set it up
+once per tablet:
+- give the tablet a screen-lock PIN;
+- switch on **Pin app** (search Settings for "pin");
+- switch on **Ask for PIN before unpinning**.
+
+Then pin the browser from Recent apps each time the tablet starts. The full
+steps, and what pinning does not stop, are in
+[the kiosk README](apps/web/app/kiosk/README.md) under "Locking the tablet to
+the kiosk".
+
+**A restart unpins the tablet.** Pin it again after every restart or update.
+
+**A lost or stolen tablet is revoked on `/practice/devices`,** not at the
+tablet. Pinning keeps a patient in the kiosk; it does not protect the pairing.
+
+---
+
 ## The refusals, and what each one means
 
 | You see | It means | What fixes it |

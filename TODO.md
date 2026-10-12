@@ -192,15 +192,210 @@ plain-English text. `tautala_ai.md` (the TAUTALA entry, further down) is the rel
 
 ---
 
+## Reconcile the PMS, AOBPRINTER and AoBPlatform against each other (Carl, 10 Oct 2026)
+
+**Carl:** *"we will need to come back to this so that we can reconcile between
+the PMS, AOBPrinter and AOBPlatform"*, when choosing option (b) for unsigned
+drafts (D-2026-10-10-09).
+
+**The problem.** Three systems each hold part of what happened at a visit, and
+nothing checks them against each other:
+- **the PMS (PracSoft):** appointments, arrivals, invoices and claims;
+- **AOBPRINTER:** every DB4 printed, captured and filed back (its own audit
+  chain, PRINTER-HEARTBEAT.md);
+- **AoBPlatform:** agreements (pre and post, signed or not), service records,
+  tablet sessions and vault events.
+
+Today an unsigned pre-agreement is only *associated* with its visit's service
+(option b). A DB4 printed but never captured, an invoice with no agreement, or a
+signed agreement with no claim are each visible in one system at most.
+
+**What the reconciliation should answer, per practice and per day:**
+- every PMS invoice has a signed agreement covering it, or a named reason it
+  does not (private, forgone, chased, and so on);
+- every DB4 AOBPRINTER captured became an agreement, or was refused with a
+  reason, and every signed one was filed back;
+- every agreement is either signed and matched to a claim, closed with a
+  reason, or still open on a named list;
+- associated pre-agreements (option b) are settled: superseded by the signed
+  post-service agreement, or closed.
+
+**Depends on:** D-01 (Medtech write-back) for Medtech practices; the AOBPRINTER
+heartbeat (PR #4) for capture completeness; a decision on when an associated
+pre-agreement can close.
+
+---
+
+## ~~The signature step on screens smaller than 1280×800 (10 Oct 2026)~~ - decided: (a), accepted below 1280×800 (D-2026-10-10-10)
+
+The kiosk's no-scroll rule holds from 1280×800 up (D-2026-10-10-10). The
+signature step (pad, Back, Clear, Sign) fits at every size from there,
+including the 14" tablet both ways. Below it, it falls short: **25px at
+1024×600 and 52px at 960×600**, with Edge's bars showing. There the page
+scrolls as a whole (never a box) and every control can be scrolled into view;
+the fit spec lists these two sizes in `SIGNATURE_SHORTFALL`.
+
+**Carl to choose:**
+- **(a)** accept it below 1280×800, and change the decision's wording from
+  "fits at every size" to "fits at 1280×800 and up"; or
+- **(b)** make it fit by shrinking the kiosk's three-line footer (build,
+  device and audit ids) to one line on short screens.
+
+---
+
+## Tablet lockdown by an installed app: allow one install for automatic lockdown? (Carl, 10 Oct 2026)
+
+**Not decided; zero-footprint stays** (D-2026-10-10-10). Carl asked for this to
+be on the list.
+
+**The question.** No web page can lock a tablet: Android lets only an
+installed app or device management start a lock. Today the kiosk goes full
+screen on the first tap, and the patient can always swipe out of it. Android
+screen pinning, done by hand on each tablet, is optional (D-2026-10-10-05).
+Automatic lockdown needs something on the device, which reopens the
+zero-footprint decision (Carl, 3 Sep 2026).
+
+**The two routes, if Carl allows one install:**
+1. **A small Android app** that opens the kiosk page in a full-screen web view
+   and calls Android's lock-task mode at start-up. One install per tablet;
+   updates through the Play Store or a private channel. The kiosk page itself
+   stays cloud-served.
+2. **Device management** (Samsung Knox, or Android Enterprise "dedicated
+   device"). The tablet is enrolled once and boots straight into the locked
+   kiosk with no taps. Usually a per-device subscription; the practice or we
+   manage the enrolment.
+
+**What to weigh:**
+- What gets installed, and whether anything is persisted besides the one
+  pairing credential (the `kiosk_persists_nothing_but_pairing` rule must still
+  hold for patient data);
+- who installs and updates it, and the support cost per practice;
+- cost per tablet (device management);
+- whether practices actually see patients leaving the kiosk once full screen
+  is live.
+
+**Depends on:** Carl's decision, and ideally evidence from real practices
+first.
+
+---
+
+## The rest of core still measures "today" on UTC or the server's clock (10 Oct 2026) - D-2026-10-10-03
+
+D-2026-10-10-03 moved every day boundary in `tablet-sessions.service.ts` onto
+`practices.timezone` (`practiceDayOf` / `startOfPracticeDay`). **Deferred, not
+done, because the brief was the desk only and each of these is a behaviour
+change for another screen.** The same two shapes remain in `apps/core/src`:
+
+- ~~`agreements/agreements.service.ts` ~2212: `lockParticulars` defaults D2 to
+  `new Date().toISOString().slice(0, 10)` when the caller passes none. A
+  statutory particular on the UTC date (D-2026-09-12-17 item 2).~~ **Fixed
+  10 Oct 2026 (`fix/d2-practice-date`)**: the practice's date, via
+  `readPracticeDay` (`apps/core/src/practices/practice-day.ts`).
+- ~~`agreements/agreements.service.ts` ~1872: a superseding draft's D5 falls back
+  to the UTC date.~~ **Fixed 10 Oct 2026**, same helper.
+- ~~`service-descriptions/service-descriptions.service.ts` ~343: D2 on the UTC
+  date.~~ **Fixed 10 Oct 2026**, D2 and its D5 fallback both.
+- ~~`auto-capture/auto-capture.service.ts` ~260: the default day is the UTC
+  date.~~ **Fixed 10 Oct 2026.** All four pinned in
+  `apps/core/test/practice-date-particulars.e2e-spec.ts`.
+- ~~`arrivals/arrivals.service.ts` ~847 (an arrival's D5 when the caller sends
+  no `serviceDate`) and ~1974 (D5 on the draft a practitioner move makes) both
+  write D5 as `arrivedAt`'s UTC date: a statutory date, not a day window.~~
+  **Fixed 10 Oct 2026**: both are `practiceDayOf(arrivedAt, zone)` with the zone
+  from `readPracticeTimeZone` in the same transaction; an explicit
+  `serviceDate` still wins. Pinned by the four arrival tests in
+  `practice-date-particulars.e2e-spec.ts`.
+- **Still open:** `arrivals/arrivals.service.ts` ~3005, the coverage prefill's
+  `agreement.createdAt` UTC-date fallback (used only for an agreement with no
+  D5), should move to the practice's day so it stays comparable with the D5
+  above. Not a statutory particular; left out of the D5 fix's brief.
+- ~~`practitioner-queue/practitioner-queue.service.ts` ~511-513 and ~565 (review
+  of `fix/d2-practice-date`, 10 Oct 2026). The "service rendered" window picked
+  its day with `getFullYear/getMonth/getDate` on `arrivedAt`, which is the UTC
+  day on a UTC server. The service record it selects supplies the agreement's
+  D5. Before 11am Sydney time, a patient with an undecided service record from
+  yesterday got today's "service rendered" press raised as a post-agreement
+  against YESTERDAY's service: a wrong statutory date.~~ **Fixed 10 Oct 2026**:
+  the window is `practiceDayOf(arrivedAt, zone)` with the zone from
+  `readPracticeTimeZone` in the same transaction. Pinned by
+  `service_rendered_before_11am_sydney_picks_todays_service_not_yesterdays`
+  (catches it on a UTC host: CI, or `TZ=UTC`) and
+  `a_perth_service_rendered_uses_the_perth_day` (catches it on any host) in
+  `practice-date-particulars.e2e-spec.ts`.
+- **Still open, ordering (pre-existing):** an arrival moves its draft to
+  `awaiting_signature` BEFORE `lockParticulars` runs. If the lock fails (e.g. a
+  rule such as C5, D5 on or after D2, for an arrival that straddles local midnight
+  or a connector backlog delivered next morning), `POST /arrivals` errors with
+  the draft already at `awaiting_signature` and unlocked. Signing stays blocked,
+  so hard rule 2 holds, but the state should not be reachable. Same shape as the
+  per-visit offer item on `fix/tablet-day-boundary`; Carl's call.
+- `arrivals/arrivals.service.ts` ~1409: the front desk's day starts at the
+  server's `setHours(0, 0, 0, 0)`.
+- `practitioner-queue/practitioner-queue.service.ts` ~686: the waiting list's
+  day starts at the server's `setHours(0, 0, 0, 0)`. **Display only, checked
+  10 Oct 2026**: it chooses which arrivals are LISTED, never which service
+  supplies D5 (a press on any listed arrival dates by that arrival's own
+  `arrivedAt` in the practice's zone). But on a UTC server it is visibly wrong:
+  before 11am Sydney the list still shows yesterday afternoon's patients, and
+  after 11am it drops everyone who arrived between local midnight and 11am.
+- `arrivals/arrivals.service.ts` ~623 and ~1512: `practiceDayWindow` is right
+  wherever it runs but uses the one `PRACTICE_TIMEZONE` constant, not the
+  practice's own zone.
+- `retention/retention-sweep.service.ts` ~59: `today` is the UTC date. Probably
+  harmless for retention arithmetic; check before changing.
+- D-2026-09-12-17's LOCATION zone is not built; when it is, it should win over
+  the practice zone for a desk at that location.
+
+**Depends on:** nothing; each is the same substitution, with an e2e that pins
+the clock the way `practice-day-boundary.e2e-spec.ts` does.
+
+## Per-practice timezone: follow-ups from the Opus review (10 Oct 2026) - D-2026-10-10-03
+
+Recorded from the review of `fix/tablet-day-boundary`; no code change on that
+branch for any of these.
+
+- **(a) Every existing practice was defaulted to `Australia/Sydney` and nobody
+  confirmed it.** The migration gave the column a default so the desk would
+  keep working, but D-2026-09-12-17 says the state proposes a zone and a person
+  confirms it. Two things follow: onboarding should propose a zone from the
+  practice's state and ask for it to be confirmed rather than taking the
+  default silently; and any existing practice outside NSW/VIC/ACT/TAS needs its
+  zone checked on `/practice/channels` before its desk's day boundary can be
+  trusted (a Perth practice on Sydney time turns its day two or three hours
+  early; Brisbane, Adelaide and Darwin by up to an hour and a half).
+- **(b) PRE-EXISTING, NOT INTRODUCED HERE - touches hard rule 2 (REQ-REG-06).**
+  `offerEpisodicInstead` in `apps/core/src/tablet-sessions/tablet-sessions.service.ts`
+  (~1104-1113, from 50373f8, 5 Sep 2026) moves the new agreement to
+  `awaiting_signature` and THEN calls `lockParticulars`, in separate
+  transactions. If the lock throws (rules service down, render failure), the
+  agreement is left at `awaiting_signature` with unlocked particulars. Nothing
+  can be signed in that state - the push re-locks before any signature
+  (`prepareLockOrRefuse` runs whenever `particularsLockedAt` is null) - but the
+  state itself should be unreachable. **For Carl to decide; deliberately not
+  fixed on the timezone branch.** The obvious shape is to lock first and
+  transition after, or both in one transaction the way the push does.
+- **(c) Rebuild the vault container before shipping.** The branch adds the
+  `practice.timezone_set` event type (`packages/contracts/src/vault.ts`); a
+  vault image built before it will not know the type.
+
 ## Agreements left unsigned past their day (10 Oct 2026) - D-2026-10-10-01
 
 **Being built now:** option 1, the tablet's "Unsigned from earlier days: N"
 notice, and option 4, the post-service chase switched on in development (sandbox
 gateways only; production off until Carl says live).
 
-**Deferred, decided by Carl to be on this list:**
+**Options 2 and 3 are being built (Carl, 10 Oct 2026, D-2026-10-10-09):**
+*"do option 2 first, N is 7 days - make N a configurable setting"*. Strike
+each one through when it lands.
+- ~~**Paused at the measurement step, waiting on Carl.**~~ Carl chose option
+  (b), associate not link. **Built 11 Oct 2026** on branch
+  `feat/unsigned-drafts-link-and-close`; the build's own choices are listed
+  under D-2026-10-10-09 for Carl to confirm.
 
-2. **Link the unsigned draft to the service.** When an invoice arrives for the
+**Originally deferred, decided by Carl to be on this list:**
+
+2. ~~**Link the unsigned draft to the service.**~~ Built as an ASSOCIATION, not
+   a link (option (b), D-2026-10-10-09). When an invoice arrives for the
    same patient, provider and day, pms-sync should link the unsigned draft to the
    service record, so the draft reaches Reconciliation instead of being orphaned.
    Today `pms-sync.service.ts` links only an agreement with `status: 'stored'`.
@@ -209,14 +404,17 @@ gateways only; production off until Carl says live).
      How often that happens has not been measured, and the two drafts must not
      both end up linked.
    - *Depends on:* that measurement, and a rule for which draft wins.
-3. **Close drafts with no service after N days.** Close them as "not needed: no
+3. ~~**Close drafts with no service after N days.**~~ Built: N = 7 in
+   `content/unsigned-draft-closure.json`, settable per practice on
+   `/practice/channels` (D-2026-10-10-09). Close them as "not needed: no
    service recorded", with a vault event.
    - N belongs in the versioned rule set (hard rule 14); it is never hardcoded.
    - *Why deferred:* closing an agreement is a state change with evidence
      consequences. N is a regulatory-adjacent threshold that is not in the
      requirements docs, and §7c says never to invent one.
-   - *Depends on:* Carl choosing N. Option 2 should come first, so that nothing
-     a service could still claim gets closed.
+   - *Depends on:* ~~Carl choosing N~~ (chosen: 7 days by default, settable
+     per practice; D-2026-10-10-09). Option 2 should come first, so that
+     nothing a service could still claim gets closed.
 
 ---
 
