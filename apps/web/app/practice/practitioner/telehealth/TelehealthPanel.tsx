@@ -22,7 +22,7 @@
  * The console's passkey sign-in is untouched (hard rule 15).
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import {
   ASSIGNOR_RELATIONSHIP_OPTIONS,
@@ -110,6 +110,8 @@ export function TelehealthPanel() {
   const [error, setError] = useState<string | null>(null);
   const [sent, setSent] = useState<TelehealthSendResult | null>(null);
   const [sessions, setSessions] = useState<TelehealthSessionView[]>([]);
+  /** The patient chosen last. A contact answer for anybody else arrived late and is dropped. */
+  const latestChoice = useRef<string | null>(null);
   /** Which not-done form is open: a session id, or 'new' for the chosen patient with no session. */
   const [notDoneFor, setNotDoneFor] = useState<string | null>(null);
 
@@ -148,6 +150,7 @@ export function TelehealthPanel() {
 
   const choose = async (hit: PatientHit) => {
     // Nothing from the last patient survives a new choice, least of all their contact.
+    latestChoice.current = hit.patientId;
     setContact(null);
     setPatient(hit);
     setSent(null);
@@ -158,9 +161,12 @@ export function TelehealthPanel() {
     setChannel('');
     setError(null);
     const res = await fetch(`${CORE_URL}/telehealth/patients/${hit.patientId}/contact`, { headers: headers() }).catch(() => null);
+    // OUT OF ORDER IS NORMAL: a slow answer for the previous patient must never land under this one.
+    if (latestChoice.current !== hit.patientId) return;
     if (!res) return setError(strings.status.unreachable);
     if (!res.ok) return setError(await refusal(res));
     const c = (await res.json()) as TelehealthMaskedContact;
+    if (latestChoice.current !== hit.patientId || c.patientId !== hit.patientId) return;
     setContact(c);
     setChannel(c.maskedMobile ? 'sms' : c.maskedEmail ? 'email' : '');
   };

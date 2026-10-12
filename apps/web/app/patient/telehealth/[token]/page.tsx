@@ -2,8 +2,16 @@ import type { Metadata } from 'next';
 import { TelehealthPatientView } from './TelehealthPatientView';
 import { strings } from '../../../strings';
 
+/*
+ * THE PAGE'S OWN HEAD, NEUTRAL UNTIL G10 IS ANSWERED (TELEHEALTH-PLAN.md §9).
+ * Without a description here the root layout's ("Consent and compliance record
+ * for Medicare Assignment of Benefit") is what a link preview shows on the
+ * patient's phone. The title drops the product name for the same reason; the
+ * wordmark itself is Carl's call (PR #29, "needs Carl's decision").
+ */
 export const metadata: Metadata = {
-  title: `${strings.telehealth.patient.title} — ${strings.appName}`,
+  title: strings.telehealth.patient.title,
+  description: strings.telehealth.patient.metaDescription,
 };
 
 /**

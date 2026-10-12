@@ -5653,6 +5653,8 @@ export const strings = {
   telehealth: {
     patient: {
       title: 'Telehealth consultation',
+      /** The page's own description, so a link preview never shows the root layout's (G10). */
+      metaDescription: 'The page for your telehealth consultation. Type the code your practitioner reads out on the call.',
       loading: 'Opening…',
       fromPractice: (practice: string) => `From ${practice}`,
       codeHeading: 'Type the code',

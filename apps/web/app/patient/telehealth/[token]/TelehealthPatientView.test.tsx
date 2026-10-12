@@ -220,6 +220,20 @@ describe('TelehealthPatientView', () => {
     expect(document.body.textContent ?? '').not.toMatch(/\b0 more tr/);
   });
 
+  it('a page that closed under the button says it is not open, by its code', async () => {
+    stub((url) => {
+      if (url.endsWith(`/telehealth/link/${TOKEN}`)) return { status: 200, body: { state: 'open', practiceName: 'Sample Practice' } };
+      if (url.endsWith('/code')) return { status: 201, body: { pageKey: PAGE_KEY } };
+      if (url.endsWith('/page/agree')) return { status: 404, body: { code: 'page_not_open' } };
+      return { status: 200, body: page('code_checked') };
+    });
+    render(<TelehealthPatientView token={TOKEN} />);
+    fireEvent.change(await screen.findByLabelText(t.codeLabel), { target: { value: '123456' } });
+    fireEvent.click(screen.getByTestId('telehealth-continue'));
+    fireEvent.click(await screen.findByTestId('telehealth-agree'));
+    expect((await screen.findByTestId('telehealth-page-not-open')).textContent).toContain(t.pageNotOpenBody);
+  });
+
   it('writes nothing to browser storage', async () => {
     const setItem = vi.spyOn(Storage.prototype, 'setItem');
     stub((url) => {
