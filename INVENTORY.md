@@ -17,17 +17,17 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 | | Count |
 |---|---|
-| Exported symbols indexed | 2507 |
+| Exported symbols indexed | 2509 |
 | Files scanned for exports | 583 |
 | Files scanned for imports | 626 |
-| Exports with no comment of their own | 1020 |
-| Exports imported nowhere else | 1037 |
+| Exports with no comment of their own | 1019 |
+| Exports imported nowhere else | 1038 |
 
 ## Sections
 
 - [Web components](#web-components) — 241
 - [Web hooks](#web-hooks) — 16
-- [Web helpers and constants](#web-helpers-and-constants) — 318
+- [Web helpers and constants](#web-helpers-and-constants) — 319
 - [Web types](#web-types) — 122
 - [Domain functions](#domain-functions) — 405
 - [Domain constants and content](#domain-constants-and-content) — 265
@@ -35,7 +35,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 - [Contracts types](#contracts-types) — 121
 - [Contracts functions and constants](#contracts-functions-and-constants) — 37
 - [Core services, controllers and modules](#core-services-controllers-and-modules) — 290
-- [Core helpers, constants and types](#core-helpers-constants-and-types) — 230
+- [Core helpers, constants and types](#core-helpers-constants-and-types) — 231
 - [AOBPRINTER (the desktop print channel)](#aobprinter-the-desktop-print-channel-) — 163
 
 ## Web components
@@ -311,7 +311,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Web helpers and constants
 
-318 exports.
+319 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -530,7 +530,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `candidateText` | web:practice/reconciliation/AssociationChoices.tsx | One draft, as a line: what kind, where it is, the day it was for and when it was made. | 0 |
 | `choiceReasonText` | web:practice/reconciliation/AssociationChoices.tsx | What was found, in words, or the code where there are none (CLAUDE.md §7c). | 0 |
 | `closeFixtureSession` | web:patient/portal/fixtures.ts |  | 0 |
-| `describePrintRecordCheck` | web:practice/tablet/pushDesk.tsx |  | 0 |
+| `describePrintRecordCheck` | web:practice/tablet/pushDesk.tsx | ONE FAILED CHECK, IN OUR WORDS — and its own code where we have none. | 0 |
 | `describePrintedNameDifference` | web:practice/tablet/pushDesk.tsx | THE PRINTED-NAME WARNING, IN OUR WORDS (D-2026-10-10-11) — `null` when the row carries none. | 0 |
 | `describeRefusal` | web:practice/tablet/pushDesk.tsx |  | 0 |
 | `describeRuleFailure` | web:practice/tablet/pushDesk.tsx | ONE RULES VERDICT, SPLIT INTO WHAT THE RULE SET SAID AND WHAT TO DO. | 0 |
@@ -630,6 +630,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `when` | web:practice/aobprinter-host/AobPrinterHostView.tsx |  | 0 |
 | `whenLabel` | web:practice/reconciliation/ServiceDescriptionsNeeded.tsx | "Thu 3 Sep, 09:00" — or nothing, for a walk-in with no booked time. | 0 |
 | `whenLabel` | web:practice/tablet/pushDesk.tsx | "9:00", or the honest absence for a walk-in nobody booked. | 0 |
+| `whoBlockedTitle` | web:practice/tablet/pushDesk.tsx | WHY "WHO IS SIGNING?" IS DEAD, IN WORDS THAT ARE TRUE FOR THIS ROW. | 0 |
 | `whoDraftFromRow` | web:practice/tablet/pushDesk.tsx | WHAT THE PANEL OPENS SHOWING, WHEN NOBODY HAS TYPED IN IT YET (Carl, 10 Sep 2026). | 0 |
 | `whoFault` | web:practice/tablet/pushDesk.tsx | THE GATE ON THE "SOMEONE ELSE" BRANCH — the single source of truth behind what Save refuses to send and the reason shown UNDER THE CONTROL IT IS ABOUT. | 0 |
 | `whoSnapshot` | web:practice/tablet/pushDesk.tsx | THE PANEL'S ANSWER, IN THE SHAPE THE DOMAIN COMPARES (Carl, 11 Sep 2026 — D-2026-09-11-01). | 0 |
@@ -1907,6 +1908,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `VAULT_EVENT_TYPES` | contracts:vault.ts | Event type registry. | **1** · vault:events/create-event.dto.ts |
 | `answersEnduringRules` | contracts:rules-engine.ts | DID THE RULE SET ANSWER THE ENDURING QUESTIONS AT ALL? | **1** · core:agreements/agreements.service.ts |
 | `db4PrintedNameDifference` | contracts:db4-printed-name.ts | The staff-desk warning, or `null` when the printed name matches the record. | **1** · core:agreements/agreements.service.ts |
+| `db4PrintedNamePartsDiffering` | contracts:db4-printed-name.ts | Which parts differ, in `DB4_NAME_PARTS` order. | **1** · core:agreements/db4-form-view.ts |
 | `isSilentRestoreClient` | contracts:auth.ts |  | **1** · web:AccessGuard.tsx |
 | `withSilentRestore` | contracts:auth.ts | Add the marker to a URL an invitation will return to. | **1** · auth-client:keycloak-admin.ts |
 | `ARRIVAL_MOVE_REFUSALS` | contracts:arrivals.ts | WHY A ROW COULD NOT BE MOVED — a CODE the console maps to words and a destination, never prose (CLAUDE.md §7, "shortcuts to the answer"). | 0 |
@@ -1923,7 +1925,6 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `SIGNATURE_METHODS` | contracts:signature.ts | REQ-SIG-01 — the five recognised marks. | 0 |
 | `SILENT_RESTORE_CLIENTS` | contracts:auth.ts | The Keycloak clients an invitation may name. | 0 |
 | `comparableNamePart` | contracts:db4-printed-name.ts | One name part reduced for comparison. | 0 |
-| `db4PrintedNamePartsDiffering` | contracts:db4-printed-name.ts | Which parts differ, in `DB4_NAME_PARTS` order. | 0 |
 
 ## Core services, controllers and modules
 
@@ -2224,7 +2225,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Core helpers, constants and types
 
-230 exports.
+231 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -2397,6 +2398,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `PAIRING_ATTEMPT_LIMIT` | core:devices/pairing-rate-limit.ts | Ten wrong codes in ten minutes from one address. | 0 |
 | `PAIRING_ATTEMPT_WINDOW_MS` | core:devices/pairing-rate-limit.ts |  | 0 |
 | `PORTAL_PASSKEY_ATTEMPT_WINDOW_MS` | core:portal/portal-passkey-rate-limit.ts |  | 0 |
+| `PatientNameOnRecord` | core:agreements/db4-form-view.ts | The name of the patient the agreement is FOR, as our record holds it. | 0 |
 | `PendingServiceDescriptionRow` | core:service-descriptions/service-descriptions.service.ts |  | 0 |
 | `PortalAuthenticationContext` | core:portal/portal-authenticator.ts |  | 0 |
 | `PortalAuthenticationOutcome` | core:portal/portal-authenticator.ts |  | 0 |

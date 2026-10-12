@@ -3240,15 +3240,18 @@ export class AgreementsService {
         const record = records.get(row.sourcePrintJobId as string);
         if (!record) continue;
         /*
-         * A WARNING, NOT A CHECK (D-2026-10-10-11). The DB4 was matched by
-         * chart number; if the name it PRINTED is not the record's name, the
-         * desk says so and shows both. It never joins `checks`, so it can
-         * never refuse a push (hard rule 8), and nothing here logs or writes
-         * either name (hard rule 9).
+         * A WARNING AND A REFUSAL, FROM ONE COMPARISON. The DB4 was matched by
+         * PMS patient ID alone (hard rule 1). If the name it PRINTED is not the
+         * record's name, the desk row shows both names (D-2026-10-10-11) and
+         * Send to tablet refuses (`print_record_patient_name_differs`,
+         * D-2026-10-11-06) — both decided by `db4PrintedNamePartsDiffering`, so
+         * the band and the refusal can never disagree. Nothing here logs or
+         * writes either name (hard rule 9), and the refusal stops the tablet,
+         * never the visit (hard rule 8).
          */
-        const nameDiffers = db4PrintedNameDifference(record.envelope.patient ?? {}, row.patient);
+        const nameDiffers = db4PrintedNameDifference(record.envelope?.patient ?? {}, row.patient);
         answers.set(row.id, {
-          checks: checkDb4PrintRecord(record.envelope),
+          checks: checkDb4PrintRecord(record.envelope, row.patient),
           identity: record.identity,
           nameDiffers,
         });
@@ -3270,7 +3273,7 @@ export class AgreementsService {
 
   async db4PrintRecordChecks(
     practiceId: string,
-    agreement: { id: string; sourcePrintJobId: string | null },
+    agreement: { id: string; sourcePrintJobId: string | null; patientId?: string },
   ): Promise<{ checks: readonly Db4PrintRecordCheck[]; identity: Db4PrintRecordIdentity | null }> {
     if (!agreement.sourcePrintJobId) return NO_PRINT_RECORD_CHECKS;
     try {
@@ -3285,7 +3288,20 @@ export class AgreementsService {
        * practice that prints all morning — and the only place that is known
        * is here, where the record was just read.
        */
-      return { checks: checkDb4PrintRecord(record.envelope), identity: record.identity };
+      /*
+       * THE PATIENT ON RECORD, for the printed-name check (D-2026-10-11-06).
+       * Read here, beside the record, so the push and the desk list ask the
+       * same question of the same two names.
+       */
+      const onRecord = agreement.patientId
+        ? await this.prisma.withPractice(practiceId, (tx) =>
+            tx.patient.findFirst({
+              where: { id: agreement.patientId },
+              select: { givenNames: true, familyName: true },
+            }),
+          )
+        : null;
+      return { checks: checkDb4PrintRecord(record.envelope, onRecord), identity: record.identity };
     } catch (err) {
       /*
        * THE CLASS AND THE AGREEMENT ID, NEVER THE RECORD. Every line of a DB4

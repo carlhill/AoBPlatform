@@ -3,25 +3,37 @@
  * (D-2026-10-10-11; Carl, 10 October 2026: *"B and tell the user to resend to
  * AOBPrinter from PMS"*.)
  *
- * A DB4 Print Record is matched to a patient by CHART NUMBER ONLY
- * (`db4-assignment.handler.ts`), and that stays. But the tablet's picture of
+ * A DB4 Print Record is matched to a patient by PMS PATIENT ID ONLY
+ * (`patientRecordNumber`, `db4-assignment.handler.ts`), and that stays. But the tablet's picture of
  * the DB4 and the Signed-DB4 show the name PRINTED on the form, while
  * who-is-signing, the details check, the step headings and the Assignment
  * Agreement show the patient RECORD's name. When the two differ, one signing
- * carries two names. Option B: make it visible to staff, never block.
+ * carries two names. Option B: make it visible to staff.
  *
- * ── A WARNING, NEVER A REFUSAL ──
+ * ── A WARNING AND, SINCE 11 OCTOBER 2026, A REFUSAL ──
  *
- * This is deliberately NOT one of `DB4_PRINT_RECORD_CHECKS`. Those refuse the
- * push; this does not. Send to tablet stays enabled and signing is never
- * blocked (hard rule 8, REQ-REC-04). It lives in its own file so the refusal
- * list, and anybody editing it, is untouched.
+ * D-2026-10-10-11 made this a warning only. D-2026-10-11-06 (Carl, 11 October
+ * 2026) keeps the warning band AND refuses Send to tablet with
+ * `print_record_patient_name_differs`, one of `DB4_PRINT_RECORD_CHECKS`. Both
+ * are decided by THIS function, so the band and the refusal can never
+ * disagree. The refusal stops the tablet, never the visit: the patient is seen
+ * and billed either way (hard rule 8, REQ-REC-04).
  *
  * ── THE COMPARISON — what counts as the same name ──
  *
  * Given names and family name are compared SEPARATELY, printed part against
- * recorded part, never as one joined string — so a swap of the two flags both,
- * and "Mae Testa" is not quietly "Testa Mae".
+ * recorded part — so a swap of the two flags both, and "Mae Testa" is not
+ * quietly "Testa Mae".
+ *
+ * EXCEPT WHERE THE TWO SPLIT THE SAME NAME DIFFERENTLY (Carl, 11 October 2026).
+ * The DB4 template splits a printed name at its LAST space, so "Anna Van Der
+ * Berg" comes off the page as given "Anna Van Der", family "Berg", against a
+ * record of "Anna" / "Van Der Berg". Part by part those differ, and neither
+ * remedy fixes it: a reprint prints the same split, and correcting the record
+ * would damage a name that is right. So when BOTH parts were printed and the
+ * whole name — given then family, reduced as below — is the same, it is the
+ * same name. A swap still differs as a whole ("Mae Testa" is not "Testa Mae"),
+ * and so does anything else this file treats as different.
  *
  * Each part is reduced by `comparableNamePart`, and two parts are the same
  * name only when the reductions are EQUAL. The reduction removes rendering
@@ -119,6 +131,20 @@ export function db4PrintedNamePartsDiffering(
   }
   if (family !== null && comparableNamePart(family) !== comparableNamePart(recorded.familyName)) {
     parts.push('family_name');
+  }
+  /*
+   * THE SAME NAME, SPLIT IN A DIFFERENT PLACE (see the header). Only when both
+   * parts were printed: with one part missing there is no split to disagree
+   * about, and the part that was printed stands on its own.
+   */
+  if (
+    parts.length > 0 &&
+    given !== null &&
+    family !== null &&
+    comparableNamePart(`${given} ${family}`) ===
+      comparableNamePart(`${recorded.givenNames} ${recorded.familyName}`)
+  ) {
+    return [];
   }
   return parts;
 }

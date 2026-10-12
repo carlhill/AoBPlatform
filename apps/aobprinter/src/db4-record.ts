@@ -145,6 +145,19 @@ export interface Db4PrintRecord {
   readonly queueName?: string;
   readonly queueLabel?: string;
 
+  /*
+   * HOW MANY SERVICE LINES THE TEMPLATE DID NOT READ (D-2026-10-11-05). A
+   * date-led line the service-row pattern rejected — a credit, a whole-dollar
+   * amount, a row with no amount — is missing from `services`, and this says
+   * so. A COUNT, NEVER CONTENT: no description, item or amount rides on it, so
+   * it is safe in a log line and an HTTP body.
+   *
+   * Zero when every service line was read. Absent when the template reads no
+   * service rows, or on a record from a desktop that predates the count —
+   * core cannot tell that a row went missing on one of those, and says so.
+   */
+  readonly unparsedServiceLines?: number;
+
   readonly heading?: Db4Heading;
   readonly form?: Db4Form;
   readonly servicingLocation?: Db4ServicingLocation;
