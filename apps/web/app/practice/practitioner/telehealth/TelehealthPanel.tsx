@@ -504,9 +504,14 @@ export function TelehealthPanel() {
                       </SelectInput>
                     )}
                   </Field>
-                  <Button variant="primary" onClick={() => void send()} disabled={!canSend || busy} data-testid="telehealth-send">
-                    {busy ? p.sending : p.send}
-                  </Button>
+                  {/* ONE SEND PER CHOICE (Carl, 12 Oct 2026): once sent, the button goes; a new link is offered by the code. */}
+                  {sent ? (
+                    <p data-testid="telehealth-sent-note">{p.sentNote}</p>
+                  ) : (
+                    <Button variant="primary" onClick={() => void send()} disabled={!canSend || busy} data-testid="telehealth-send">
+                      {busy ? p.sending : p.send}
+                    </Button>
+                  )}
                 </>
               )
             )}
@@ -538,6 +543,17 @@ export function TelehealthPanel() {
           </p>
           <p>{p.codeHint(new Date(sent.codeExpiresAt).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' }))}</p>
           <p>{p.queued(sent.queued.map((q) => p.channel[q]).join(' + '))}</p>
+          {/* Where the eye is after sending: a fresh link and code for this same session, if it did not arrive. */}
+          <p>
+            {p.didNotArrive}{' '}
+            <Button
+              onClick={() => void act(`sessions/${sent.session.id}/send-again`, {})}
+              disabled={busy}
+              data-testid="telehealth-code-send-again"
+            >
+              {p.sendAgain}
+            </Button>
+          </p>
         </section>
       )}
       </div>

@@ -145,6 +145,10 @@ describe('TelehealthPanel', () => {
     fireEvent.click(send);
 
     expect((await screen.findByTestId('telehealth-code')).textContent).toBe('0 4 2 9 1 7');
+    // Once sent, Send the link goes, and a new link is offered beside the code (Carl, 12 Oct 2026).
+    expect(screen.queryByTestId('telehealth-send')).toBeNull();
+    expect(screen.getByTestId('telehealth-sent-note')).toBeTruthy();
+    expect(screen.getByTestId('telehealth-code-send-again').textContent).toBe(p.sendAgain);
     const post = calls.find((c) => c.method === 'POST' && c.url.endsWith('/telehealth/sessions'))!;
     // telehealth_identifier_types_never_values: the body carries kinds of identifier and no contact.
     expect(post.body).toEqual({

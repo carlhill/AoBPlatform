@@ -5796,6 +5796,8 @@ export const strings = {
       didNotProceed: 'Consultation did not go ahead',
       wentAhead: 'Consultation complete',
       startNew: 'Start new telehealth consultation',
+      sentNote: 'Link sent. Read the access code below to the person on the call.',
+      didNotArrive: 'Did not arrive?',
       consultationId: (id: string) => `Consultation ID ${id}`,
       consenter: (name: string, mobile: string) => `Agreed by ${name} for the patient, mobile ${mobile}`,
       notDoneHeading: 'Not done, with a reason',
