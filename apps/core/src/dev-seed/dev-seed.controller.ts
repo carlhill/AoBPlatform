@@ -12,6 +12,9 @@ import {
 import { createHash, randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { DevicesService } from '../devices/devices.service';
+import { ServiceDescriptionsService } from '../service-descriptions/service-descriptions.service';
+import { SetServiceDescriptionDto } from '../service-descriptions/service-descriptions.controller';
+import type { Actor } from '../auth/actor.decorator';
 
 /** Named honestly: nobody reviewed or composed these rows — a seed wrote them. */
 const DEV_SEED_AUTHOR = 'dev seed (not a human review)';
@@ -70,6 +73,7 @@ export class DevSeedController {
   constructor(
     private readonly prisma: PrismaService,
     private readonly devices: DevicesService,
+    private readonly descriptions: ServiceDescriptionsService,
   ) {}
 
   /**
@@ -173,6 +177,42 @@ export class DevSeedController {
     if (!practiceId) throw new BadRequestException('x-practice-id header is required.');
     if (!body?.deviceId) throw new BadRequestException('deviceId is required.');
     return this.devices.revokeForDev(practiceId, body.deviceId);
+  }
+
+  /**
+   * D6a ON A DRAFT, WITHOUT A SIGNED-IN USER: dev only, the same bargain as
+   * `POST /dev/kiosk-device` above.
+   *
+   * `POST /service-descriptions/agreements/:id` REFUSES an unattributed
+   * request by design: D6a is set on a staff surface so that the person who
+   * set it is on the record. Since the pairing-day ruling (4 Sep 2026) the
+   * walk-up tablet hands an unlocked draft with no D6a straight to "see
+   * reception", so the Playwright ceremony suite cannot reach the
+   * who-is-signing screen (K-5) without one, and it has no Keycloak session.
+   *
+   * The product endpoint is not relaxed. This calls the SAME service, with
+   * the same list check and the same pre-agreement-only rule, attributed
+   * honestly to a seed rather than to a person.
+   */
+  @Post('agreements/:agreementId/service-description')
+  async devSetServiceDescription(
+    @Headers('x-practice-id') practiceId: string | undefined,
+    @Param('agreementId', ParseUUIDPipe) agreementId: string,
+    @Body() dto: SetServiceDescriptionDto,
+  ) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new ForbiddenException('Dev seeding does not exist in production.');
+    }
+    if (!practiceId) throw new BadRequestException('x-practice-id header is required.');
+    const seed: Actor = {
+      id: 'dev-seed',
+      name: 'dev seed (not a signed-in user)',
+      principalType: 'system',
+      roles: [],
+      // Nothing authenticated here, and the audit line says so.
+      authMethod: 'unknown',
+    };
+    return this.descriptions.setFor(practiceId, agreementId, dto.description, seed);
   }
 
   /** Creates one sample practice with a GP, a patient and a self-assignor. Dev only. */

@@ -36,6 +36,12 @@
  * practices out of nothing. Everything after that — the exchange, the
  * credential, the header, the guard — is the real path.
  *
+ * AND ONE MORE FOR THE SAME REASON: D6a ON A DRAFT. The staff-side
+ * `POST /service-descriptions/agreements/:id` refuses an unattributed caller,
+ * and an unlocked draft with no D6a never reaches K-5 (4 Sep 2026). The
+ * DEV-ONLY `POST /dev/agreements/:id/service-description` calls the same
+ * service as a seed. Only the two "someone else" runs use it.
+ *
  *   npm run dev -w apps/web        # web on 3100
  *   npm run start:dev -w apps/core # core on 3001
  *   npm run e2e:kiosk -w apps/web
@@ -217,7 +223,13 @@ async function stageWaitingPatient(
     headers: headers(),
     data: {
       type: 'episodic_pre',
-      providerId: source.providerId,
+      /*
+       * THE ANCHOR, NOT THE LEGACY ROW (dbe53a1, Carl 7 Sep 2026). An agreement
+       * now names the practitioner at a location, and a seeded row made since
+       * then carries `affiliationId` with no `providerId`. The deprecated field
+       * is sent only for a source that predates the anchor.
+       */
+      ...(source.affiliationId ? { affiliationId: source.affiliationId } : { providerId: source.providerId }),
       patientId: source.patientId,
       // The PATIENT'S own assignor record. D7 stays explicit even here.
       assignorId: source.patientAssignorId ?? source.assignorId,
@@ -233,6 +245,21 @@ async function stageWaitingPatient(
   });
   expect(capture.ok(), await capture.text()).toBeTruthy();
   const { captureRequestId } = await capture.json();
+
+  if (!options.lock) {
+    /*
+     * D6a STILL COMES FROM THE STAFF SIDE ON A DRAFT. Since the pairing-day
+     * ruling (4 Sep 2026) the tablet sends an unlocked draft with no D6a
+     * straight to "see reception", before the patient types anything. The
+     * product endpoint refuses a caller with no signed-in user, so the
+     * DEV-ONLY twin sets it, attributed to a seed (see the file header).
+     */
+    const described = await api.post(`${CORE}/dev/agreements/${agreement.id}/service-description`, {
+      headers: headers(),
+      data: { description: STAFF_SIDE_SERVICE_DESCRIPTION },
+    });
+    expect(described.ok(), await described.text()).toBeTruthy();
+  }
 
   if (options.lock) {
     const moved = await api.post(`${CORE}/agreements/${agreement.id}/transition`, {
@@ -284,6 +311,40 @@ async function verifyAs(page: Page, row: WaitingRow, api: APIRequestContext) {
   const cont = page.getByTestId('verify-continue');
   await expect(cont).toBeEnabled();
   await cont.click();
+}
+
+/**
+ * K-3, READ AND TICKED THE WAY A PATIENT DOES IT (D-2026-09-27-01).
+ *
+ * The operative sentences are ticked one at a time, each on the page where it
+ * applies, and Continue to sign stays disabled until every one is ticked
+ * (hard rule 2). A long form runs over several pages (`rules/db4-pages.ts`),
+ * so this ticks what the page shows, moves on, and repeats. It clicks only
+ * what a patient could click; it never reaches past the gate.
+ */
+async function readAndAffirm(page: Page) {
+  for (let pages = 0; pages < 12; pages += 1) {
+    const ticks = page.locator('main [data-testid^="affirm-"]');
+    const count = await ticks.count();
+    for (let i = 0; i < count; i += 1) {
+      if (!(await ticks.nth(i).isChecked())) await ticks.nth(i).check();
+    }
+    const nextPage = page.getByTestId('db4-page-continue');
+    if (!(await nextPage.isVisible().catch(() => false))) break;
+    await nextPage.click();
+  }
+  await expect(page.getByTestId('continue-to-sign')).toBeEnabled();
+}
+
+/**
+ * K-3 OFFERS NO FIELD TO TYPE INTO. Its only controls are the statement ticks
+ * (D-2026-09-27-01): every input on the screen is one of them, and there is no
+ * text box, select or text area anywhere for a particular to be typed into.
+ */
+async function expectOnlyStatementTicks(page: Page) {
+  await expect(page.locator('main input:not([type="checkbox"]), main select, main textarea')).toHaveCount(0);
+  const inputs = await page.locator('main input').count();
+  expect(inputs).toBe(await page.locator('main input[data-testid^="affirm-"]').count());
 }
 
 /**
@@ -388,7 +449,7 @@ test.describe('the kiosk ceremony', () => {
     // K-3: locked, versioned, hashed, and offering the patient no field at all.
     await expect(page.getByTestId('artefact-hash')).toBeVisible({ timeout: 25_000 });
     await expect(page.getByTestId('versions')).toBeVisible();
-    await expect(page.locator('main input, main select, main textarea')).toHaveCount(0);
+    await expectOnlyStatementTicks(page);
     // No amount, and no practitioner signature field (rules 3 and 4).
     await expect(page.locator('main')).not.toContainText(/\$\s?\d/);
     await expect(page.getByText('No provider signature field')).toBeVisible();
@@ -399,9 +460,8 @@ test.describe('the kiosk ceremony', () => {
     const box = await exit.boundingBox();
     expect(box!.height).toBeGreaterThanOrEqual(44);
 
-    const toSign = page.getByTestId('continue-to-sign');
-    await expect(toSign).toBeEnabled();
-    await toSign.click();
+    await readAndAffirm(page);
+    await page.getByTestId('continue-to-sign').click();
 
     // K-4. Drawing on glass and tapping to approve are both real signatures;
     // this run takes the tap, which is the accessible path.
@@ -438,6 +498,7 @@ test.describe('the kiosk ceremony', () => {
     await expect(page.getByTestId('assignor-locked-note')).toBeVisible({ timeout: 25_000 });
 
     await expect(page.getByTestId('artefact-hash')).toBeVisible({ timeout: 25_000 });
+    await readAndAffirm(page);
     await page.getByTestId('continue-to-sign').click();
 
     const pad = page.getByTestId('signature-pad');
@@ -526,7 +587,8 @@ test.describe('the kiosk ceremony', () => {
      * ON A DRAFT, NECESSARILY. Who signs is one of the locked particulars, so
      * the server refuses to re-point an agreement once they are locked
      * (REQ-REG-06) — which means this branch can only be exercised before the
-     * staff-side lock. What that costs the test is stated plainly below.
+     * staff-side lock. The staff side supplies D6a on the draft, so the lock
+     * succeeds once the tablet has re-pointed it.
      */
     const row = await stageWaitingPatient(request, PATIENT.name, { lock: false });
     await verifyAs(page, row, request);
@@ -561,21 +623,32 @@ test.describe('the kiosk ceremony', () => {
     expect(agreement.particulars?.assignorName ?? 'Pat Example').toContain('Pat Example');
 
     /*
-     * AND THEN IT HANDS OVER, HONESTLY. This draft has no D6a — nothing on the
-     * staff side supplied one, because nothing on the staff side can yet: the
-     * Basic Service Description comes from the PMS appointment type through the
-     * practice's versioned mapping, and that path is not built. So the lock is
-     * refused and the tablet says so and stops.
+     * AND THEN IT GOES ON TO K-3, NAMING THE NEW SIGNER. This run used to end
+     * at a hand-over, because nothing on the staff side could supply D6a and
+     * the lock was refused. The staff surface sets it now (the dev twin stands
+     * in for it here), so the lock succeeds with Pat Example in it, and the
+     * operative words say they are signing on the patient's behalf.
      *
-     * WHAT IS BEING ASSERTED IS THE SHAPE OF THE REFUSAL. Not a numbered list
-     * of "details still needed" for the patient to fix, not the server's own
-     * words, and above all not a field for anybody standing at the tablet to
-     * type a validated particular into.
+     * STILL NO FIELD TO TYPE A PARTICULAR INTO, and none of the server's own
+     * words or requirement ids on the patient's screen.
      */
-    await expect(page.getByTestId('handover-heading')).toBeVisible({ timeout: 25_000 });
-    await expect(page.getByTestId('handover-body')).toContainText('see reception');
+    await expect(page.getByTestId('versions')).toBeVisible({ timeout: 25_000 });
+    await expect(page.locator('main')).toContainText('Pat Example');
     await expect(page.locator('main')).not.toContainText(/C6:|D6a|Internal server error/i);
-    await expect(page.locator('main input, main select, main textarea')).toHaveCount(0);
+    await expectOnlyStatementTicks(page);
+
+    await readAndAffirm(page);
+    await page.getByTestId('continue-to-sign').click();
+    await expect(page.getByTestId('signature-pad')).toBeVisible();
+    await page.getByTestId('sign-control-tap').click();
+    await expect(page.getByTestId('complete-heading')).toBeVisible({ timeout: 25_000 });
+
+    const signed = await request.get(`${CORE}/agreements/${row.agreementId}`, { headers: headers() });
+    const final = await signed.json();
+    // Signed, and possibly already moved on to `stored` by the time it is read.
+    expect(['signed', 'stored']).toContain(final.status);
+    expect(final.signatureEventId).toBeTruthy();
+    expect(final.assignorIsPatient).toBe(false);
   });
 
   test('a practice staff member is refused, and told which rule refused them', async ({
