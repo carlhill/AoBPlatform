@@ -1,0 +1,8 @@
+{
+  "$comment": "VERSIONED CONTENT, NOT CODE (hard rule 14; D-2026-10-10-09 option 3). How many practice-local days an unsigned agreement waits, with no service recorded for its visit, before the closure sweep moves it to `expired` with the reason `no_service_recorded`. Carl, 10 Oct 2026: 'N is 7 days - make N a configurable setting'. `defaultDays` applies to every practice that has not set its own; `minDays` and `maxDays` bound a practice's own value (the DTO and the database CHECK on practices.unsignedDraftClosureDays use these numbers). `types` is which agreement types are drafted for one visit and so can be closed this way: a treatment plan spans months and is deliberately absent. Every closure records this file's `version` and the N it applied. Bump `version` on every edit.",
+  "version": "unsigned-draft-closure-2026-10-1",
+  "defaultDays": 7,
+  "minDays": 1,
+  "maxDays": 90,
+  "types": ["episodic_pre", "episodic_post", "enduring"]
+}

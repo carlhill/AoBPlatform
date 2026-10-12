@@ -283,11 +283,13 @@ export const DB4_PRINT_RECORD_CHECKS = [
    * record, and the tablet would have shown them a form in somebody else's
    * name.
    *
-   * COMPARED AS ONE WHOLE NAME, ignoring case and spacing, because the
-   * template splits a printed name at its last space and a two-word family
-   * name would otherwise be refused over where a parser drew a line. Any other
-   * difference — a middle name, a spelling — is refused, and reception
-   * decides which side is right.
+   * ONE COMPARISON, SHARED WITH THE DESK'S WARNING BAND (D-2026-10-10-11):
+   * `db4PrintedNamePartsDiffering` in `db4-printed-name.ts`, so the band and
+   * this refusal can never disagree (Carl, 11 October 2026). Given and family
+   * names are compared separately, only where printed; case, spacing, NFC and
+   * typographic apostrophes and dashes are ignored, and nothing else is. A
+   * middle name, a spelling, or a two-word family name split differently by
+   * the template is refused, and reception decides which side is right.
    *
    * A CODE, NEVER EITHER NAME (hard rule 9). The console already shows the
    * name on record and the PMS patient ID on the row; it composes the

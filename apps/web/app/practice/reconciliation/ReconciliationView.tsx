@@ -31,6 +31,7 @@ import { useRefreshable } from '../../refresh';
 import { strings } from '../../strings';
 import { usePractice } from '../usePractice';
 import { ServiceDescriptionsNeeded } from './ServiceDescriptionsNeeded';
+import { AssociationChoices } from './AssociationChoices';
 import styles from '../manage.module.css';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:21001';
@@ -177,11 +178,25 @@ export function ReconciliationView() {
    */
   const deepLinked = useRef(false);
   const [notOnQueue, setNotOnQueue] = useState<string | null>(null);
+  /*
+   * AND THE SERVICES WAITING FOR A CHOICE OF AGREEMENT (D-2026-10-10-09): a
+   * `?item=` from the tablet's earlier-days line may name one of those, which
+   * is a different list from the queue. The link waits for both.
+   */
+  const [choiceIds, setChoiceIds] = useState<string[] | null>(null);
   useEffect(() => {
-    if (deepLinked.current || items === null) return;
+    if (deepLinked.current || items === null || choiceIds === null) return;
     deepLinked.current = true;
     const wanted = new URLSearchParams(window.location.search).get(RECONCILIATION_ITEM_PARAM);
     if (!wanted) return;
+    if (choiceIds.includes(wanted)) {
+      requestAnimationFrame(() => {
+        const row = document.getElementById(`reconciliation-choice-${wanted}`);
+        row?.scrollIntoView?.({ block: 'center' });
+        row?.focus();
+      });
+      if (!items.some((item) => item.serviceRecordId === wanted)) return;
+    }
     if (!items.some((item) => item.serviceRecordId === wanted)) {
       setNotOnQueue(wanted);
       return;
@@ -192,7 +207,7 @@ export function ReconciliationView() {
       row?.scrollIntoView?.({ block: 'center' });
       row?.focus();
     });
-  }, [items, openDetail]);
+  }, [items, choiceIds, openDetail]);
 
   async function resend(item: Item): Promise<boolean> {
     const channel = channelFor(item);
@@ -310,6 +325,8 @@ export function ReconciliationView() {
         screen reception is being sent to.
       */}
       <ServiceDescriptionsNeeded practiceId={practiceId} />
+
+      <AssociationChoices practiceId={practiceId} onLoaded={setChoiceIds} />
 
       {notOnQueue && (
         <Notice tone="warn" title={strings.reconciliation.itemNotOnQueueTitle} data-testid="reconciliation-item-not-on-queue">

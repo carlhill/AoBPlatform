@@ -2554,6 +2554,16 @@ describe('the refusal words', () => {
     expect(info.text).toBe(strings.tablet.rulesRefused);
   });
 
+  it('a_push_refused_because_the_sweep_closed_the_agreement_says_so_in_words', () => {
+    // D-2026-10-10-09 option 3: the closure sweep closed it between the desk's check and the push.
+    const info = describeRefusal('agreement_closed_unsigned');
+    expect(info.text).toBe(strings.tablet.blocked.agreement_closed_unsigned);
+    expect(info.text).toContain('closed as not needed');
+    // Mapped, so not shown as a bare code; and no link to a fix the desk cannot know is true.
+    expect(info.code).toBeUndefined();
+    expect(info.link).toBeUndefined();
+  });
+
   it('a_refused_print_record_says_what_could_not_be_read_not_just_a_code', () => {
     const info = describeRefusal('print_record_incomplete', {
       checks: ['print_record_benefit_missing', 'print_record_irn_missing'],
@@ -3245,6 +3255,75 @@ describe('/practice/tablet — unsigned from earlier days', () => {
     expect(screen.queryByTestId('earlier-capped')).toBeNull();
   });
 
+  it('earlier_unsigned_associated_rows_say_what_was_found_and_link_to_the_service_item_not_the_draft', async () => {
+    signedInAtPractice();
+    stubFetch({
+      earlier: {
+        total: 3,
+        rows: [
+          { ...IN_RECON, reason: 'service_associated', serviceRecordId: 'svc-assoc-1', serviceOnReconciliation: true },
+          { ...NO_SERVICE, reason: 'service_choice_needed', serviceRecordId: 'svc-choice-1', serviceOnReconciliation: true },
+          {
+            ...NO_SERVICE,
+            agreementId: 'agreement-earlier-3',
+            reason: 'service_associated_other',
+            serviceRecordId: 'svc-assoc-2',
+            serviceOnReconciliation: true,
+          },
+        ],
+      },
+    });
+    render(<TabletView practiceId={PRACTICE} />);
+
+    await screen.findByTestId('earlier-summary');
+    expect(screen.getByTestId(`earlier-reason-${IN_RECON.agreementId}`).textContent).toBe(
+      strings.tablet.earlierReason.service_associated,
+    );
+    expect(screen.getByTestId(`earlier-link-${IN_RECON.agreementId}`).getAttribute('href')).toBe(
+      '/practice/reconciliation?item=svc-assoc-1',
+    );
+    expect(screen.getByTestId(`earlier-reason-${NO_SERVICE.agreementId}`).textContent).toBe(
+      strings.tablet.earlierReason.service_choice_needed,
+    );
+    expect(screen.getByTestId(`earlier-link-${NO_SERVICE.agreementId}`).getAttribute('href')).toBe(
+      '/practice/reconciliation?item=svc-choice-1',
+    );
+    expect(screen.getByTestId('earlier-reason-agreement-earlier-3').textContent).toBe(
+      strings.tablet.earlierReason.service_associated_other,
+    );
+    expect(screen.getByTestId('earlier-link-agreement-earlier-3').getAttribute('href')).toBe(
+      '/practice/reconciliation?item=svc-assoc-2',
+    );
+  });
+
+  it('earlier_unsigned_associated_row_whose_service_left_reconciliation_links_to_the_patient_not_a_missing_item', async () => {
+    signedInAtPractice();
+    stubFetch({
+      earlier: {
+        total: 2,
+        rows: [
+          { ...IN_RECON, reason: 'service_associated', serviceRecordId: 'svc-covered-1', serviceOnReconciliation: false },
+          {
+            ...NO_SERVICE,
+            reason: 'service_associated_other',
+            serviceRecordId: 'svc-covered-2',
+            serviceOnReconciliation: false,
+          },
+        ],
+      },
+    });
+    render(<TabletView practiceId={PRACTICE} />);
+
+    await screen.findByTestId('earlier-summary');
+    // Not "That item is not on this queue": the line goes where the agreement is listed.
+    expect(screen.getByTestId(`earlier-link-${IN_RECON.agreementId}`).getAttribute('href')).toBe(
+      `/practice/patients/${IN_RECON.patientId}`,
+    );
+    expect(screen.getByTestId(`earlier-link-${NO_SERVICE.agreementId}`).getAttribute('href')).toBe(
+      `/practice/patients/${NO_SERVICE.patientId}`,
+    );
+  });
+
   it('earlier_unsigned_decided_row_names_the_decision_and_unknown_codes_show_themselves', async () => {
     signedInAtPractice();
     stubFetch({
@@ -3301,5 +3380,133 @@ describe('/practice/tablet — unsigned from earlier days', () => {
     const earlierCalls = calls.filter((c) => c.url.includes('/tablet-sessions/unsigned-earlier'));
     expect(earlierCalls.length).toBeGreaterThan(0);
     expect(earlierCalls.every((c) => c.method === 'GET')).toBe(true);
+  });
+});
+
+/*
+ * THE PRINTED NAME AGAINST THE PATIENT RECORD (D-2026-10-10-11; Carl, 10
+ * October 2026: "B and tell the user to resend to AOBPrinter from PMS").
+ * A WARNING band on the staff row: both names and the PracSoft reprint. Since
+ * D-2026-10-11-06 (Carl, 11 Oct 2026) the same comparison also refuses Send to
+ * tablet, so the row the server sends is blocked as a print-record refusal and
+ * the band says so. The patient is still seen and billed (hard rule 8).
+ * Fixture names are obviously fake; no test name carries one.
+ */
+describe('a DB4 whose printed name differs from the patient record', () => {
+  beforeEach(() => {
+    calls.length = 0;
+    session = null;
+  });
+
+  /** What the server sends now: the name check in `checks`, and the row blocked by it. */
+  const DIFFERS = {
+    ...READY,
+    pushable: false,
+    blockedReason: 'print_record_incomplete' as const,
+    printRecord: {
+      checks: ['print_record_patient_name_differs'] as string[],
+      print: {
+        printJobId: 'job-fake',
+        sourceSha256: 'd'.repeat(64),
+        formReference: 'AOB4FAKE',
+        receivedAt: '2026-10-10T09:00:00Z',
+      },
+    },
+    printedNameDiffers: {
+      code: 'print_record_name_differs',
+      parts: ['given_names'],
+      printed: { givenNames: 'Jaime', familyName: 'Sampleton' },
+      recorded: { givenNames: 'Jamie', familyName: 'Sampleton' },
+    },
+  };
+
+  it('no band when the row carries no difference', async () => {
+    signedInAtPractice();
+    stubFetch({
+      rows: [
+        {
+          ...DIFFERS,
+          pushable: true,
+          blockedReason: null,
+          printRecord: { ...DIFFERS.printRecord, checks: [] },
+          printedNameDiffers: null,
+        },
+      ],
+    });
+    render(<TabletView practiceId={PRACTICE} />);
+    await waitFor(() => expect(screen.getByTestId(`pushable-${READY.agreementId}`)).toBeTruthy());
+    expect(screen.queryByTestId(`printed-name-${READY.agreementId}`)).toBeNull();
+  });
+
+  it('shows both names, what differs and the PracSoft reprint, and the row cannot be sent', async () => {
+    signedInAtPractice();
+    stubFetch({ rows: [DIFFERS] });
+    render(<TabletView practiceId={PRACTICE} />);
+
+    await waitFor(() => expect(screen.getByTestId(`printed-name-${READY.agreementId}`)).toBeTruthy());
+    const band = screen.getByTestId(`printed-name-${READY.agreementId}`);
+    expect(band.textContent).toContain(strings.tablet.printedName.title);
+    expect(band.textContent).toContain(strings.tablet.printedName.observed);
+    expect(screen.getByTestId(`printed-name-${READY.agreementId}-printed`).textContent).toBe('Jaime Sampleton');
+    expect(screen.getByTestId(`printed-name-${READY.agreementId}-recorded`).textContent).toBe('Jamie Sampleton');
+    expect(band.textContent).toContain(strings.tablet.printedName.differs('given names'));
+    expect(screen.getByTestId(`printed-name-${READY.agreementId}-fix`).textContent).toBe(
+      strings.tablet.printedName.fix,
+    );
+    expect(strings.tablet.printedName.fix).toContain('PracSoft');
+    expect(strings.tablet.printedName.fix).toContain('AOBPrinter');
+
+    /*
+     * AND A REFUSAL (D-2026-10-11-06). This used to assert the opposite — no
+     * blocked band and a live Send — which was D-2026-10-10-11's rule. The
+     * blocked band asks "Is this the right patient?", Send stays dead, and the
+     * warning band says why rather than claiming Send still works.
+     */
+    expect(screen.getByTestId(`printed-name-${READY.agreementId}-send`).textContent).toBe(
+      strings.tablet.printedName.stopsSend,
+    );
+    expect(screen.getByTestId(`blocked-${READY.agreementId}`).textContent).toContain(
+      strings.tablet.blocked.print_record_patient_name_differsTitle,
+    );
+    expect((screen.getByTestId(`send-${READY.agreementId}`) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('on a row blocked for another reason too, the band still only says what is true', async () => {
+    // wow.md §13: the blocked band says this row cannot be sent; this band must not contradict it.
+    signedInAtPractice();
+    /*
+     * A ROW THE SERVER CAN ACTUALLY SEND: `patient_confidential` is not one of
+     * the reasons the print-record refusal takes over, so the row keeps it and
+     * the name check rides in `printRecord.checks` beside the band. (An
+     * earlier version used `service_description_missing`, which the server
+     * replaces with `print_record_incomplete`, so it tested a row that cannot
+     * happen.)
+     */
+    stubFetch({ rows: [{ ...DIFFERS, pushable: false, blockedReason: 'patient_confidential' as const }] });
+    render(<TabletView practiceId={PRACTICE} />);
+    await waitFor(() => expect(screen.getByTestId(`printed-name-${READY.agreementId}`)).toBeTruthy());
+    const send = screen.getByTestId(`printed-name-${READY.agreementId}-send`);
+    expect(send.textContent).toBe(strings.tablet.printedName.stopsSend);
+    expect(screen.getByTestId(`printed-name-${READY.agreementId}`).textContent).not.toMatch(/still works/i);
+  });
+
+  it('is announced politely, not as an alert', async () => {
+    signedInAtPractice();
+    stubFetch({ rows: [DIFFERS] });
+    render(<TabletView practiceId={PRACTICE} />);
+    await waitFor(() => expect(screen.getByTestId(`printed-name-${READY.agreementId}`)).toBeTruthy());
+    expect(screen.getByTestId(`printed-name-${READY.agreementId}`).getAttribute('role')).toBe('status');
+  });
+
+  it('an unmapped notice code shows its code, and no remedy it was not written for', async () => {
+    signedInAtPractice();
+    stubFetch({
+      rows: [{ ...DIFFERS, printedNameDiffers: { ...DIFFERS.printedNameDiffers, code: 'print_record_name_future' } }],
+    });
+    render(<TabletView practiceId={PRACTICE} />);
+    await waitFor(() => expect(screen.getByTestId(`printed-name-${READY.agreementId}`)).toBeTruthy());
+    const band = screen.getByTestId(`printed-name-${READY.agreementId}`);
+    expect(band.textContent).toContain('print_record_name_future');
+    expect(screen.queryByTestId(`printed-name-${READY.agreementId}-fix`)).toBeNull();
   });
 });

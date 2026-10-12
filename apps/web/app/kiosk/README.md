@@ -184,6 +184,7 @@ not live there.)
 | `NEXT_PUBLIC_CORE_URL` | `apps/core`, default `http://localhost:3001` |
 | `NEXT_PUBLIC_BUILD_ID` | The build this tab is running. Shown in the footer, sent as `x-kiosk-build`, and compared against the practice's floor for the forced reload. `dev` locally |
 | `NEXT_PUBLIC_KIOSK_STAFF_ID` | Dev stand-in for `verifiedByStaffId` |
+| `NEXT_PUBLIC_KIOSK_FULL_SCREEN` | `false` turns off full screen on the first tap. Unset or anything else leaves it on. See "Full screen on the first tap" |
 
 `NEXT_PUBLIC_KIOSK_PRACTICE_ID` **is gone** (3 Sep 2026). It scoped a public
 route from the bundle, so anybody who reached the URL saw that practice's
@@ -455,6 +456,195 @@ stacked under two blueprint panels and the third landed below the fold. It is
 now a child of the same box as the blocked control, directly under it, and
 cannot wrap away from it at any width.
 
+### The controls never scroll off (Carl, 10 October 2026)
+
+> Step 2 of 3: the last visible line is "Please read and tick each of
+> these". Step 3 of 3: the action buttons are cut in half at the bottom.
+
+A Galaxy Tab S10 Ultra in landscape in Edge, whose address bar and bottom
+toolbar leave roughly 1024-1500 x 600-900 CSS px. The design target above
+(~1180x820) had no room to spare, and neither step was built to fit it.
+
+**Portrait is primary for the 14-inch tablet** (Carl, 10 October 2026: "yes
+switch to portrait first"): about 924x1478 full screen, 924x1370 with Edge's
+bars. For that device this supersedes the 27 September premise above, a 10-11
+inch tablet designed for landscape at ~1180x820. Landscape must still work well,
+because orientation is never locked (WCAG 2.2 1.3.4). There the width is used
+rather than stacked: "there is so much white space can we not do a better
+layout - instead of scrolling".
+
+- **Portrait is one centred column at 70ch**, about 770px of 20px type, so
+  lines stay readable on a 924px screen. The services table and the
+  signature pad take the whole of that column.
+- **No box scrolls, anywhere in the ceremony** (Carl, 10 October 2026: "Do
+  not have boxes that scroll"). For one afternoon K-3's text was a scrolling
+  region with the ticks pinned under it. A box that scrolls is text a patient
+  can tick past without seeing, so it was removed. Pages are made to fit
+  instead, as below. Nothing is sticky, so nothing can cover a focused control
+  (WCAG 2.2 2.4.11).
+- **Landscape from 1200px wide puts K-3 in two columns**: the form's text
+  on the left, and the ticks, tags, Back and Continue on the right, all in
+  view at once. The document's box uses `display: contents` so its children
+  can be placed; the DOM order, and so the reading order, is unchanged.
+- **Under 480px tall the shell is an ordinary page** and the window scrolls
+  it. At 400% zoom a 1280x800 screen is 320x200; a shell locked to that
+  height had left the content row with no height and the controls outside
+  every scroller (WCAG 2.2 1.4.10, found in review).
+- **K-1 in landscape** drops the task column's 620px measure, and each
+  answer's glyph sits beside its words: 56px tall, the floor already set.
+  Continue is on screen at 1280x800 and above. On a 600-720px landscape
+  screen with the browser's bars, K-1 still scrolls.
+- **K-4 goes to two columns only on a landscape screen 900px or wider**, with
+  who is signing on the left and the pad and its controls on the right.
+  Upright it is one column with a full-width pad up to 460px tall. The pad's
+  height is set in `svh` by orientation, never in `dvh`, because `dvh`
+  changes as Edge's toolbar slides.
+- **The pad keeps its size from the first touch until Clear**
+  (`SignaturePad.tsx`). A resize used to re-measure it under the ink, so the
+  capture paired points measured at the old size with the new pad size and a
+  raster cropped to the new box. Rotating, Edge's toolbar, or full screen
+  arriving just after K-4 opens are all resizes. Now the canvas is pinned
+  from the first touch, scaled down to fit a frame that has shrunk (never
+  clipped, so the patient sees all of their ink), and touches are mapped back
+  into the pad's own space. The raster is redrawn from the strokes at the
+  pad's size, one pixel per pad pixel, so a dense signature on a DPR-3 screen
+  stays under the 512 KB limit. The captured vector, raster and size always agree, and no point is
+  rescaled (REQ-SIG-02). Test: `components/SignaturePad.test.tsx`.
+- **At 640px tall and under, space shrinks, never type**: the header's two
+  lines sit on one and the padding tightens by a step.
+- **The shell is `height: 100dvh`**, not `min-height`, and the footer clears
+  `env(safe-area-inset-bottom)`.
+
+### The DB4's pages are sized to the screen (Carl, 10 October 2026)
+
+> "go with option 1 for page sizing"
+
+The three pages (2A, 2B, 2C) are now SECTIONS. On a tablet that can measure
+itself, each section is drawn as SHEETS, as many as it takes for every one to
+fit the screen whole with nothing scrolling. A long services table or privacy
+notice becomes more sheets, never a box that scrolls.
+
+- **The blocks** (`rules/db4-pages.ts`, `db4BlockSection`) are:
+  - in 2A: each of the form's heading lines (`masthead-N`), each row of the
+    practice column (`practice-reference`, `-date`, `-location`,
+    `-agreement`) and each row of the patient block (`patient-name`, `-dob`,
+    `-address`, `-record`, `-card`, `-irn`);
+  - in 2B: each provider (`provider-N`) and each service row (`service-N`);
+  - in 2C: each privacy paragraph (`privacy-N`), each of the form's
+    statements (`statement-N`), the ongoing agreement's explanation and the
+    pre-template consent sentence.
+
+  That file decides which section a block and an affirmation belong to. The
+  screen only decides where the breaks fall within that order. Presentation,
+  never the instrument.
+- **Filling** (`fillDb4Sheets`): each section starts a new sheet. Blocks are
+  added while the sheet still fits. The sheet that closes a section is
+  measured with its affirmations on it, because they are read there, under
+  the last block they confirm.
+  - If the last block and its ticks cannot share a sheet, the block moves on
+    with them.
+  - If even that does not fit, the block gets a sheet of its own and the ticks
+    follow on the section's last sheet.
+  - "I confirm the details above are correct" never sits under no details
+    where the last row and the tick can share a sheet. Only where they cannot
+    (measured at 1024x600, normal form) does the tick follow on its own.
+  - Each sheet's Continue waits for that sheet's ticks (D-2026-09-27-07).
+    Sheets without ticks are ungated, as 2A always was.
+  - There is no scroll-to-end gating ("keep ticking as is").
+- **Measuring happens on the live page, before it paints.** Every block is in
+  the DOM, and those not on this sheet carry `.db4Hidden` (`display: none`).
+  For each sheet the filler proposes, `measureDb4Sheets` shows exactly that
+  sheet's blocks, ticks, tags and heading. It then asks whether the content
+  row has nothing to scroll, which covers both landscape columns. Last, it
+  puts every class back, all inside a layout effect.
+  - It re-measures, once per animation frame, when the window or the
+    content row changes size. The footer gains the tablet's name a moment
+    after the page draws.
+  - **Every sheet is sized for the tallest action row it could carry** (review
+    of d0e4f94). Back is absent on the first sheet, and the "agree each visit"
+    decline and the shortcut to an outstanding tick appear only on the last.
+    When sized, each is kept in the DOM, hidden where it does not apply, and
+    shown while measuring. So the sheet count does not depend on which sheet
+    measuring ran from.
+  - A sheet that was the section's ticks on their own (`section:services`) is
+    remembered as the END of that section. If a re-flow merges it away, the
+    patient lands on the section's last sheet, not its first.
+  - If a re-measure hides the control that has focus, focus moves to the
+    sheet's heading (WCAG 2.4.3). Every page heading is described by the
+    "Page X of Y" line (`aria-describedby`), so a turn announces where the
+    patient is.
+  - The patient stays on the sheet holding the first block they were reading
+    (`resolveDb4Sheet`), so turning the tablet renumbers the sheets around them.
+  - Ticks already given stay given; the ceremony holds them by statement.
+- **A block taller than any sheet** gets a sheet of its own, and there the
+  PAGE scrolls as a whole (the shell's content row), never a box inside it.
+  It is never cut mid-sentence. Tests:
+  `a_block_taller_than_any_sheet_gets_a_sheet_of_its_own_and_nothing_is_dropped`
+  and the Playwright giant-paragraph case.
+- **What every sheet carries:** "Page X of Y", the versions line, the page's
+  own heading (or, where the form's title line is on the sheet, that line),
+  and the provenance line (hard rule 12).
+  - The ceremony's heading ("Agree to bulk billing", by-line, qualifier) is
+    drawn on the FIRST sheet only. On later sheets it is kept for a screen
+    reader but not drawn (`visuallyHidden`).
+  - That is the one reduction. Carl declined trimming the heading as a
+    separate option, so nothing else was cut.
+- **Not measured, so three fixed pages exactly as before:** a server render,
+  jsdom (so every existing unit test is unchanged), a test device (its
+  developer panels cannot fit, so there the page may scroll as a whole), and
+  a screen under 480px tall.
+- **At 640px tall and under, space shrinks, never type**: the masthead's air,
+  the form's top rule and the document padding tighten by a step.
+
+**The smallest screen that fits every page whole is 1280x800** (Carl, 10
+October 2026: "1280×800 is fine"; D-2026-10-10-10).
+- At 1280 wide by 800 tall and larger, and at every portrait size of the 14"
+  tablet, nothing scrolls on any page.
+- Below 800 tall, or below 1280 wide in landscape, a DB4 sheet may scroll as
+  a whole page, never a box. With Edge's bars at 1024x600, the shell's header
+  and its three-line footer of audit ids leave about 433px. That is not enough
+  for some sheets at this type scale.
+- **The signature step fits strictly at every size**, with two exceptions:
+  - Under 800px tall on its side, the pad gives up height first (down to a
+    120px floor under 680px tall) and the step's gaps tighten.
+  - It still does not fit at **1024x600 (25px short) or 960x600 (52px short)**.
+    What is left to give there is the footer's audit ids or the two-line
+    disabled Sign label. That is a decision, not a layout fix, so those two
+    sizes are recorded in the spec (`SIGNATURE_SHORTFALL`) and reported.
+
+**Sheets per form, measured** (normal form; 12 service rows with 2 providers;
+a 9-paragraph privacy notice; an ongoing agreement on the normal form):
+
+| Size | Normal | 12 rows | Long notice | Ongoing |
+|---|---|---|---|---|
+| 924x1478 | 4 | 6 | 6 | 5 |
+| 924x1370 | 4 | 7 | 6 | |
+| 800x1280 | 5 | 7 | 7 | 6 |
+| 1500x900 | 4 | 8 | 7 | |
+| 1478x924 | 4 | 9 | 7 | |
+| 1478x813 | 7 | 11 | 10 | |
+| 1280x800 | 8 | 19 | 16 | |
+| 1280x720 | 11 | 25 | 18 | |
+| 1478x700 | 8 | 19 | 16 | |
+| 1280x650 | 14 | 28 | 21 | |
+| 1024x600 | 15 | 29 | 22 | |
+
+Tests: `rules/db4-sheets.test.ts` (the filler, from heights),
+`db4-sized.test.tsx` (the sized path forced through the screen's
+`sheetMeasurer` seam: per-sheet gating, the page line describing the heading,
+focus kept when a re-measure hides a tick), and
+`e2e/kiosk-tablet-fit.spec.ts`, which needs no database. Every request to
+core is answered by `page.route`. The spec asserts that nothing in the
+ceremony is scrollable at the tablet's sizes. It also checks that each
+control is inside the viewport and inside every clipping ancestor on all four
+sides, with nothing drawn over it, and that nothing is wider than the screen.
+It walks every sheet of the normal, 12-row and long-notice forms at each size
+above. It also covers a giant paragraph, and turning the tablet mid-read. Portrait first: 924x1478, 924x1370 and 800x1280. Then landscape:
+1478x924, 960x600, 1024x600, 1280x650, 1280x720, 1280x800, 1478x700, 1478x813
+and 1500x900, plus three sizes as an emulated Android tablet. It also covers a
+test device with its rail at 1478x924, 1280x800 and stacked at 960x600, Android
+text at 130%, and reflow at 400% (320x200).
+
 ## Return to the start when nobody is there (Carl, 4 September 2026)
 
 > "Return to the start when untouched for N minutes -- a per-practice setting,
@@ -507,6 +697,49 @@ Tests: `inactivity_reset_returns_to_idle_and_clears_state`,
 `activity_cancels_the_pending_reset`, `timeout_comes_from_the_practice_setting`
 (`inactivity.test.tsx`, fake timers); core
 `kiosk_me_carries_the_practice_idle_timeout`, `idle_timeout_is_bounded`.
+
+## Full screen on the first tap (Carl, 10 Oct 2026)
+
+> "write code to make the app full screen. We cannot have dependency on the
+> tablet"
+
+`useKioskFullScreen`, mounted once in `Ceremony.tsx`, puts the page into
+browser full screen (the Fullscreen API, `navigationUI: 'hide'`). That hides
+the address bar, the tabs and the Android status and navigation bars, so the
+kiosk looks like an app in Chrome or Edge on the Galaxy Tab, with nothing set
+up on the tablet.
+
+- **It needs one tap to start.** Browsers refuse full screen without a user
+  gesture, so it cannot happen on load. The first tap anywhere asks for it,
+  just after the tap's own `click` has done what it was for (Chrome and Edge
+  keep the gesture usable for five seconds).
+- **The patient can always leave full screen** with a system swipe or the back
+  gesture. Browsers guarantee this, and no web page can prevent it. The next
+  tap goes back into full screen. Nothing prompts, nags or loops: one tap, one
+  request.
+- **It does NOT stop a patient leaving the browser.** Home, recent apps and
+  notifications still work from full screen. Only Android screen pinning or
+  device management (e.g. Samsung Knox) does that. Pinning stays optional,
+  extra lockdown for a practice that wants it.
+- **Never from the signature step.** Entering full screen resizes the page, and
+  the signature pad measures its points against its own size: a resize
+  mid-stroke moves the pad under the finger. So `Ceremony` turns it off on K-4,
+  and a tap on a canvas is ignored on any step. The decision is taken after
+  the tap's click has committed, so K-3's Continue, the tap that opens K-4,
+  does not ask either. A patient who left full screen
+  on K-4 gets it back on the first tap after K-4.
+- **The in-app reset keeps it.** "Return to the start when nobody is there" is
+  a state change, so full screen survives it. A hard reload (the build floor,
+  or the dev server restarting) drops it, and the next tap re-enters.
+- **Unsupported browsers do nothing.** Where there is no element full screen
+  (iPhone Safari), or the browser refuses, the kiosk works exactly as before.
+  Refusals are swallowed, with nothing logged.
+- **Zero footprint.** Nothing is written to the tablet: no storage, no cookie,
+  no manifest, no service worker. Off with `NEXT_PUBLIC_KIOSK_FULL_SCREEN=false`.
+
+Tests: `fullscreen.test.tsx` — `kiosk_enters_full_screen_on_the_first_tap`,
+`full_screen_never_starts_from_the_signature_pad`,
+`full_screen_is_invisible_when_it_cannot_happen`.
 
 ## Back, on both front doors (Carl, 4 September 2026)
 
@@ -655,6 +888,61 @@ skips without `E2E_PRACTICE_USER` / `E2E_PRACTICE_PASSWORD`.
 - **Out-of-use tablets** — reception cannot yet take a tablet out of service
   from `/practice/tablet`. See TODO.md.
 
+## Locking the tablet to the kiosk: Android screen pinning (Carl, 10 Oct 2026)
+
+**Decided by Carl, 10 Oct 2026** (D-2026-10-10-05). The tablet is locked to the
+browser with **Android screen pinning**, a setting built into Android. Nothing
+is installed, so the zero-footprint rule still holds. This replaces "kiosk
+lockdown launcher" on the outstanding list.
+
+**What pinning does.** While the browser is pinned, a patient cannot reach the
+home screen, the app list, notifications or any other app. Unpinning needs the
+tablet's own PIN, which only staff know. The patient sees the kiosk and nothing
+else on the device.
+
+**What it does not do.** Pinning locks the tablet to the **browser app**, not
+to the kiosk page. A patient can still use the browser itself: open a new tab,
+type an address, or go back to an earlier page. The kiosk's own auto-reset
+("Return to the start when nobody is there") only runs on the kiosk page, so it
+does not bring back a tab the patient has left. Full screen on the first tap
+hides the address bar, but a swipe brings it back. If this proves to be a real problem, the next step is a
+managed kiosk mode (for example Samsung Knox), which is a device-management
+product and needs a new decision.
+
+**Setting it up, once per tablet** (Samsung Galaxy Tab; other Android tablets
+are similar):
+1. **Give the tablet a screen lock PIN** if it has none: Settings → Lock
+   screen and AOD → Screen lock type → PIN. Unpinning asks for this PIN, so a
+   tablet without one can be unpinned by anybody.
+2. **Turn screen pinning on.** On the Tab S10 it is under Settings → Security
+   and privacy → More security settings → **Pin app**. Menu names change
+   between Android versions; if yours differs, search Settings for **pin**.
+   Switch it on.
+3. **Turn on "Ask for PIN before unpinning"** on the same screen. Without it,
+   unpinning drops straight to the home screen with no PIN.
+4. **Keep the screen on while it is charging,** so the kiosk is never behind
+   a lock screen: Settings → Display → Screen timeout, set to the longest
+   value. (Never-off needs Developer options → Stay awake, which only works
+   while charging.)
+
+**Pinning the kiosk, each time the tablet starts:**
+1. Open the browser at `/kiosk` and check it shows the kiosk (or the pairing
+   screen on a new tablet).
+2. Open **Recent apps**: the square button, or swipe up from the bottom and
+   hold.
+3. Tap the **browser's icon** at the top of its card, then **Pin this app**.
+
+The tablet stays pinned until somebody unpins it. A restart unpins it, so pin
+it again after any restart or update.
+
+**Unpinning** (staff only): with the three-button navigation bar, press and
+hold **Back** and **Recent apps** together; with gesture navigation, swipe up
+from the bottom and hold. Enter the tablet's PIN.
+
+**Revoking a tablet is still done in the console** (`/practice/devices`).
+Pinning keeps a patient inside the kiosk; it does not protect the pairing
+credential if the tablet is lost.
+
 ## Decisions already made
 
 - **Trust is a paired device** (3 Sep 2026; this REVERSES plan Part 6 decision
@@ -662,7 +950,7 @@ skips without `E2E_PRACTICE_USER` / `E2E_PRACTICE_PASSWORD`.
   credential"). Like a payment terminal paired to a merchant: the console
   registers a tablet and shows a code, the tablet exchanges it once for an
   opaque credential, and the server resolves the practice from the credential
-  on every request thereafter. Revoke and rotate are **console** acts — a
+  on every request thereafter. Revoke and Re-Pair Tablet (the rotate act) are **console** acts — a
   tablet that can un-pair itself is a tablet a passer-by can un-pair.
   **Pairing is not a Keycloak login**: there is no person to authenticate at a
   tablet, and hard rule 15 (practitioner and admin auth is WebAuthn passkeys)
@@ -738,8 +1026,13 @@ of things the patient is being asked to fix.
   representations and neither is uploaded: `SignDto` takes a method, a channel
   and a capture request, not a payload. Changing that is a contract change in
   `apps/core`.
-- **Read-aloud, language switch, read-through gate, RACF batch mode, kiosk
-  lockdown launcher, bot-defence dwell time** — all still outstanding from C2.
+- **Read-aloud, language switch, read-through gate, RACF batch mode,
+  bot-defence dwell time** — all still outstanding from C2.
+- **Lockdown.** Full screen on the first tap is built (see "Full screen on the
+  first tap"), but it is not a lockdown: a patient can still leave the browser.
+  Android screen pinning, set up by hand on each tablet, is the optional
+  lockdown (see "Locking the tablet to the kiosk", D-2026-10-10-05). Automatic
+  lockdown by an installed app is on the TODO, not decided (D-2026-10-10-10).
 - **The offline queue** — withdrawn, not deferred. C2.2 was dropped with the
   zero-footprint decision (the push model needs the server anyway; an offline
   kiosk cannot receive a push). Outage posture is "see reception", the patient
@@ -747,8 +1040,9 @@ of things the patient is being asked to fix.
 
 ## Still non-negotiable when the rest is built
 
-- Kiosk mode: locked-down launcher, no OS escape,
-  **no residual patient data on device after submission**. (Auto-reset when the
+- Kiosk mode: locked-down launcher, no OS escape (**answered by Android screen
+  pinning**, D-2026-10-10-05; it locks the tablet to the browser, not to the
+  page), **no residual patient data on device after submission**. (Auto-reset when the
   tablet is untouched is BUILT -- see "Return to the start when nobody is
   there".)
 - Accessibility: large text, high contrast, read-aloud, staff-assisted mode

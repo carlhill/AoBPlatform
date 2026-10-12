@@ -385,15 +385,16 @@ describe('the DB4 form view', () => {
       expect(differs).toEqual(['print_record_patient_name_differs']);
     });
 
-    it('printed_name_is_compared_whole_ignoring_case_and_spacing', () => {
+    it('printed_name_uses_the_desk_warnings_rule_and_ignores_only_how_it_was_rendered', () => {
       // The same name, printed in capitals with a doubled space: not a difference.
       expect(checkDb4PrintRecord(envelope(), { givenNames: ' testy ', familyName: 'FAKENAME' })).toEqual([]);
       /*
-       * COMPARED AS ONE NAME, NOT FIELD BY FIELD. The template splits a
-       * printed name at its LAST space, so a two-word family name comes off
-       * the page as given "Mary Anne Smith", family "Jones". The record's
-       * "Mary Anne" / "Smith Jones" is the same person and must not be
-       * refused over where a parser drew a line.
+       * THE DESK WARNING'S RULE, SHARED (Carl, 11 October 2026; D-2026-10-11-06
+       * amending D-2026-10-10-11), so the band and this refusal can never
+       * disagree. The template splits a printed name at its LAST space, so a
+       * two-word family name comes off the page as given "Mary Anne Smith",
+       * family "Jones". Against a record of "Mary Anne" / "Smith Jones" that is
+       * the same whole name, and is NOT refused: neither remedy could fix it.
        */
       expect(
         checkDb4PrintRecord(envelope({ patient: { givenNames: 'Mary Anne Smith', familyName: 'Jones', patientRecordNumber: '00001' } }), {
@@ -401,8 +402,23 @@ describe('the DB4 form view', () => {
           familyName: 'Smith Jones',
         }),
       ).toEqual([]);
+      // Only a part that was PRINTED is compared: a form that printed no given
+      // names is not refused over them.
+      expect(
+        checkDb4PrintRecord(envelope({ patient: { familyName: 'Fakename', patientRecordNumber: '00001' } }), {
+          givenNames: 'Anyone',
+          familyName: 'Fakename',
+        }),
+      ).toEqual([]);
       // A middle name on one side and not the other IS a difference — reception decides.
       expect(checkDb4PrintRecord(envelope(), { givenNames: 'Testy Middle', familyName: 'Fakename' })).toEqual([
+        'print_record_patient_name_differs',
+      ]);
+    });
+
+    it('an_empty_recorded_name_is_compared_exactly_as_the_desk_band_compares_it', () => {
+      // '' on the record is a name that differs from a printed one, on both paths.
+      expect(checkDb4PrintRecord(envelope(), { givenNames: '', familyName: 'Fakename' })).toEqual([
         'print_record_patient_name_differs',
       ]);
     });

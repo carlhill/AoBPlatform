@@ -191,6 +191,16 @@
             "userinfo.token.claim": "true",
             "introspection.token.claim": "true"
           }
+        },
+        {
+          "name": "authentication-method-reference",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-amr-mapper",
+          "consentRequired": false,
+          "config": {
+            "id.token.claim": "true",
+            "access.token.claim": "true"
+          }
         }
       ],
       "defaultClientScopes": [
@@ -345,6 +355,16 @@
             "access.token.claim": "true",
             "userinfo.token.claim": "true",
             "introspection.token.claim": "true"
+          }
+        },
+        {
+          "name": "authentication-method-reference",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-amr-mapper",
+          "consentRequired": false,
+          "config": {
+            "id.token.claim": "true",
+            "access.token.claim": "true"
           }
         }
       ]
@@ -510,16 +530,34 @@
           "requirement": "REQUIRED",
           "priority": 10,
           "userSetupAllowed": false,
-          "autheticatorFlow": false
+          "autheticatorFlow": false,
+          "authenticatorConfig": "clinician-amr-passkey"
         },
         {
           "authenticator": "auth-password-form",
           "requirement": "DISABLED",
           "priority": 20,
           "userSetupAllowed": false,
-          "autheticatorFlow": false
+          "autheticatorFlow": false,
+          "authenticatorConfig": "clinician-amr-password"
         }
       ]
+    }
+  ],
+  "authenticatorConfig": [
+    {
+      "alias": "clinician-amr-passkey",
+      "config": {
+        "default.reference.value": "hwk",
+        "default.reference.maxAge": "36000"
+      }
+    },
+    {
+      "alias": "clinician-amr-password",
+      "config": {
+        "default.reference.value": "pwd",
+        "default.reference.maxAge": "36000"
+      }
     }
   ],
   "clientScopes": [

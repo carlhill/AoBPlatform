@@ -6,6 +6,7 @@ import type {
   Db4PrintRecordCheck,
   PrintJobEnvelope,
 } from '@aobplatform/contracts';
+import { db4PrintedNamePartsDiffering } from '@aobplatform/contracts';
 
 /* ---------------------------------------------------------------------------
  * THE DB4 AS THE PATIENT READS IT — built here, on the server, once.
@@ -448,17 +449,6 @@ export interface PatientNameOnRecord {
 }
 
 /**
- * ONE WHOLE NAME, FOLDED FOR COMPARISON: given and family joined, spacing
- * collapsed, case ignored. Joined, because the template splits a printed name
- * at its last space and a two-word family name would otherwise differ only in
- * where a parser drew the line. Undefined when there is no name at all.
- */
-function wholeName(given: unknown, family: unknown): string | undefined {
-  const joined = [read(given), read(family)].filter(Boolean).join(' ');
-  return joined.length > 0 ? joined.replace(/\s+/g, ' ').toLocaleLowerCase('en-AU') : undefined;
-}
-
-/**
  * THE CHECKS THIS PRINT RECORD FAILS, ALL OF THEM, IN THE DECLARED ORDER.
  *
  * ALL OF THEM, NOT THE FIRST. Reception fixes the form once; returning one
@@ -603,15 +593,35 @@ export function checkDb4PrintRecord(
    * Is this correct?"*; D-2026-10-11-06).
    *
    * Ingest matched this form to a patient on the PMS patient ID alone (hard
-   * rule 1), so nothing upstream ever compared the names. Both sides must
-   * have a name to compare: no printed name is the unidentified case above,
-   * and no record passed in is a caller that cannot say.
+   * rule 1), so nothing upstream ever compared the names.
+   *
+   * ONE RULE, SHARED WITH THE DESK'S WARNING BAND (D-2026-10-10-11). The
+   * comparison is `db4PrintedNamePartsDiffering` from contracts, the same
+   * function that decides `nameDiffers` on the row, so the band and this
+   * refusal can never disagree (Carl, 11 October 2026). Only a part that was
+   * PRINTED is compared; when both were, the same whole name split at a
+   * different space is the same name; case, spacing, NFC and typographic
+   * apostrophes and dashes are ignored, and nothing else is.
+   *
+   * THE RECORDED NAME IS READ AS THE DESK ROW READS IT: any string, an empty
+   * one included. Treating '' as "no record" here while the band compared it
+   * would draw a band saying Send is stopped on a row Send could reach. No
+   * record passed in at all is a caller that cannot say.
    *
    * A CODE, NEVER EITHER NAME (hard rule 9).
    */
-  const printed = wholeName(patient.givenNames, patient.familyName);
-  const recorded = onRecord ? wholeName(onRecord.givenNames, onRecord.familyName) : undefined;
-  if (printed && recorded && printed !== recorded) failed.push('print_record_patient_name_differs');
+  const recordedGiven = onRecord?.givenNames;
+  const recordedFamily = onRecord?.familyName;
+  if (
+    typeof recordedGiven === 'string' &&
+    typeof recordedFamily === 'string' &&
+    db4PrintedNamePartsDiffering(
+      { givenNames: text(patient.givenNames) ?? null, familyName: text(patient.familyName) ?? null },
+      { givenNames: recordedGiven, familyName: recordedFamily },
+    ).length > 0
+  ) {
+    failed.push('print_record_patient_name_differs');
+  }
 
   return failed;
 }

@@ -27,7 +27,35 @@
  * unchanged" would produce a new job every time and the duplicate path would
  * never be exercised.
  */
-import type { Draft } from './presets';
+import type { AssignmentStatement, Draft, PrintedAssignment } from './presets';
+
+/**
+ * A STORED `assignment` BLOCK, BACK ON THE DRAFT — or null when the form had
+ * none, so a form sent without a privacy notice reprints without one. A
+ * reprint that dropped it would repoint the agreement at a page with no 2C
+ * notice, so whatever the stored block holds, it loads; a malformed entry is
+ * skipped, never repaired.
+ */
+function assignmentOf(value: unknown): PrintedAssignment | null {
+  if (!value || typeof value !== 'object') return null;
+  const block = value as Record<string, unknown>;
+  const privacyNotice = Array.isArray(block.privacyNotice)
+    ? block.privacyNotice.filter((line): line is string => typeof line === 'string')
+    : [];
+  const statements: AssignmentStatement[] = (Array.isArray(block.statements) ? block.statements : [])
+    .filter((s): s is Record<string, unknown> => !!s && typeof s === 'object')
+    .map((s) => ({
+      key: typeof s.key === 'string' ? s.key : '',
+      text: typeof s.text === 'string' ? s.text : '',
+      ...(typeof s.ticked === 'boolean' ? { ticked: s.ticked } : {}),
+      ...(typeof s.inScope === 'boolean' ? { inScope: s.inScope } : {}),
+    }));
+  return {
+    privacyNotice,
+    ...(typeof block.statementsJoinedBy === 'string' ? { statementsJoinedBy: block.statementsJoinedBy } : {}),
+    statements,
+  };
+}
 
 /** SHA-256 hex, via the browser's own crypto — no dependency added. */
 export async function sha256Hex(text: string): Promise<string> {
@@ -144,6 +172,22 @@ export function buildEnvelope(draft: Draft): Record<string, unknown> {
         irn: draft.irn,
       }),
     },
+    /*
+     * THE PRIVACY NOTICE AND STATEMENTS, as AOBPRINTER reads them off the
+     * page (`Db4AssignmentDto`). Absent when the draft carries none, which is
+     * every preset but `long-form`. Copied, never composed.
+     */
+    ...(draft.assignment
+      ? {
+          assignment: {
+            privacyNotice: [...draft.assignment.privacyNotice],
+            ...(draft.assignment.statementsJoinedBy !== undefined
+              ? { statementsJoinedBy: draft.assignment.statementsJoinedBy }
+              : {}),
+            statements: draft.assignment.statements.map((s) => ({ ...s })),
+          },
+        }
+      : {}),
     providers: draft.providers.map((p) => ({
       // REQUIRED BY THE DTO, so an empty name travels as "" — see `present`.
       name: p.name,
@@ -258,6 +302,7 @@ export function draftFromEnvelope(practiceId: string, stored: Record<string, unk
       // THE STRING THE PRACTICE PRINTED, or blank where the template read none.
       benefitAssigned: str(s, 'benefitAssigned'),
     })),
+    assignment: assignmentOf(stored.assignment),
     queueName: get(['queueName'], blank.queueName),
     queueLabel: get(['queueLabel'], blank.queueLabel),
     parserTemplateVersion: get(['parserTemplateVersion'], blank.parserTemplateVersion),
