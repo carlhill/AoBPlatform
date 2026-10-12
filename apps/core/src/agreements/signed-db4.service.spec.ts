@@ -1,7 +1,9 @@
+import { Logger } from '@nestjs/common';
 import { SIGNED_DB4_CONTENT_VERSION } from '@aobplatform/domain';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import { SignedDb4Service } from './signed-db4.service';
 import { SignedDb4Renderer } from '../render/signed-db4-renderer';
+import { SignedDb4RenderRefusal } from '../render/signed-db4-document';
 import type { PrismaService } from '../prisma/prisma.service';
 import type { ArtefactsService } from '../artefacts/artefacts.service';
 import type { RendererRegistry } from '../render/renderer-registry';
@@ -350,5 +352,136 @@ describe('a_failed_signed_db4_render_never_unsigns_the_agreement', () => {
     expect(stage).not.toHaveBeenCalled();
     expect(tx.agreement.update).not.toHaveBeenCalled();
     expect(tx.agreement.updateMany).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * THE LOG LINES THEMSELVES ARE UNDER TEST — wow.md §13: a blocked, wrong or
+ * waiting message states what was observed and offers a remedy only where it
+ * is true for that record. "Retryable" is a remedy, and it is not true of
+ * every reason this service logs under, nor of every thrown error.
+ */
+describe('signed_db4_not_produced_log_never_claims_a_false_remedy', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  /** "retryable" with no "not" directly in front of it — an unqualified, positive claim. */
+  const CLAIMS_RETRYABLE = /(?<!not )retryable/i;
+
+  /**
+   * `no_drawn_signature` AND `agreement_not_found` ARE NEVER RETRYABLE.
+   * A tap-to-approve signature event is append-only and will never grow a
+   * raster to draw, and an agreement id this practice does not have now will
+   * not exist later — nothing in this service, or anywhere upstream of it,
+   * creates one after the fact. The log must not call either retryable.
+   */
+  it.each([
+    ['agreement_not_found', { agreement: null }],
+    ['no_drawn_signature', { signatureRasterSha256: null }],
+  ])('never calls %s retryable', async (reason, options) => {
+    const spy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const { service } = serviceWith(options as Parameters<typeof serviceWith>[0]);
+
+    const outcome = await service.produceAfterSignature(PRACTICE, AGREEMENT);
+
+    expect(outcome).toEqual({ produced: false, reason });
+    expect(spy).toHaveBeenCalledTimes(1);
+    const written = String(spy.mock.calls[0][0]);
+    expect(written).toContain(reason);
+    expect(written).not.toMatch(CLAIMS_RETRYABLE);
+    expect(written.toLowerCase()).toContain('not retryable');
+  });
+
+  /**
+   * `not_signed` AND `print_record_missing` ARE NEITHER CLAIMED RETRYABLE NOR
+   * CLAIMED PERMANENT. Nothing this service reads tells it whether an
+   * unsigned agreement will ever be signed, or whether a missing print
+   * record is gone for good or was read under the wrong practice — the code
+   * does not check `agreement.status`, and `print-records.service.ts`
+   * returns the same null either way. The honest line says what was checked,
+   * not a guess dressed as a diagnosis.
+   */
+  it.each([
+    ['not_signed', { agreement: signedFromDb4({ signatureEventId: null }) }],
+    ['print_record_missing', { printRecord: null }],
+  ])('neither promises nor rules out retrying %s', async (reason, options) => {
+    const spy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const { service } = serviceWith(options as Parameters<typeof serviceWith>[0]);
+
+    const outcome = await service.produceAfterSignature(PRACTICE, AGREEMENT);
+
+    expect(outcome).toEqual({ produced: false, reason });
+    expect(spy).toHaveBeenCalledTimes(1);
+    const written = String(spy.mock.calls[0][0]);
+    expect(written).toContain(reason);
+    expect(written).not.toMatch(CLAIMS_RETRYABLE);
+    expect(written.toLowerCase()).not.toContain('not retryable');
+  });
+
+  /** `not_from_a_db4` and `already_produced` are ordinary answers, not warnings — unchanged. */
+  it('still logs nothing for the two reasons that are not warnings', async () => {
+    const spy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const { service } = serviceWith({ agreement: signedFromDb4({ sourcePrintJobId: null }) });
+
+    await service.produceAfterSignature(PRACTICE, AGREEMENT);
+
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  /**
+   * A REFUSAL IS NEVER CALLED RETRYABLE. HARD-03 and HARD-12 fire on the
+   * form's own content or this practice's configured content — the exact
+   * same input every time — so a retry fails exactly the same way until one
+   * of those changes.
+   */
+  it('never calls a SignedDb4RenderRefusal retryable', async () => {
+    const errorSpy = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    const render = jest
+      .fn()
+      .mockRejectedValue(new SignedDb4RenderRefusal('HARD-03', 'a practitioner signature field'));
+    const { service } = serviceWith({ render });
+
+    const outcome = await service.produceAfterSignature(PRACTICE, AGREEMENT);
+
+    expect(outcome).toEqual({ produced: false, reason: 'render_failed' });
+    expect(errorSpy).toHaveBeenCalledTimes(1);
+    const written = String(errorSpy.mock.calls[0][0]);
+    expect(written).toContain('HARD-03');
+    expect(written).not.toMatch(CLAIMS_RETRYABLE);
+    expect(written.toLowerCase()).toContain('not retryable');
+  });
+
+  /**
+   * HARD-13 IS NOT CONTENT. It fires when the renderer is handed something
+   * that is not a Signed-DB4, or when the signature mark could not be loaded,
+   * and the artefact store reads a storage fault and a missing artefact as the
+   * same null. So the log can say neither "retryable" nor "not retryable".
+   */
+  it('a_hard_13_refusal_says_what_it_checked_and_claims_neither_way', async () => {
+    const errorSpy = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    const render = jest.fn().mockRejectedValue(new SignedDb4RenderRefusal('HARD-13', 'the signature mark could not be produced'));
+    const { service } = serviceWith({ render });
+
+    const outcome = await service.produceAfterSignature(PRACTICE, AGREEMENT);
+
+    expect(outcome).toEqual({ produced: false, reason: 'render_failed' });
+    const written = String(errorSpy.mock.calls[0][0]);
+    expect(written).toContain('HARD-13');
+    expect(written).not.toMatch(CLAIMS_RETRYABLE);
+    expect(written.toLowerCase()).not.toContain('not retryable');
+    expect(written).toContain('cannot be told from here');
+  });
+
+  /** A transient failure — the object store, the database — is still retryable. */
+  it('still calls a transient render error retryable', async () => {
+    const errorSpy = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    const render = jest.fn().mockRejectedValue(new Error('the object store fell over'));
+    const { service } = serviceWith({ render });
+
+    const outcome = await service.produceAfterSignature(PRACTICE, AGREEMENT);
+
+    expect(outcome).toEqual({ produced: false, reason: 'render_failed' });
+    expect(errorSpy).toHaveBeenCalledTimes(1);
+    const written = String(errorSpy.mock.calls[0][0]);
+    expect(written).toMatch(CLAIMS_RETRYABLE);
   });
 });

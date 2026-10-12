@@ -7,6 +7,11 @@ module.exports = {
   // parallel workers interfere (one suite's cleanup deletes another's
   // evidence rows mid-flight; observed, not theoretical). Serial, always.
   maxWorkers: 1,
+  // ...and so do whole RUNS from different worktrees, which maxWorkers cannot
+  // see. Each run clones its own database from a template before any suite and
+  // drops it after. See test/e2e-database.global-setup.ts.
+  globalSetup: '<rootDir>/e2e-database.global-setup.ts',
+  globalTeardown: '<rootDir>/e2e-database.global-teardown.ts',
   // Runs before any suite builds a Nest application: clears the ABN Lookup
   // GUID so e2e never calls the real Australian Business Register. See the
   // file for why that has to be an empty value rather than a deleted key.

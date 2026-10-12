@@ -17,6 +17,7 @@ import type { Actor } from '../auth/actor.decorator';
 import { PrismaService } from '../prisma/prisma.service';
 import { anchorForAgreement, anchorsForAgreements } from '../affiliations/agreement-anchor';
 import { RULES_CLIENT, RulesClientError } from '../rules-client/rules-client.module';
+import { readPracticeDay } from '../practices/practice-day';
 
 /** The pre-agreement types D6a applies to. C6 asks the same question. */
 const PRE_AGREEMENT_TYPES = ['episodic_pre', 'treatment_plan'] as const;
@@ -94,6 +95,13 @@ export class ServiceDescriptionsService {
     private readonly prisma: PrismaService,
     @Inject(RULES_CLIENT) private readonly rules: RulesEngineClient,
   ) {}
+
+  /**
+   * NOW, FOR THE DATES `revalidate` STATES (D-2026-10-10-03), read as the
+   * practice's own date. The same smallest seam as
+   * `TabletSessionsService.clock`.
+   */
+  clock: () => Date = () => new Date();
 
   /**
    * The list itself. NO PII, and nothing practice-specific — the scope is
@@ -337,14 +345,20 @@ export class ServiceDescriptionsService {
       const patient = await tx.patient.findFirst({ where: { id: agreement.patientId } });
       const anchor = await anchorForAgreement(tx, agreement);
       const appointment = await tx.appointment.findFirst({ where: { agreementId } });
-      const serviceDate = appointment?.date ?? new Date();
+      /*
+       * D2 AND D5 ON THE PRACTICE'S OWN DATE (D-2026-10-10-03), not the UTC
+       * date, which in Sydney is yesterday until 11am. `Appointment.date` is a
+       * `@db.Date` (UTC midnight of the calendar date), so its ISO prefix
+       * already IS that date and stays as it is.
+       */
+      const { todayIso } = await readPracticeDay(tx, this.clock());
       return {
         patientName: patient ? `${patient.givenNames} ${patient.familyName}` : undefined,
-        agreementDate: new Date().toISOString().slice(0, 10),
+        agreementDate: todayIso,
         agreementType: agreement.type,
         providerName: anchor?.name,
         providerAddress: anchor?.placeOfPracticeAddress ?? undefined,
-        serviceDate: serviceDate.toISOString().slice(0, 10),
+        serviceDate: appointment ? appointment.date.toISOString().slice(0, 10) : todayIso,
         basicServiceDescription: agreement.serviceDescription ?? undefined,
         assignorIsPatient: agreement.assignorIsPatient,
       };

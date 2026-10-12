@@ -8,6 +8,7 @@ import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { DevicesService } from '../src/devices/devices.service';
 import { CaptureService } from '../src/capture/capture.service';
+import { VerificationService } from '../src/verification/verification.service';
 import { RULES_CLIENT } from '../src/rules-client/rules-client.module';
 import { createServicingProvider, deleteSeededAnchors } from './anchor';
 
@@ -3340,6 +3341,96 @@ describe('push to a paired tablet (e2e, real Postgres)', () => {
         (row) => row.patientId === patientId,
       );
       expect((mine?.items ?? []).some((item) => item.kind === 'portal_correction_requested')).toBe(false);
+    });
+  });
+
+  /*
+   * THE CLOSURE SWEEP CAN CLOSE AN AGREEMENT BETWEEN THE PUSH'S CHECK AND ITS
+   * COMMIT (re-review of D-2026-10-10-09, finding 1). `assertPushable` reads
+   * the status outside the push transaction; the commit must take the row lock
+   * and re-check, so the push is refused cleanly: no tablet session, no
+   * session event and no `agreement.status_changed` for an expired agreement.
+   */
+  describe('a push raced by the unsigned-draft closure sweep', () => {
+    /** What the sweep writes, done at the worst possible moment. */
+    async function closeAsTheSweepWould(agreementId: string) {
+      await prisma.withPractice(practiceA, (tx) =>
+        tx.agreement.update({
+          where: { id: agreementId },
+          data: {
+            status: 'expired',
+            closedReason: 'no_service_recorded',
+            closedAt: new Date(),
+            closureRuleVersion: 'unsigned-draft-closure-2026-10-1',
+            closureDays: 7,
+            closureDaysSource: 'content_default',
+          },
+        }),
+      );
+    }
+
+    /** Close the agreement after `assertPushable` and before the push transaction. */
+    function raceTheSweep(agreementId: string) {
+      const verification = app.get(VerificationService);
+      const original = verification.identifierTypesFor.bind(verification);
+      return jest.spyOn(verification, 'identifierTypesFor').mockImplementationOnce(async (practiceId: string) => {
+        await closeAsTheSweepWould(agreementId);
+        return original(practiceId);
+      });
+    }
+
+    async function evidenceFor(agreementId: string) {
+      const sessions = await prisma.withPractice(practiceA, (tx) => tx.tabletSession.count({ where: { agreementId } }));
+      const statusEvents = await prisma.vaultOutbox.findMany({ where: { subjectId: agreementId, type: 'agreement.status_changed' } });
+      const pushedEvents = (await prisma.vaultOutbox.findMany({ where: { type: 'tablet.session_pushed' } })).filter((e) =>
+        JSON.stringify(e.payload).includes(agreementId),
+      );
+      return { sessions, statusEvents, pushedEvents };
+    }
+
+    it('a_first_push_raced_by_the_sweep_is_refused_cleanly_with_no_session_and_no_event', async () => {
+      signedInAt(practiceA);
+      const { deviceId } = await pairTablet(practiceA, `race-first-${randomUUID().slice(0, 8)}`);
+      const agreementId = await draft();
+      const spy = raceTheSweep(agreementId);
+      try {
+        const res = await pushTo(deviceId, agreementId);
+        expect(res.status).toBe(400);
+        expect(res.body.reason).toBe('agreement_closed_unsigned');
+      } finally {
+        spy.mockRestore();
+      }
+      const evidence = await evidenceFor(agreementId);
+      expect(evidence.sessions).toBe(0);
+      expect(evidence.statusEvents).toHaveLength(0);
+      expect(evidence.pushedEvents).toHaveLength(0);
+    });
+
+    it('a_re_push_raced_by_the_sweep_is_refused_cleanly_with_no_session_and_no_repushed_event', async () => {
+      signedInAt(practiceA);
+      const { deviceId } = await pairTablet(practiceA, `race-repush-${randomUUID().slice(0, 8)}`);
+      const agreementId = await draft();
+      // The first push locks it at awaiting_signature; the session then ends unsigned.
+      await pushTo(deviceId, agreementId).expect(201);
+      await prisma.withPractice(practiceA, (tx) =>
+        tx.tabletSession.updateMany({ where: { agreementId, endedAt: null }, data: { state: 'walked_away', endedAt: new Date() } }),
+      );
+      const before = await evidenceFor(agreementId);
+
+      const spy = raceTheSweep(agreementId);
+      try {
+        const res = await pushTo(deviceId, agreementId);
+        expect(res.status).toBe(400);
+        expect(res.body.reason).toBe('agreement_closed_unsigned');
+      } finally {
+        spy.mockRestore();
+      }
+      const after = await evidenceFor(agreementId);
+      expect(after.sessions).toBe(before.sessions);
+      expect(after.pushedEvents).toHaveLength(before.pushedEvents.length);
+      // No permanent {from: expired, to: expired, repushed: true} in the chain.
+      expect(after.statusEvents.some((e) => (e.payload as { repushed?: boolean }).repushed === true)).toBe(false);
+      expect(after.statusEvents).toHaveLength(before.statusEvents.length);
     });
   });
 });

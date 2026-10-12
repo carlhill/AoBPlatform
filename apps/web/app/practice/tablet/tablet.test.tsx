@@ -45,6 +45,7 @@ import {
   blockedByAnUnreadableForm,
   describePrintRecordCheck,
   describeRefusal,
+  whoBlockedTitle,
 } from './pushDesk';
 import { strings } from '../../strings';
 
@@ -2553,6 +2554,16 @@ describe('the refusal words', () => {
     expect(info.text).toBe(strings.tablet.rulesRefused);
   });
 
+  it('a_push_refused_because_the_sweep_closed_the_agreement_says_so_in_words', () => {
+    // D-2026-10-10-09 option 3: the closure sweep closed it between the desk's check and the push.
+    const info = describeRefusal('agreement_closed_unsigned');
+    expect(info.text).toBe(strings.tablet.blocked.agreement_closed_unsigned);
+    expect(info.text).toContain('closed as not needed');
+    // Mapped, so not shown as a bare code; and no link to a fix the desk cannot know is true.
+    expect(info.code).toBeUndefined();
+    expect(info.link).toBeUndefined();
+  });
+
   it('a_refused_print_record_says_what_could_not_be_read_not_just_a_code', () => {
     const info = describeRefusal('print_record_incomplete', {
       checks: ['print_record_benefit_missing', 'print_record_irn_missing'],
@@ -2687,6 +2698,141 @@ describe('the refusal words', () => {
     expect(identity.textContent).toContain(strings.tablet.printRecordId.noFileNote);
     // NO MILLISECONDS — they read as a dollar amount (hard rule 4).
     expect(identity.textContent).not.toMatch(/\d+\.\d{2}/);
+  });
+
+  /*
+   * UNREAD SERVICE LINES (Opus review, 10 Oct 2026; D-2026-10-11-05). The
+   * line names how many and on which form, links to support, and nothing on
+   * the band tells reception to reprint — the same layout prints the same
+   * lines, so that advice would be false for every record that reaches it
+   * (wow.md §13).
+   */
+  const UNREAD_PRINT = {
+    printJobId: '11111111-2222-3333-4444-555555555555',
+    sourceSha256: 'c'.repeat(64),
+    formReference: 'AOB3UNREAD',
+    receivedAt: '2026-10-11T11:04:00Z',
+    parserTemplateVersion: 'pracsoft3-db4-2026-10-1',
+    unparsedServiceLines: 2,
+  };
+
+  it('unparsed_service_lines_refusal_names_the_count_and_the_form_and_links_the_fix', () => {
+    const info = describeRefusal('print_record_incomplete', {
+      checks: ['print_record_service_lines_unread'],
+      print: UNREAD_PRINT,
+    });
+    const [line] = info.checks ?? [];
+    expect(line?.code).toBe('print_record_service_lines_unread');
+    expect(line?.text).toBe(
+      strings.tablet.printRecordServiceLinesUnread(2, 'AOB3UNREAD', 'pracsoft3-db4-2026-10-1'),
+    );
+    expect(line?.text).toContain('2 service lines');
+    expect(line?.text).toContain('AOB3UNREAD');
+    expect(line?.text).toContain('pracsoft3-db4-2026-10-1');
+    expect(line?.link).toEqual({ href: '/help', label: strings.tablet.printRecordServiceLinesUnreadLink });
+    // The sentence and title are the ones that do not promise a reprint.
+    expect(info.title).toBe(strings.tablet.blocked.print_record_service_lines_unreadTitle);
+    expect(info.text).toBe(strings.tablet.blocked.print_record_service_lines_unread);
+    expect(info.text).toMatch(/paper|after the service/i);
+    expect(`${info.title} ${info.text} ${line?.text}`).not.toMatch(/reprint it|needs reprinting|reprint the form/i);
+    // One line reads in the singular.
+    expect(strings.tablet.printRecordServiceLinesUnread(1, 'X1')).toContain('1 service line on form X1');
+  });
+
+  it('unparsed_service_lines_band_renders_the_link_and_drops_the_reprint_note', () => {
+    render(
+      <RefusalOutcomeBody
+        info={describeRefusal('print_record_incomplete', {
+          checks: ['print_record_service_lines_unread'],
+          print: UNREAD_PRINT,
+        })}
+        canSend
+        busy={false}
+        onRecall={() => {}}
+        linkTestId="v-link"
+        recallTestId="v-recall"
+        checksTestId="v-checks"
+      />,
+    );
+    expect(screen.getByTestId('v-checks').textContent).toContain('AOB3UNREAD');
+    const link = screen.getByTestId('print-check-link-print_record_service_lines_unread');
+    expect(link.getAttribute('href')).toBe('/help');
+    const identity = screen.getByTestId('print-record-identity');
+    expect(identity.textContent).toContain(strings.tablet.printRecordId.noFileNoteNoReprint);
+    expect(identity.textContent).not.toContain(strings.tablet.printRecordId.noFileNote);
+  });
+
+  /*
+   * THE PRINTED NAME IS NOT THE NAME ON RECORD (Carl, 11 October 2026:
+   * "STOP and tell Reception that PMS is sending a diff name for PMSID xxx.
+   * Is this correct?"; D-2026-10-11-06).
+   */
+  it('printed_name_differs_asks_reception_naming_the_pms_patient_id_and_the_record', () => {
+    const info = describeRefusal('print_record_incomplete', {
+      checks: ['print_record_patient_name_differs'],
+      pmsPatientId: 'DESK-EMIN-DUMMYFIELD',
+      recordName: 'Emin Dummyfield',
+      patientId: 'patient-1',
+    });
+    const [line] = info.checks ?? [];
+    expect(line?.text).toBe(
+      strings.tablet.printRecordPatientNameDiffers('DESK-EMIN-DUMMYFIELD', 'Emin Dummyfield'),
+    );
+    expect(line?.text).toContain('PMS patient ID DESK-EMIN-DUMMYFIELD');
+    expect(line?.text).toContain('(Emin Dummyfield)');
+    expect(line?.text).toContain('Is this the right patient?');
+    // The fix for "our record is wrong" is the patient, where the name is corrected.
+    expect(line?.link?.href).toBe('/practice/patients/patient-1');
+    // The sentence and title ask; neither promises a reprint fixes it.
+    expect(info.title).toBe(strings.tablet.blocked.print_record_patient_name_differsTitle);
+    expect(info.text).toBe(strings.tablet.blocked.print_record_patient_name_differs);
+    expect(`${info.title} ${info.text}`).not.toMatch(/reprint/i);
+    expect(info.text).toMatch(/seen and billed either way/);
+  });
+
+  it('printed_name_differs_outranks_unread_lines_for_the_sentence_and_keeps_both_lines', () => {
+    const info = describeRefusal('print_record_incomplete', {
+      checks: ['print_record_service_lines_unread', 'print_record_patient_name_differs'],
+      print: UNREAD_PRINT,
+    });
+    expect(info.title).toBe(strings.tablet.blocked.print_record_patient_name_differsTitle);
+    expect(info.checks?.map((c) => c.code)).toEqual([
+      'print_record_service_lines_unread',
+      'print_record_patient_name_differs',
+    ]);
+    // Without the row's facts the question still reads, and offers no dead link.
+    expect(info.checks?.[1]?.text).toBe(strings.tablet.printRecordPatientNameDiffers(undefined, undefined));
+    expect(info.checks?.[1]?.link).toBeUndefined();
+  });
+
+  it('who_is_signing_title_asks_to_check_the_patient_when_the_name_differs', () => {
+    expect(
+      whoBlockedTitle({
+        blockedReason: 'print_record_incomplete',
+        printRecord: { checks: ['print_record_patient_name_differs'] },
+      }),
+    ).toBe(strings.tablet.whoBlockedByPatientNameDiffers);
+  });
+
+  it('unparsed_service_lines_without_a_count_falls_back_to_the_plain_line', () => {
+    // A refusal that lost its identity block still says what is wrong.
+    const info = describeRefusal('print_record_incomplete', { checks: ['print_record_service_lines_unread'] });
+    expect(info.checks?.[0]?.text).toBe(strings.tablet.printRecordChecks.print_record_service_lines_unread);
+    expect(info.checks?.[0]?.link).toBeUndefined();
+    expect(info.text).toBe(strings.tablet.blocked.print_record_service_lines_unread);
+  });
+
+  it('who_is_signing_title_does_not_say_reprint_for_unread_service_lines', () => {
+    expect(
+      whoBlockedTitle({
+        blockedReason: 'print_record_incomplete',
+        printRecord: { checks: ['print_record_service_lines_unread'], print: UNREAD_PRINT },
+      }),
+    ).toBe(strings.tablet.whoBlockedByUnreadServiceLines);
+    expect(
+      whoBlockedTitle({ blockedReason: 'print_record_incomplete', printRecord: { checks: ['print_record_irn_missing'] } }),
+    ).toBe(strings.tablet.whoBlockedByPrintRecord);
+    expect(whoBlockedTitle({ blockedReason: null, printRecord: null })).toBeUndefined();
   });
 
   it('a_refusal_with_no_identity_still_draws_its_sentence_and_its_checks', () => {
@@ -3109,6 +3255,75 @@ describe('/practice/tablet — unsigned from earlier days', () => {
     expect(screen.queryByTestId('earlier-capped')).toBeNull();
   });
 
+  it('earlier_unsigned_associated_rows_say_what_was_found_and_link_to_the_service_item_not_the_draft', async () => {
+    signedInAtPractice();
+    stubFetch({
+      earlier: {
+        total: 3,
+        rows: [
+          { ...IN_RECON, reason: 'service_associated', serviceRecordId: 'svc-assoc-1', serviceOnReconciliation: true },
+          { ...NO_SERVICE, reason: 'service_choice_needed', serviceRecordId: 'svc-choice-1', serviceOnReconciliation: true },
+          {
+            ...NO_SERVICE,
+            agreementId: 'agreement-earlier-3',
+            reason: 'service_associated_other',
+            serviceRecordId: 'svc-assoc-2',
+            serviceOnReconciliation: true,
+          },
+        ],
+      },
+    });
+    render(<TabletView practiceId={PRACTICE} />);
+
+    await screen.findByTestId('earlier-summary');
+    expect(screen.getByTestId(`earlier-reason-${IN_RECON.agreementId}`).textContent).toBe(
+      strings.tablet.earlierReason.service_associated,
+    );
+    expect(screen.getByTestId(`earlier-link-${IN_RECON.agreementId}`).getAttribute('href')).toBe(
+      '/practice/reconciliation?item=svc-assoc-1',
+    );
+    expect(screen.getByTestId(`earlier-reason-${NO_SERVICE.agreementId}`).textContent).toBe(
+      strings.tablet.earlierReason.service_choice_needed,
+    );
+    expect(screen.getByTestId(`earlier-link-${NO_SERVICE.agreementId}`).getAttribute('href')).toBe(
+      '/practice/reconciliation?item=svc-choice-1',
+    );
+    expect(screen.getByTestId('earlier-reason-agreement-earlier-3').textContent).toBe(
+      strings.tablet.earlierReason.service_associated_other,
+    );
+    expect(screen.getByTestId('earlier-link-agreement-earlier-3').getAttribute('href')).toBe(
+      '/practice/reconciliation?item=svc-assoc-2',
+    );
+  });
+
+  it('earlier_unsigned_associated_row_whose_service_left_reconciliation_links_to_the_patient_not_a_missing_item', async () => {
+    signedInAtPractice();
+    stubFetch({
+      earlier: {
+        total: 2,
+        rows: [
+          { ...IN_RECON, reason: 'service_associated', serviceRecordId: 'svc-covered-1', serviceOnReconciliation: false },
+          {
+            ...NO_SERVICE,
+            reason: 'service_associated_other',
+            serviceRecordId: 'svc-covered-2',
+            serviceOnReconciliation: false,
+          },
+        ],
+      },
+    });
+    render(<TabletView practiceId={PRACTICE} />);
+
+    await screen.findByTestId('earlier-summary');
+    // Not "That item is not on this queue": the line goes where the agreement is listed.
+    expect(screen.getByTestId(`earlier-link-${IN_RECON.agreementId}`).getAttribute('href')).toBe(
+      `/practice/patients/${IN_RECON.patientId}`,
+    );
+    expect(screen.getByTestId(`earlier-link-${NO_SERVICE.agreementId}`).getAttribute('href')).toBe(
+      `/practice/patients/${NO_SERVICE.patientId}`,
+    );
+  });
+
   it('earlier_unsigned_decided_row_names_the_decision_and_unknown_codes_show_themselves', async () => {
     signedInAtPractice();
     stubFetch({
@@ -3165,5 +3380,133 @@ describe('/practice/tablet — unsigned from earlier days', () => {
     const earlierCalls = calls.filter((c) => c.url.includes('/tablet-sessions/unsigned-earlier'));
     expect(earlierCalls.length).toBeGreaterThan(0);
     expect(earlierCalls.every((c) => c.method === 'GET')).toBe(true);
+  });
+});
+
+/*
+ * THE PRINTED NAME AGAINST THE PATIENT RECORD (D-2026-10-10-11; Carl, 10
+ * October 2026: "B and tell the user to resend to AOBPrinter from PMS").
+ * A WARNING band on the staff row: both names and the PracSoft reprint. Since
+ * D-2026-10-11-06 (Carl, 11 Oct 2026) the same comparison also refuses Send to
+ * tablet, so the row the server sends is blocked as a print-record refusal and
+ * the band says so. The patient is still seen and billed (hard rule 8).
+ * Fixture names are obviously fake; no test name carries one.
+ */
+describe('a DB4 whose printed name differs from the patient record', () => {
+  beforeEach(() => {
+    calls.length = 0;
+    session = null;
+  });
+
+  /** What the server sends now: the name check in `checks`, and the row blocked by it. */
+  const DIFFERS = {
+    ...READY,
+    pushable: false,
+    blockedReason: 'print_record_incomplete' as const,
+    printRecord: {
+      checks: ['print_record_patient_name_differs'] as string[],
+      print: {
+        printJobId: 'job-fake',
+        sourceSha256: 'd'.repeat(64),
+        formReference: 'AOB4FAKE',
+        receivedAt: '2026-10-10T09:00:00Z',
+      },
+    },
+    printedNameDiffers: {
+      code: 'print_record_name_differs',
+      parts: ['given_names'],
+      printed: { givenNames: 'Jaime', familyName: 'Sampleton' },
+      recorded: { givenNames: 'Jamie', familyName: 'Sampleton' },
+    },
+  };
+
+  it('no band when the row carries no difference', async () => {
+    signedInAtPractice();
+    stubFetch({
+      rows: [
+        {
+          ...DIFFERS,
+          pushable: true,
+          blockedReason: null,
+          printRecord: { ...DIFFERS.printRecord, checks: [] },
+          printedNameDiffers: null,
+        },
+      ],
+    });
+    render(<TabletView practiceId={PRACTICE} />);
+    await waitFor(() => expect(screen.getByTestId(`pushable-${READY.agreementId}`)).toBeTruthy());
+    expect(screen.queryByTestId(`printed-name-${READY.agreementId}`)).toBeNull();
+  });
+
+  it('shows both names, what differs and the PracSoft reprint, and the row cannot be sent', async () => {
+    signedInAtPractice();
+    stubFetch({ rows: [DIFFERS] });
+    render(<TabletView practiceId={PRACTICE} />);
+
+    await waitFor(() => expect(screen.getByTestId(`printed-name-${READY.agreementId}`)).toBeTruthy());
+    const band = screen.getByTestId(`printed-name-${READY.agreementId}`);
+    expect(band.textContent).toContain(strings.tablet.printedName.title);
+    expect(band.textContent).toContain(strings.tablet.printedName.observed);
+    expect(screen.getByTestId(`printed-name-${READY.agreementId}-printed`).textContent).toBe('Jaime Sampleton');
+    expect(screen.getByTestId(`printed-name-${READY.agreementId}-recorded`).textContent).toBe('Jamie Sampleton');
+    expect(band.textContent).toContain(strings.tablet.printedName.differs('given names'));
+    expect(screen.getByTestId(`printed-name-${READY.agreementId}-fix`).textContent).toBe(
+      strings.tablet.printedName.fix,
+    );
+    expect(strings.tablet.printedName.fix).toContain('PracSoft');
+    expect(strings.tablet.printedName.fix).toContain('AOBPrinter');
+
+    /*
+     * AND A REFUSAL (D-2026-10-11-06). This used to assert the opposite — no
+     * blocked band and a live Send — which was D-2026-10-10-11's rule. The
+     * blocked band asks "Is this the right patient?", Send stays dead, and the
+     * warning band says why rather than claiming Send still works.
+     */
+    expect(screen.getByTestId(`printed-name-${READY.agreementId}-send`).textContent).toBe(
+      strings.tablet.printedName.stopsSend,
+    );
+    expect(screen.getByTestId(`blocked-${READY.agreementId}`).textContent).toContain(
+      strings.tablet.blocked.print_record_patient_name_differsTitle,
+    );
+    expect((screen.getByTestId(`send-${READY.agreementId}`) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('on a row blocked for another reason too, the band still only says what is true', async () => {
+    // wow.md §13: the blocked band says this row cannot be sent; this band must not contradict it.
+    signedInAtPractice();
+    /*
+     * A ROW THE SERVER CAN ACTUALLY SEND: `patient_confidential` is not one of
+     * the reasons the print-record refusal takes over, so the row keeps it and
+     * the name check rides in `printRecord.checks` beside the band. (An
+     * earlier version used `service_description_missing`, which the server
+     * replaces with `print_record_incomplete`, so it tested a row that cannot
+     * happen.)
+     */
+    stubFetch({ rows: [{ ...DIFFERS, pushable: false, blockedReason: 'patient_confidential' as const }] });
+    render(<TabletView practiceId={PRACTICE} />);
+    await waitFor(() => expect(screen.getByTestId(`printed-name-${READY.agreementId}`)).toBeTruthy());
+    const send = screen.getByTestId(`printed-name-${READY.agreementId}-send`);
+    expect(send.textContent).toBe(strings.tablet.printedName.stopsSend);
+    expect(screen.getByTestId(`printed-name-${READY.agreementId}`).textContent).not.toMatch(/still works/i);
+  });
+
+  it('is announced politely, not as an alert', async () => {
+    signedInAtPractice();
+    stubFetch({ rows: [DIFFERS] });
+    render(<TabletView practiceId={PRACTICE} />);
+    await waitFor(() => expect(screen.getByTestId(`printed-name-${READY.agreementId}`)).toBeTruthy());
+    expect(screen.getByTestId(`printed-name-${READY.agreementId}`).getAttribute('role')).toBe('status');
+  });
+
+  it('an unmapped notice code shows its code, and no remedy it was not written for', async () => {
+    signedInAtPractice();
+    stubFetch({
+      rows: [{ ...DIFFERS, printedNameDiffers: { ...DIFFERS.printedNameDiffers, code: 'print_record_name_future' } }],
+    });
+    render(<TabletView practiceId={PRACTICE} />);
+    await waitFor(() => expect(screen.getByTestId(`printed-name-${READY.agreementId}`)).toBeTruthy());
+    const band = screen.getByTestId(`printed-name-${READY.agreementId}`);
+    expect(band.textContent).toContain('print_record_name_future');
+    expect(screen.queryByTestId(`printed-name-${READY.agreementId}-fix`)).toBeNull();
   });
 });

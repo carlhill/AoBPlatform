@@ -103,6 +103,7 @@ import { useWaitingList } from './useWaitingList';
 import { useTabletSession } from './useTabletSession';
 import { useInactivityReset } from './useInactivityReset';
 import { useDevBuildWatch } from './useDevBuildWatch';
+import { useKioskFullScreen } from './useKioskFullScreen';
 import { useKioskHeartbeat } from './useKioskHeartbeat';
 import { clearPairingCredential, readPairingCredential, writePairingCredential } from './pairing';
 import { challengeIsComplete, identifierFieldsFor, type IdentifierField } from './rules/identifiers';
@@ -518,6 +519,8 @@ export function Ceremony(): ReactNode {
    * cannot tell from that — and a deployed answer is ignored.
    */
   const devBuildChanged = useDevBuildWatch(step === 'idle' || step === 'list');
+  // Full screen on the next tap, never from the signature step (a resize would move the pad).
+  useKioskFullScreen(step !== 'signature');
 
   /**
    * THE PUSHED-SESSION POLL, AND WHEN IT RUNS.

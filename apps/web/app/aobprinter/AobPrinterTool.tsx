@@ -49,7 +49,7 @@
  * typing something real, and nothing should be typed that is.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { BLANK, PRESETS, type Draft, type ProviderRow, type ServiceRow } from './presets';
+import { BLANK, PRESETS, startFromPreset, type Draft, type ProviderRow, type ServiceRow } from './presets';
 import { buildEnvelope, draftFromEnvelope, envelopeWithHash, sha256Hex } from './envelope';
 import styles from './aobprinter.module.css';
 
@@ -207,7 +207,7 @@ function Db4OutcomeSummary({ outcome }: { outcome: unknown }) {
             <dd>{db4.decision}</dd>
           </>
         ) : null}
-        <dt>Chart number matched a patient</dt>
+        <dt>PMS patient ID matched a patient</dt>
         <dd>{db4.patientMatched ? 'yes' : 'no'}</dd>
       </dl>
 
@@ -298,7 +298,8 @@ export function AobPrinterTool() {
     const preset = PRESETS.find((p) => p.key === key);
     if (!preset) return;
     setDraft((d) => {
-      const next = preset.apply({ ...BLANK, practiceId: d.practiceId, patientRecordNumber: d.patientRecordNumber });
+      // The chart number AND the name carry over — see `startFromPreset`.
+      const next = startFromPreset(preset, d);
       /*
        * THE FORM REFERENCE IS STAMPED, NOT CARRIED. Two presets sharing one
        * reference would be the same FORM to `db4-assignment.handler.ts` —
@@ -487,7 +488,7 @@ export function AobPrinterTool() {
             className={styles.input}
             value={existingFilter}
             onChange={(e) => setExistingFilter(e.target.value)}
-            placeholder="Any part of a name, a chart number, a form reference or a date"
+            placeholder="Any part of a name, a PMS patient ID, a form reference or a date"
           />
           <p className={styles.hint} aria-live="polite">
             {existingFilter.trim()
@@ -561,7 +562,7 @@ export function AobPrinterTool() {
             hint="What makes this the same form. Reuse it to reprint a correction."
           />
           <Field
-            label="Chart number"
+            label="PMS patient ID"
             value={draft.patientRecordNumber}
             onChange={(v) => set('patientRecordNumber', v)}
             mono

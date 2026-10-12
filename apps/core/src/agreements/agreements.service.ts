@@ -11,10 +11,12 @@ import {
 import type { Agreement as DbAgreement, Prisma } from '@prisma/client';
 import {
   answersEnduringRules,
+  db4PrintedNameDifference,
   type Db4FormView,
   type Db4ParticularChange,
   type Db4PrintRecordCheck,
   type Db4PrintRecordIdentity,
+  type Db4PrintedNameDifference,
   type RulesEngineClient,
 } from '@aobplatform/contracts';
 import { RendererRegistry, renderInputOf } from '../render/renderer-registry';
@@ -25,6 +27,7 @@ import { CaptureService } from '../capture/capture.service';
 import { WriteBackService } from '../pms/write-back.service';
 import {
   AgreementTemplateError,
+  UNSIGNED_OPEN_STATUSES,
   renderAgreementTemplate,
   type RenderedAgreementTemplate,
   assertNoForbiddenAgreementFields,
@@ -54,6 +57,7 @@ import {
 } from '@aobplatform/domain';
 import { ArtefactsService } from '../artefacts/artefacts.service';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
+import { closedUnsignedRefusal, lockAndRefuseIfClosed } from './closed-unsigned-guard';
 import { anchorForAgreement } from '../affiliations/agreement-anchor';
 import { PrismaService } from '../prisma/prisma.service';
 import { RULES_CLIENT, RulesClientError } from '../rules-client/rules-client.module';
@@ -63,6 +67,7 @@ import { buildDb4FormView, checkDb4PrintRecord } from './db4-form-view';
 import { PrintRecordsService } from '../inbound/print-records.service';
 import { SignedDb4Service } from './signed-db4.service';
 import type { Actor } from '../auth/actor.decorator';
+import { readPracticeDay } from '../practices/practice-day';
 
 const SYSTEM_ACTOR = { principalType: 'system', id: 'core' } as const;
 
@@ -290,6 +295,18 @@ export interface PreparedLock {
  * the same answer to the push ("send it") and three literals would be three
  * chances for one of them to start refusing.
  */
+/**
+ * ONE ROW'S ANSWER FOR THE DESK LIST: the refusal checks, which page, and the
+ * printed-name WARNING (D-2026-10-10-11) — `null` when the printed name
+ * matches the patient record or the form printed none. The warning carries
+ * names and is for the practice-scoped staff desk row only.
+ */
+export interface Db4PrintRecordDeskAnswer {
+  checks: readonly Db4PrintRecordCheck[];
+  identity: Db4PrintRecordIdentity;
+  nameDiffers: Db4PrintedNameDifference | null;
+}
+
 const NO_PRINT_RECORD_CHECKS: { checks: readonly Db4PrintRecordCheck[]; identity: Db4PrintRecordIdentity | null } =
   Object.freeze({ checks: Object.freeze([]), identity: null });
 
@@ -316,6 +333,15 @@ export class AgreementsService {
      */
     private readonly printRecords: PrintRecordsService,
   ) {}
+
+  /**
+   * NOW, FOR THE STATUTORY DATES THIS SERVICE FILLS IN (D-2026-10-10-03) — the
+   * D2 default at lock and the superseding draft's D5 fallback, both read as
+   * the practice's own date through `readPracticeDay`. A field, not a
+   * provider: the same smallest seam as `TabletSessionsService.clock`
+   * (`practice-date-particulars.e2e-spec.ts` sets it).
+   */
+  clock: () => Date = () => new Date();
 
   /** See `enduringRulesAuthored`. In-process and per-instance, which is all a hint needs to be. */
   private enduringProbe: { at: number; authored: boolean } | null = null;
@@ -1644,7 +1670,7 @@ export class AgreementsService {
     actor?: Actor,
   ): Promise<DbAgreement> {
     let outcome:
-      | { kind: 'created'; id: string; superseded: DbAgreement }
+      | { kind: 'created'; id: string; superseded: DbAgreement; practiceToday: string }
       | { kind: 'settled'; agreement: DbAgreement };
     try {
       outcome = await this.prisma.withPractice(practiceId, async (tx) => {
@@ -1840,7 +1866,10 @@ export class AgreementsService {
         await this.capture.openInPractice(tx, practiceId, replacement.id);
 
         await this.assertAssignorPartyPasses(tx, replacement);
-        return { kind: 'created' as const, id: replacement.id, superseded: agreement };
+        // The practice's own date, read under this same practice scope, for
+        // the D5 fallback below (D-2026-10-10-03).
+        const { todayIso } = await readPracticeDay(tx, this.clock());
+        return { kind: 'created' as const, id: replacement.id, superseded: agreement, practiceToday: todayIso };
       });
     } catch (err) {
       if (err instanceof HardRuleViolation) throw new BadRequestException(err.message);
@@ -1867,9 +1896,11 @@ export class AgreementsService {
        * D5 OFF THE OLD SNAPSHOT. The visit did not move; only the party did.
        * The fallback is today and is unreachable in practice — only a LOCKED
        * agreement reaches here and a locked episodic one always stated D5 —
-       * but a particular is never left to a `!`.
+       * but a particular is never left to a `!`. "Today" is the PRACTICE's
+       * date, never the UTC one, which in Sydney is yesterday until 11am
+       * (D-2026-10-10-03).
        */
-      serviceDate: serviceDateOf(outcome.superseded) ?? new Date().toISOString().slice(0, 10),
+      serviceDate: serviceDateOf(outcome.superseded) ?? outcome.practiceToday,
       mbsItemNumbers: mbsItemNumbersOf(outcome.superseded),
     });
 
@@ -2203,13 +2234,21 @@ export class AgreementsService {
         agreement.type === 'enduring'
           ? await tx.enduringDetail.findFirst({ where: { agreementId } })
           : null;
+      /*
+       * D2 WHEN NOBODY NAMED ONE IS THE PRACTICE'S OWN DATE (D-2026-09-12-17
+       * item 2, D-2026-10-10-03), read in this transaction. It was the UTC
+       * date, which in Sydney is yesterday until 11am — an agreement locked at
+       * 8:30am stated yesterday as a statutory particular. An explicit date
+       * always wins, and only an unlocked agreement reaches here.
+       */
+      const agreementDate = dto.agreementDate ?? (await readPracticeDay(tx, this.clock())).todayIso;
 
       // undefined values are pruned: they vanish in the JSON round-trip
       // through Postgres, and rule 13 requires the stored snapshot to
       // re-render byte-identically to what was hashed at lock.
       return prune({
         patientName: `${patient.givenNames} ${patient.familyName}`,
-        agreementDate: dto.agreementDate ?? new Date().toISOString().slice(0, 10),
+        agreementDate,
         agreementType: agreement.type,
         providerName: anchor?.name,
         providerAddress: anchor?.placeOfPracticeAddress ?? undefined,
@@ -2447,6 +2486,8 @@ export class AgreementsService {
     prepared: PreparedLock,
     extra: Prisma.AgreementUncheckedUpdateInput = {},
   ): Promise<DbAgreement> {
+    // Locked and refused by name if the closure sweep closed it meanwhile (review of D-2026-10-10-09).
+    await lockAndRefuseIfClosed(tx, agreementId);
     const agreement = await tx.agreement.findFirst({ where: { id: agreementId } });
     if (!agreement) throw new NotFoundException('Agreement not found.');
     if (agreement.particularsLockedAt) {
@@ -2528,9 +2569,34 @@ export class AgreementsService {
     prepared: PreparedLock | null,
     verificationEventId: string,
   ): Promise<DbAgreement> {
+    /*
+     * THE ROW LOCK FIRST, FOR BOTH BRANCHES (re-review of D-2026-10-10-09).
+     * The push checked the status OUTSIDE this transaction; the closure sweep
+     * may have closed the agreement since. Under the lock a closed agreement
+     * is refused by name, and one that has otherwise moved on is refused as
+     * not pushable -- before any event is written or any session opened, so
+     * the whole push transaction rolls back.
+     */
+    await lockAndRefuseIfClosed(tx, agreementId);
     const before = await tx.agreement.findFirst({ where: { id: agreementId } });
     if (!before) throw new NotFoundException('Agreement not found.');
     const from = before.status as AgreementStatus;
+    /*
+     * STILL UNSIGNED AND OPEN, under the lock. Both branches: a re-push can
+     * meet a locked agreement still at `draft` (locked without a status move)
+     * as well as one at `awaiting_signature`. `assertPushable` made the finer
+     * pushable check outside the transaction; this is the part a concurrent
+     * writer could have changed since.
+     */
+    const stillPushable =
+      before.signatureEventId === null && (UNSIGNED_OPEN_STATUSES as readonly string[]).includes(from);
+    if (!stillPushable) {
+      throw new ConflictException({
+        statusCode: 409,
+        reason: 'agreement_not_pushable',
+        message: `An agreement in status ${from} cannot be sent to a tablet. Corrections supersede rather than edit (HARD-02).`,
+      });
+    }
 
     if (!prepared) {
       if (!before.particularsLockedAt) {
@@ -2621,6 +2687,11 @@ export class AgreementsService {
   ): Promise<DbAgreement> {
     // Storage-time re-validation (REQ-65C-01: "and again at storage").
     const agreementBefore = await this.get(practiceId, agreementId);
+    /*
+     * CLOSED AS NOT NEEDED (D-2026-10-10-09 option 3): said by name, before the
+     * generic "not at the signing step", because it is the more exact answer.
+     */
+    if (agreementBefore.closedReason) throw closedUnsignedRefusal(agreementBefore);
     if (agreementBefore.status !== 'awaiting_signature') {
       /*
        * EVERY REFUSAL ON THIS PATH CARRIES A `reason` CODE (Carl, 7 Sep 2026).
@@ -2796,6 +2867,20 @@ export class AgreementsService {
       : null;
 
     await this.prisma.withPractice(practiceId, async (tx) => {
+      /*
+       * THE ROW LOCK FIRST, AND THE STEP RE-CHECKED UNDER IT (review of
+       * D-2026-10-10-09). The status above was read outside this transaction;
+       * the closure sweep may have closed the agreement since. Under the lock
+       * a closed agreement is refused by name and a moved one as not at the
+       * signing step, never by the database's CHECK.
+       */
+      const locked = await lockAndRefuseIfClosed(tx, agreementId);
+      if (!locked || locked.status !== 'awaiting_signature') {
+        throw new BadRequestException({
+          message: `Cannot sign an agreement in status ${locked?.status ?? 'unknown'}.`,
+          reason: locked && SIGNED_ALREADY_STATUSES.has(locked.status) ? 'already_signed' : 'not_awaiting_signature',
+        });
+      }
       /*
        * ONE TRANSACTION: the two artefact rows, their vault events, the
        * signature event that binds their hashes, and every agreement event
@@ -3126,14 +3211,24 @@ export class AgreementsService {
   async db4PrintRecordChecksForMany(
     practiceId: string,
     agreementIds: readonly string[],
-  ): Promise<Map<string, { checks: readonly Db4PrintRecordCheck[]; identity: Db4PrintRecordIdentity }>> {
-    const answers = new Map<string, { checks: readonly Db4PrintRecordCheck[]; identity: Db4PrintRecordIdentity }>();
+  ): Promise<Map<string, Db4PrintRecordDeskAnswer>> {
+    const answers = new Map<string, Db4PrintRecordDeskAnswer>();
     if (agreementIds.length === 0) return answers;
     try {
       const sourced = await this.prisma.withPractice(practiceId, (tx) =>
         tx.agreement.findMany({
           where: { id: { in: [...agreementIds] }, sourcePrintJobId: { not: null } },
-          select: { id: true, sourcePrintJobId: true },
+          /*
+           * THE RECORD'S NAME, FOR THE PRINTED-NAME WARNING (D-2026-10-10-11).
+           * The same practice-scoped read as before, widened by one relation:
+           * no new query, and RLS scopes the patient row exactly as it scopes
+           * the agreement.
+           */
+          select: {
+            id: true,
+            sourcePrintJobId: true,
+            patient: { select: { givenNames: true, familyName: true } },
+          },
         }),
       );
       if (sourced.length === 0) return answers;
@@ -3144,7 +3239,22 @@ export class AgreementsService {
       for (const row of sourced) {
         const record = records.get(row.sourcePrintJobId as string);
         if (!record) continue;
-        answers.set(row.id, { checks: checkDb4PrintRecord(record.envelope), identity: record.identity });
+        /*
+         * A WARNING AND A REFUSAL, FROM ONE COMPARISON. The DB4 was matched by
+         * PMS patient ID alone (hard rule 1). If the name it PRINTED is not the
+         * record's name, the desk row shows both names (D-2026-10-10-11) and
+         * Send to tablet refuses (`print_record_patient_name_differs`,
+         * D-2026-10-11-06) — both decided by `db4PrintedNamePartsDiffering`, so
+         * the band and the refusal can never disagree. Nothing here logs or
+         * writes either name (hard rule 9), and the refusal stops the tablet,
+         * never the visit (hard rule 8).
+         */
+        const nameDiffers = db4PrintedNameDifference(record.envelope?.patient ?? {}, row.patient);
+        answers.set(row.id, {
+          checks: checkDb4PrintRecord(record.envelope, row.patient),
+          identity: record.identity,
+          nameDiffers,
+        });
       }
       return answers;
     } catch (err) {
@@ -3163,7 +3273,7 @@ export class AgreementsService {
 
   async db4PrintRecordChecks(
     practiceId: string,
-    agreement: { id: string; sourcePrintJobId: string | null },
+    agreement: { id: string; sourcePrintJobId: string | null; patientId?: string },
   ): Promise<{ checks: readonly Db4PrintRecordCheck[]; identity: Db4PrintRecordIdentity | null }> {
     if (!agreement.sourcePrintJobId) return NO_PRINT_RECORD_CHECKS;
     try {
@@ -3178,7 +3288,20 @@ export class AgreementsService {
        * practice that prints all morning — and the only place that is known
        * is here, where the record was just read.
        */
-      return { checks: checkDb4PrintRecord(record.envelope), identity: record.identity };
+      /*
+       * THE PATIENT ON RECORD, for the printed-name check (D-2026-10-11-06).
+       * Read here, beside the record, so the push and the desk list ask the
+       * same question of the same two names.
+       */
+      const onRecord = agreement.patientId
+        ? await this.prisma.withPractice(practiceId, (tx) =>
+            tx.patient.findFirst({
+              where: { id: agreement.patientId },
+              select: { givenNames: true, familyName: true },
+            }),
+          )
+        : null;
+      return { checks: checkDb4PrintRecord(record.envelope, onRecord), identity: record.identity };
     } catch (err) {
       /*
        * THE CLASS AND THE AGREEMENT ID, NEVER THE RECORD. Every line of a DB4

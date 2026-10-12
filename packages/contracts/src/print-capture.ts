@@ -42,6 +42,12 @@ export interface PrintJobEnvelope {
   /** Which print queue produced the form. Attribution, never PII. */
   readonly queueName?: string;
   readonly queueLabel?: string;
+  /**
+   * How many date-led service lines the template's row pattern did NOT read
+   * (D-2026-10-11-05). A count, never content. Absent from a desktop that
+   * predates it; non-zero is refused at Send-to-tablet.
+   */
+  readonly unparsedServiceLines?: number;
   readonly heading?: Db4Heading;
   readonly form?: Db4Form;
   readonly servicingLocation?: Db4ServicingLocation;

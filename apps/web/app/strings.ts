@@ -58,14 +58,22 @@ const recordIdWords = {
      * Medicare card number, there is no column for one, and nothing here may
      * ever be pointed at one.
      */
-    practiceNumber: (number: string) => `Patient ID ${number}`,
+    /*
+     * "PMS PATIENT ID" SINCE 11 OCTOBER 2026 (Carl: *"is this the PMSPatientID?
+     * If so lets call it that and not the ChartNumber"*; D-2026-10-11-06). It
+     * is the practice's own number for the patient in their PMS — PracSoft
+     * prints it as "Chart Number" — and we store it as `patientRecordNumber`,
+     * the s 65C approved identifier's own name, which is why the CODE keeps
+     * that name and only the words change.
+     */
+    practiceNumber: (number: string) => `PMS patient ID ${number}`,
     /*
      * SAID, RATHER THAN LEFT BLANK. A record that reached us by a route that
      * never carried the practice's number is an ordinary thing, and an empty
      * line under a name reads as a page that failed to load. Our own record id
      * needs no twin: it always exists.
      */
-    practiceNumberUnknown: 'No patient ID on this record',
+    practiceNumberUnknown: 'No PMS patient ID on this record',
     /*
      * AOBPRINTER'S OWN REFERENCE (Carl, 28 September 2026: *"we need the
      * AOBPrinter unique key probably after AoBPlatform record ID"*).
@@ -2336,6 +2344,44 @@ export const strings = {
     itemNotOnQueueTitle: 'That item is not on this queue',
     itemNotOnQueue: (id: string) =>
       `The link asked for service record ${id}. The queue, as loaded just now, does not list it.`,
+    /*
+     * WHICH UNSIGNED AGREEMENT WAS THIS VISIT'S? (D-2026-10-10-09, option (b)).
+     * A service was recorded and unsigned agreements made for the same visit
+     * were found. Each line says what was found and on what; never why there
+     * are two, which the platform does not know (wow.md §13).
+     */
+    associationChoice: {
+      title: 'Which unsigned agreement was for this visit?',
+      lead:
+        'A service was recorded, and unsigned agreements for the same patient, servicing provider and day were found. ' +
+        'None has been associated with the service yet. Choosing one records which agreement the visit had; ' +
+        'it is associated with the service, not linked to it.',
+      reasons: {
+        unsigned_drafts_match_service: (n: number) =>
+          `${n} unsigned agreement${n === 1 ? '' : 's'} match this service on patient, servicing provider and day. None is associated with it.`,
+      } as Record<string, (n: number) => string>,
+      /** AN UNMAPPED CODE SHOWS ITSELF (CLAUDE.md §7c). */
+      reasonUnknown: (code: string) => `Waiting for a choice (${code})`,
+      /** "Agreement before the service · Draft · for 3 October 2026 · made 3 Oct, 9:12 am". */
+      candidateLine: (type: string, status: string, forDay: string, madeAt: string) =>
+        `${type} · ${status} · for ${forDay} · made ${madeAt}`,
+      types: {
+        episodic_pre: 'Agreement before the service',
+      } as Record<string, string>,
+      statuses: {
+        draft: 'Draft',
+        verification_pending: 'Waiting for an identity check',
+        verification_failed: 'Identity check did not pass',
+        awaiting_signature: 'Ready to sign, not signed',
+      } as Record<string, string>,
+      choose: 'This one was for the visit',
+      choosing: 'Recording…',
+      chosen: 'Recorded. The agreement is associated with the service.',
+      chooseFailed: 'That choice could not be recorded',
+      viewOnly: 'Read only: choosing is done by the practice.',
+      postNotAffected: 'The after-service agreement for this visit is drafted and chased as usual, whichever is chosen.',
+      notLoaded: (status: string) => `Could not check for services waiting for a choice of agreement (${status}).`,
+    },
   },
 
   /*
@@ -3538,6 +3584,19 @@ export const strings = {
       + 'a stranger. Any touch resets the clock, and a quiet warning appears thirty seconds before it happens.',
     idleLabel: 'Minutes of no activity',
     idleHint: 'Between 1 and 30. Five is the default — long enough to read an agreement standing up.',
+    /*
+     * CLOSE UNSIGNED AGREEMENTS NOBODY NEEDED (D-2026-10-10-09, option 3; Carl:
+     * "N is 7 days - make N a configurable setting"). What the sweep does is
+     * said exactly, including what it never closes.
+     */
+    closeTitle: 'Close unsigned agreements when no service was recorded',
+    closeLead:
+      'An agreement nobody signed, for a visit with no service recorded, is closed after this many days as '
+      + '"not needed: no service recorded". It is kept, not deleted, and the closure is recorded. An agreement '
+      + 'linked or associated with a service, matched by one, on a tablet, or with a live link is never closed this way.',
+    closeLabel: 'Days after the visit',
+    closeHint: (min: number, max: number, defaultDays: number, version: string) =>
+      `Between ${min} and ${max}. Leave empty to use the default, ${defaultDays} days (${version}).`,
 
     /**
      * WHICH AGREEMENT THE PRE-STEP OFFERS FIRST (Carl, 4 Sep 2026; GA-PLAN B6).
@@ -3564,6 +3623,34 @@ export const strings = {
       'An ongoing agreement is signed once and covers that provider’s bulk-billed services from that day '
       + 'until the patient or the provider ends it, so there is nothing to sign after each visit. Turn this '
       + 'off and the tablet offers an agreement for the visit every time.',
+
+    /**
+     * --- THE PRACTICE'S TIMEZONE (D-2026-10-10-03).
+     *
+     * WHAT IT DECIDES, IN THE PRACTICE'S WORDS: when "today" starts on the
+     * desk and the tablet, and so which unsigned agreements move to "earlier
+     * days". The zone list is content (`practice-timezones.json`); these are
+     * only its names, keyed by IANA zone, and an unmapped zone shows its key.
+     */
+    timezoneTitle: 'Your practice’s time zone',
+    timezoneLead:
+      'Today’s list on the desk and the tablet starts at midnight in this time zone. Unsigned agreements '
+      + 'from before that midnight move to “Unsigned from earlier days”.',
+    timezoneLabel: 'Time zone',
+    timezoneHint: 'Changing this moves where each day starts. It is recorded, with who changed it.',
+    timezoneNames: {
+      'Australia/Sydney': 'Sydney, Canberra (NSW, ACT)',
+      'Australia/Melbourne': 'Melbourne (VIC)',
+      'Australia/Brisbane': 'Brisbane (QLD)',
+      'Australia/Adelaide': 'Adelaide (SA)',
+      'Australia/Darwin': 'Darwin (NT)',
+      'Australia/Perth': 'Perth (WA)',
+      'Australia/Hobart': 'Hobart (TAS)',
+      'Australia/Broken_Hill': 'Broken Hill (NSW, on South Australian time)',
+      'Australia/Lindeman': 'Whitsunday Islands (QLD)',
+      'Australia/Eucla': 'Eucla (WA, central western time)',
+      'Australia/Lord_Howe': 'Lord Howe Island (NSW)',
+    } as Record<string, string>,
 
     /**
      * --- D6a, THE PRACTICE DEFAULT (Carl, 5 Sep 2026; GA-PLAN B10).
@@ -4299,15 +4386,16 @@ export const strings = {
     /*
      * THE CODE, SHOWN ONCE. The screen says so, because a code that cannot be
      * fetched again is a surprise unless it was announced — and the way out of
-     * having lost it is Rotate, which is named here rather than left to be
-     * discovered.
+     * having lost it is Re-Pair Tablet (the rotate act; renamed by Carl,
+     * 10 Oct 2026, because "Rotate" read as turning the screen), which is named
+     * here rather than left to be discovered.
      */
     codeHeading: 'Type this code into the tablet',
-    codeShownOnce: 'This code is shown once. If it is lost, rotate the tablet for a new one.',
+    codeShownOnce: 'This code is shown once. If it is lost, re-pair the tablet for a new one.',
     codeWhere: 'On the tablet, open /kiosk and enter the code.',
     codeExpires: (minutes: number) =>
       minutes <= 0
-        ? 'This code has expired. Rotate the tablet for a new one.'
+        ? 'This code has expired. Re-pair the tablet for a new one.'
         : minutes === 1
           ? 'Expires in 1 minute'
           : `Expires in ${minutes} minutes`,
@@ -4413,12 +4501,12 @@ export const strings = {
     cancelAction: 'Cancel',
     revoking: 'Revoking…',
 
-    rotateAction: 'Rotate',
+    rotateAction: 'Re-Pair Tablet',
     rotateConfirm: (label: string) =>
-      `Rotate ${label}? Its current credential stops working immediately and you will get a new code to type `
+      `Re-pair ${label}? Its current credential stops working immediately and you will get a new code to type `
       + 'into it.',
-    rotateConfirmAction: 'Rotate and show a new code',
-    rotating: 'Rotating…',
+    rotateConfirmAction: 'Re-pair and show a new code',
+    rotating: 'Re-pairing…',
 
     /*
      * THE BUILD FLOOR — staged rollout with instant rollback. Written for
@@ -5410,7 +5498,7 @@ export const strings = {
     tableCaption: (date: string) => `Patients taken in on ${date}`,
 
     /* The same words, and the same reasoning, as the front desk’s own rows. */
-    patientRecordNumber: (number: string) => `Patient ID ${number}`,
+    patientRecordNumber: (number: string) => `PMS patient ID ${number}`,
     /*
      * SOMEBODY WALKED IN AND WE COULD NOT MATCH THEM TO A RECORD. Listed
      * anyway — a register that quietly dropped them would be wrong without
@@ -5873,6 +5961,11 @@ export const strings = {
     earlierFor: (day: string, provider: string | null) => (provider ? `${day} · ${provider}` : day),
     earlierReason: {
       service_in_reconciliation: 'Service recorded, in Reconciliation',
+      /* D-2026-10-10-09, option (b): associated with the visit's service, never linked to it. */
+      service_associated:
+        'Service recorded for this visit; this agreement was not signed before it and is associated with that service',
+      service_choice_needed: 'Service recorded for this visit; waiting for someone to choose its agreement in Reconciliation',
+      service_associated_other: 'Service recorded for this visit; a different agreement is associated with it',
       no_service_recorded: 'No service recorded',
     } as Record<string, string>,
     /** A service record names it, and a Reconciliation decision took it off the queue. */
@@ -6104,7 +6197,7 @@ export const strings = {
     tabletsNone: 'No tablet is paired to this practice yet.',
     tabletsNoneHint: 'Pair one under Tablets, then it will appear here.',
     tabletIdle: 'Ready',
-    tabletRevoked: 'Revoked — rotate it under Tablets to bring it back',
+    tabletRevoked: 'Revoked — re-pair it under Tablets to bring it back',
     /** Reception's own switch. One press on Tablets brings it back — no code, no walk. */
     tabletOutOfUse: 'Not in use — put it back in use under Tablets',
     tabletUnpaired: 'Waiting to be paired',
@@ -6198,6 +6291,10 @@ export const strings = {
       not_awaiting_signature:
         'This agreement is not at the signing step — it may have been declined, superseded or expired. '
         + 'Check the agreement before sending anything again.',
+      /* D-2026-10-10-09 option 3: what was recorded, and no remedy this screen cannot know is true. */
+      agreement_closed_unsigned:
+        'This agreement was closed as not needed: no service was recorded for its visit within the practice’s '
+        + 'set number of days. Nothing was signed.',
       signature_capture_invalid:
         'The signature did not arrive with the tablet’s request. Send it again, and offer '
         + '“approve by tapping” if the pad is not responding.',
@@ -6479,6 +6576,13 @@ export const strings = {
       device_busySomeone: 'another patient',
       agreement_not_found: 'That agreement is no longer available.',
       agreement_not_pushable: 'This agreement has moved on and cannot be sent to a tablet.',
+      /*
+       * D-2026-10-10-09 option 3, at the desk: the closure sweep closed it between
+       * the list being drawn and Send. What was recorded, and nothing sent.
+       */
+      agreement_closed_unsigned:
+        'This agreement was closed as not needed: no service was recorded for its visit within the practice’s '
+        + 'set number of days. Nothing was sent to the tablet.',
       service_description_missing:
         'This agreement still needs a description of the service, chosen from the current list — the tablet '
         + 'never asks a patient for it.',
@@ -6589,6 +6693,32 @@ export const strings = {
         + 'not gone to the tablet. The agreement itself is fine — this is about our reading of the form. '
         + 'Reprint it from your practice software and it will come through again, or take this one on '
         + 'paper or after the service. The patient is seen and billed either way.',
+      /**
+       * SERVICE LINES WE SAW AND COULD NOT READ (D-2026-10-11-05) — used IN
+       * PLACE OF the two above whenever that check is in the list.
+       *
+       * IT DOES NOT SAY "REPRINT" (wow.md §13). The same layout prints the
+       * same lines, so a reprint comes back with the same lines unread; telling
+       * reception to reprint would send them round a loop that cannot end. The
+       * fix is ours — a parser template that reads that layout — and the check
+       * line below names the form and links to support.
+       */
+      print_record_service_lines_unreadTitle: 'Some service lines could not be read',
+      /**
+       * THE PRINTED NAME DIFFERS FROM THE PATIENT ON RECORD (D-2026-10-11-06)
+       * — used in place of the sentences above whenever that check is in the
+       * list, because "reprint it" is only one of its two possible fixes.
+       */
+      print_record_patient_name_differsTitle: 'Is this the right patient?',
+      print_record_patient_name_differs:
+        'The printed form names somebody other than the patient on record for its PMS patient ID, so this '
+        + 'one has not gone to the tablet: the patient would have been shown a form in another name. Nothing '
+        + 'has been sent and nothing has changed. The patient is seen and billed either way.',
+      print_record_service_lines_unread:
+        'The printed form has service lines we could not read, so this one has not gone to the tablet: the '
+        + 'patient would have been shown a copy missing a service. The agreement itself is fine — this is '
+        + 'about our reading of the form, and reprinting prints the same lines, so it will not help. Take '
+        + 'this one on paper or after the service. The patient is seen and billed either way.',
       /** A code this build has not met yet. Shown, never swallowed (Carl, 4 Sep 2026). */
       other: (code: string) => `Could not send (${code}). Please tell support this code.`,
       /** The rarer case of a refusal that carries no code at all — the server's own sentence, as it came. */
@@ -6614,7 +6744,7 @@ export const strings = {
      * a parse we have just said we do not trust.
      */
     printRecordChecks: {
-      print_record_patient_unidentified: 'We could not read a name or a patient ID',
+      print_record_patient_unidentified: 'We could not read a name or a PMS patient ID',
       /**
        * CARL’S SECOND CASE (27 September 2026), AND THE COPY HAS TO SAY WHICH
        * HALF IS MISSING. “The IRN” alone would send a receptionist looking at
@@ -6642,7 +6772,55 @@ export const strings = {
       print_record_service_date_missing: 'We could not read a date of service',
       /** Carl’s own case, and the only one of the five that reaches a real agreement today. */
       print_record_benefit_missing: 'We could not read an amount against any service',
+      /**
+       * THE FALLBACK ONLY — for a refusal that arrived without its count.
+       * The line reception normally reads is `printRecordServiceLinesUnread`,
+       * which names how many and on which form.
+       */
+      print_record_service_lines_unread: 'We saw service lines we could not read, so the copy would be missing a service',
     } as Record<string, string>,
+    /**
+     * THE NAME QUESTION, PUT TO RECEPTION (Carl, 11 October 2026: *"STOP and
+     * tell Reception that PMS is sending a diff name for PMSID xxx. Is this
+     * correct?"*; D-2026-10-11-06).
+     *
+     * BOTH REMEDIES, BECAUSE EITHER SIDE CAN BE THE WRONG ONE (wow.md §13).
+     * If our record's name is wrong, it is corrected on the patient; if the
+     * form was printed against the wrong PMS patient ID, that is fixed in the
+     * practice software and the form printed again. We cannot tell which, so
+     * the line asks rather than asserts.
+     *
+     * THE PRINTED NAME IS NOT REPEATED HERE. It is on the paper in reception's
+     * hand; the refusal carries codes, never a patient's name (hard rule 9).
+     */
+    printRecordPatientNameDiffers: (pmsPatientId?: string | null, recordName?: string | null) =>
+      'Your practice software printed a different name for '
+      + (pmsPatientId ? `PMS patient ID ${pmsPatientId}` : 'this PMS patient ID')
+      + ' from the one on record here'
+      + (recordName ? ` (${recordName})` : '')
+      + '. Is this the right patient? If the name on record is wrong, correct it on the patient. If the '
+      + 'PMS patient ID on the form is wrong, fix it in your practice software and print the form again.',
+    /**
+     * HOW MANY LINES, ON WHICH FORM, READ BY WHICH TEMPLATE (D-2026-10-11-05;
+     * CLAUDE.md §7c, shortcuts to the answer). A count, a form reference and a
+     * template version — none of them a patient's (hard rule 9), and never the
+     * line itself, which never left the practice.
+     *
+     * THE REMEDY IS TRUE FOR EVERY RECORD THAT REACHES THESE WORDS (wow.md
+     * §13): whatever the unread line was, a reprint prints it again the same
+     * way, and what fixes it is a parser template that reads it — which is
+     * ours to ship, so the line sends the reference to support.
+     */
+    printRecordServiceLinesUnread: (count: number, formReference?: string, templateVersion?: string) =>
+      `We could not read ${count === 1 ? '1 service line' : `${count} service lines`} on `
+      + (formReference ? `form ${formReference}` : 'this form')
+      + ', so the patient’s copy would be missing '
+      + (count === 1 ? 'it' : 'them')
+      + '. Send support the form reference'
+      + (templateVersion ? ` and the parser template (${templateVersion})` : '')
+      + ' so the reading can be fixed.',
+    /** The link beside that line. `/help` is where the support contact details live. */
+    printRecordServiceLinesUnreadLink: 'Contact support',
     /*
      * WHY THE s 65C CHECK REFUSED, AND WHAT TO DO ABOUT IT (Carl, 28
      * September 2026: *"why the 65c validation failed - we need context in
@@ -6730,6 +6908,13 @@ export const strings = {
       noFileNote:
         'We hold the reading of the form and a reference to it, never the file itself — so reprint from '
         + 'your practice software rather than looking for a document.',
+      /**
+       * THE SAME FACT WITHOUT THE REPRINT, for a form with unread service
+       * lines — where a reprint brings the same lines back unread (wow.md §13).
+       */
+      noFileNoteNoReprint:
+        'We hold the reading of the form and a reference to it, never the file itself — quote the form '
+        + 'reference above to support rather than looking for a document.',
     },
     /**
      * A CHECK THIS BUILD HAS NOT MET YET — shown with its code, never
@@ -6739,6 +6924,67 @@ export const strings = {
      * diagnosable rather than a shrug.
      */
     printRecordCheckOther: (code: string) => `Another detail we could not read (${code}) — please tell support this code.`,
+
+    /**
+     * THE NAME PRINTED ON THE DB4 IS NOT THE PATIENT RECORD'S NAME
+     * (D-2026-10-10-11; Carl, 10 October 2026: *"B and tell the user to
+     * resend to AOBPrinter from PMS"*).
+     *
+     * A WARNING BESIDE A REFUSAL, SINCE D-2026-10-11-06. The same comparison
+     * now also stops Send to tablet (`print_record_patient_name_differs`);
+     * never the visit (hard rule 8). A staff-only band, so it shows both names;
+     * never on a tablet.
+     *
+     * THE OBSERVATION FIRST, THEN THE REMEDY, AND THE REMEDY'S LIMIT (wow.md
+     * §13). Reprinting changes only the PRINTED name: the patient record here
+     * is not updated from a DB4 (it comes from the arrival, or a correction
+     * typed in this console). So "this notice clears" is promised only for
+     * the case where it is true — the reprinted name matches the record — and
+     * the other case is stated as what it is, without a guessed remedy.
+     */
+    printedName: {
+      title: 'Name on the DB4 differs from the patient record',
+      observed:
+        'The patient name printed on this DB4 is not the name in the practice’s patient record. '
+        + 'The DB4 was matched to this patient by PMS patient ID.',
+      printedLabel: 'Printed on the DB4',
+      recordedLabel: 'In the patient record',
+      notPrinted: '(not printed)',
+      parts: {
+        given_names: 'given names',
+        family_name: 'family name',
+      } as Record<string, string>,
+      differs: (list: string) => `What differs: ${list}`,
+      /**
+       * WHAT THE NAME DIFFERENCE DOES TO THE ROW, SINCE D-2026-10-11-06 (Carl,
+       * 11 October 2026: stop the send, and keep this band). It replaced
+       * "Send to tablet still works", "This note on its own does not stop Send
+       * to tablet" and "The patient will see the printed name on their DB4…",
+       * all three of which became false the moment the push refused (wow.md
+       * §13).
+       *
+       * "WHILE", NEVER "UNTIL". True on every row that carries the band, a row
+       * blocked for another reason included: the names differing stops the
+       * send, but the names matching is not by itself what frees the row.
+       */
+      stopsSend:
+        'Send to tablet is stopped while the two names differ, so the patient is never shown a DB4 in '
+        + 'another name. They are seen and billed either way.',
+      /**
+       * EITHER SIDE MAY BE THE WRONG ONE, as the refusal on the same row says.
+       * The PracSoft half is the reprint; the record half is a correction on
+       * the patient, which the refusal links to.
+       */
+      fix:
+        'If the name printed here is the wrong one, correct it in PracSoft, then print the DB4 again from '
+        + 'PracSoft. AOBPrinter sends the reprint, and this notice clears once the newly printed name '
+        + 'matches the patient record. If the patient record is the wrong one, correct it on the patient.',
+      limit:
+        'Printing again changes only the name on the DB4 — the patient record here is not updated from a '
+        + 'DB4. If PracSoft already shows the right name, printing again will not clear this notice.',
+      /** A notice code this build has not met. Shown, never swallowed. */
+      other: (code: string) => `A note about this form (${code}) — please tell support this code.`,
+    },
 
     /**
      * WHY "WHO IS SIGNING?" IS DEAD ON THIS ROW (Carl, 28 September 2026:
@@ -6752,6 +6998,14 @@ export const strings = {
     whoBlockedByPrintRecord:
       'Reprint the form first — this agreement cannot be sent, and a reprint starts a new one, so an '
       + 'answer saved here would not carry over.',
+    /** The same control, where the printed name and the record disagree (D-2026-10-11-06). */
+    whoBlockedByPatientNameDiffers:
+      'Check the patient first — this agreement cannot be sent while the printed form and the patient on '
+      + 'record have different names.',
+    /** The same control, where a reprint would not help (D-2026-10-11-05). */
+    whoBlockedByUnreadServiceLines:
+      'This agreement cannot be sent — the form has service lines we could not read — so an answer saved '
+      + 'here would not reach a tablet.',
 
     /** Enduring's own extra line where the provider is not a GP (hard rule 6, REQ-END-01a). */
     enduringOfferOther: 'Offer an episodic agreement or a Treatment Plan Assignment instead.',

@@ -376,6 +376,26 @@ describe('the three pages Carl asked for', () => {
     expect(view.queryByTestId('db4-privacy-notice')).toBeNull();
   });
 
+  it('db4_amount_keeps_the_dollar_exactly_as_printed', () => {
+    /*
+     * CARL, 10 OCTOBER 2026 (D-2026-10-10-08): *"go ahead and keep the $"*. A
+     * real DB4 prints `$45.05` and template pracsoft3-db4-2026-10-1 carries it
+     * so. The screen shows `$45.05`: one symbol, the one PracSoft printed,
+     * never a second of ours, and the decimal point still splits it so the
+     * column lines up (hard rule 4 as narrowed by D-2026-09-14-02).
+     */
+    const view = renderPaged(
+      { db4Form: { ...DB4, services: [{ ...DB4.services![0], benefitAssigned: '$45.05' }] } },
+      { start: 'services' },
+    );
+    const cell = view.getByTestId('db4-service-0').querySelectorAll('td')[3]!;
+    expect(cell.textContent).toBe('$45.05');
+    expect(cell.textContent).not.toContain('$$');
+    const [whole, fraction] = Array.from(cell.querySelectorAll('span > span'));
+    expect(whole.textContent).toBe('$45');
+    expect(fraction.textContent).toBe('.05');
+  });
+
   it('page_2c_is_the_legal_blurb_the_ticks_and_the_way_to_sign_off', () => {
     /*
      * "2C: legal blurb and tick-boxes for approval. Then continue with
