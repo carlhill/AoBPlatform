@@ -5,7 +5,7 @@
  */
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
-import { ReconciliationView, RECONCILIATION_ITEM_PARAM } from './ReconciliationView';
+import { ReconciliationView, RECONCILIATION_ITEM_PARAM, channelFor } from './ReconciliationView';
 import { PracticeOverride } from '../usePractice';
 import { strings } from '../../strings';
 
@@ -69,7 +69,7 @@ const CHOICE = {
 
 const calls: string[] = [];
 
-function stubFetch() {
+function stubFetch(detail: unknown = DETAIL) {
   vi.stubGlobal(
     'fetch',
     vi.fn(async (url: string) => {
@@ -81,7 +81,7 @@ function stubFetch() {
         : url.endsWith('/reconciliation/metrics')
           ? { outstanding: 1, byBand: { standard: 1, compressed: 0, urgent: 0, last_chance: 0, expired: 0 }, captureRate: null }
           : url.endsWith(`/reconciliation/${ITEM.serviceRecordId}`)
-            ? DETAIL
+            ? detail
             : url.includes('/service-descriptions/pending')
               ? []
               : url.includes('/service-descriptions')
@@ -159,5 +159,43 @@ describe('/practice/reconciliation — one item from a link', () => {
     await screen.findByTestId(`reconciliation-row-${ITEM.serviceRecordId}`);
     expect(screen.queryByTestId('reconciliation-detail')).toBeNull();
     expect(screen.queryByTestId('reconciliation-item-not-on-queue')).toBeNull();
+  });
+});
+
+describe('/practice/reconciliation — a link that locked, and which channel a resend uses', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    at('');
+  });
+
+  it('a_link_closed_by_its_lockout_says_so_on_the_queue (D-2026-10-12-01)', async () => {
+    stubFetch({
+      ...DETAIL,
+      attemptsMade: 1,
+      attempts: [
+        {
+          captureRequestId: 'capture-locked-1',
+          channel: 'sms_link',
+          status: 'cancelled',
+          cancelledReason: 'verification_locked_out',
+          openedAt: '2026-10-12T01:00:00.000Z',
+          messages: [],
+        },
+      ],
+    });
+    at(`?${RECONCILIATION_ITEM_PARAM}=${ITEM.serviceRecordId}`);
+    render(
+      <PracticeOverride practiceId={PRACTICE}>
+        <ReconciliationView />
+      </PracticeOverride>,
+    );
+    const line = await screen.findByTestId('reconciliation-attempt-locked');
+    expect(line.textContent).toBe(strings.link.db4.queueAttemptLocked);
+  });
+
+  it('channel_for_is_the_contact_actually_on_file', () => {
+    expect(channelFor({ patientHasEmail: true, patientHasMobile: true })).toBe('email_link');
+    expect(channelFor({ patientHasEmail: false, patientHasMobile: true })).toBe('sms_link');
+    expect(channelFor({ patientHasEmail: false, patientHasMobile: false })).toBeNull();
   });
 });

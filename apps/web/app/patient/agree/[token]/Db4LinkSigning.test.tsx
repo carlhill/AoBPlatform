@@ -219,6 +219,16 @@ describe('the link page shows the DB4 sheets', () => {
     await waitFor(() => expect(screen.getByTestId('db4-form')).toBeTruthy());
   });
 
+  it('a_link_whose_check_was_replaced_at_the_desk_says_so_and_offers_no_way_back', async () => {
+    await reachTheForm(readBody(), { status: 409, body: { reason: 'link_verification_replaced' } });
+    readEveryPageAndTick();
+    fireEvent.click(screen.getByTestId('continue-to-sign'));
+    fireEvent.click(screen.getByTestId('sign-control-tap'));
+    const reason = await screen.findByTestId('link-db4-refused-reason');
+    expect(reason.textContent).toBe(strings.link.db4.reasons.link_verification_replaced);
+    expect(screen.queryByTestId('link-db4-sign-again')).toBeNull();
+  });
+
   it('an_unmapped_refusal_shows_its_code_and_no_remedy', async () => {
     await reachTheForm(readBody(), { status: 400, body: { reason: 'something_new' } });
     readEveryPageAndTick();

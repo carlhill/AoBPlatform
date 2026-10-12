@@ -2122,11 +2122,20 @@ export const strings = {
           'The practice closed this form as not needed before your signature arrived, so it was not recorded.',
         drawn_not_offered_on_this_link:
           'This link does not take a drawn signature, so it was not recorded.',
+        link_verification_replaced:
+          'The practice checked who you are again after you did on this link, so a signature from this link was not recorded.',
       } as Record<string, string>,
       unmapped: (code: string) =>
         `The practice's system did not record the signature, and gave the reason code "${code}". Quote this code to the practice.`,
       /** Back to the form, for the two refusals the person can fix on this page. */
       signAgain: 'Back to the form',
+      /**
+       * ON RECEPTION'S QUEUE, under a link that closed because its identity
+       * check locked (D-2026-10-12-01). The observation, then the remedy that
+       * is true for every such row: a fresh link can be sent.
+       */
+      queueAttemptLocked:
+        'Closed: the wrong details were entered on this link too many times. A new link can be sent.',
     },
   },
 

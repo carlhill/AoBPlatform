@@ -17,17 +17,17 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 | | Count |
 |---|---|
-| Exported symbols indexed | 2511 |
+| Exported symbols indexed | 2513 |
 | Files scanned for exports | 584 |
 | Files scanned for imports | 627 |
 | Exports with no comment of their own | 1019 |
-| Exports imported nowhere else | 1037 |
+| Exports imported nowhere else | 1038 |
 
 ## Sections
 
 - [Web components](#web-components) — 242
 - [Web hooks](#web-hooks) — 16
-- [Web helpers and constants](#web-helpers-and-constants) — 319
+- [Web helpers and constants](#web-helpers-and-constants) — 320
 - [Web types](#web-types) — 123
 - [Domain functions](#domain-functions) — 405
 - [Domain constants and content](#domain-constants-and-content) — 265
@@ -35,7 +35,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 - [Contracts types](#contracts-types) — 121
 - [Contracts functions and constants](#contracts-functions-and-constants) — 37
 - [Core services, controllers and modules](#core-services-controllers-and-modules) — 290
-- [Core helpers, constants and types](#core-helpers-constants-and-types) — 231
+- [Core helpers, constants and types](#core-helpers-constants-and-types) — 232
 - [AOBPRINTER (the desktop print channel)](#aobprinter-the-desktop-print-channel-) — 163
 
 ## Web components
@@ -312,7 +312,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Web helpers and constants
 
-319 exports.
+320 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -397,6 +397,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `ceremonySequence` | web:kiosk/rules/ceremony-steps.ts | The steps this route will run. | **1** · web:kiosk/Ceremony.tsx |
 | `challengeIsComplete` | web:kiosk/rules/identifiers.ts | True when every field the challenge asked for has been given something. | **1** · web:kiosk/Ceremony.tsx |
 | `changeAssignor` | web:kiosk/api.ts |  | **1** · web:kiosk/Ceremony.tsx |
+| `channelFor` | web:practice/reconciliation/ReconciliationView.tsx | Email first — a copy the patient keeps — SMS when that is all there is. | **1** · web:ConsoleDashboard.tsx |
 | `checkTemplateForm` | web:practice/templates/templateEditing.ts |  | **1** · web:practice/templates/TemplateForm.tsx |
 | `claimWaitingRow` | web:kiosk/api.ts | THE WALK-UP CLAIM: three details in, one row out — or the generic refusal. | **1** · web:kiosk/Ceremony.tsx |
 | `clearPairingCredential` | web:kiosk/pairing.ts | Forget it — on a 401, which is what a revoked or rotated device gets. | **1** · web:kiosk/Ceremony.tsx |
@@ -2227,7 +2228,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Core helpers, constants and types
 
-231 exports.
+232 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -2434,6 +2435,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `addressMatches` | core:verification/identifier-matching.ts | The address rule (Carl, 3 Sep 2026), and it mirrors `nameMatches` on purpose. | 0 |
 | `affiliationOfService` | core:agreements/pre-agreement-association.ts | THE AFFILIATION A SERVICE RECORD NAMES: its own column where the sender named the practitioner, otherwise resolved from the legacy provider row the way the invoice mirror resolves it (`anchorForLegacyProvider`). | 0 |
 | `allocatePracticeCode` | core:practices/practice-code.ts |  | 0 |
+| `challengeLocked` | core:capture/capture.service.ts | Is the verification challenge behind a link locked? | 0 |
 | `closureSkipFor` | core:unsigned-drafts/unsigned-draft-closure.sweep.ts | THE ONE RULE FOR "MAY THIS DRAFT BE CLOSED", pure so it is unit-tested on its own: the first reason it may not, or `null` when it may. | 0 |
 | `constantTimeMatch` | core:verification/identifier-matching.ts | Constant-time equality over the normalised values — no early exit an attacker can time. | 0 |
 | `creationCutoff` | core:unsigned-drafts/unsigned-draft-closure.sweep.ts | THE CREATION-TIME CUT-OFF THAT CAN HOLD A DUE DRAFT: anything created on or after the practice-local day `today - N + 1` is younger than N by its own creation day. | 0 |

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { strings } from './strings';
 import { apiHeaders, beginLogin, clearSession, currentSession, type Session } from './auth';
+import { channelFor } from './practice/reconciliation/ReconciliationView';
 
 const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL ?? 'http://localhost:3001';
 const RULES_URL = process.env.NEXT_PUBLIC_RULES_URL ?? 'http://localhost:3002';
@@ -38,6 +39,8 @@ interface OutstandingRow {
   needsAgreement: boolean;
   outboundChaseSuppressed: boolean;
   revenueForgone: boolean;
+  patientHasEmail: boolean;
+  patientHasMobile: boolean;
 }
 
 const BAND_COLOURS: Record<string, string> = {
@@ -243,13 +246,24 @@ export function ConsoleDashboard() {
     }
   };
 
-  const resend = async (serviceRecordId: string) => {
+  const resend = async (row: OutstandingRow) => {
     if (!seed) return;
     setError(null);
-    const res = await fetch(`${CORE_URL}/reconciliation/${serviceRecordId}/resend`, {
+    /*
+     * THE CHANNEL THE PATIENT HAS ON FILE (12 Oct 2026), the queue's own
+     * choice — never a fixed `sms_link` for somebody with no mobile. The
+     * server refuses a channel with no contact behind it
+     * (`no_contact_for_channel`) and its message is shown below if it does.
+     */
+    const channel = channelFor(row);
+    if (!channel) {
+      setError(strings.reconciliation.reasons.no_contact_channel);
+      return;
+    }
+    const res = await fetch(`${CORE_URL}/reconciliation/${row.serviceRecordId}/resend`, {
       method: 'POST',
       headers: apiHeaders(seed.practiceId),
-      body: JSON.stringify({ channel: 'sms_link' }),
+      body: JSON.stringify({ channel }),
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
@@ -470,8 +484,10 @@ export function ConsoleDashboard() {
                   </td>
                   <td style={{ padding: '0.25rem 0' }}>
                     <button
-                      onClick={() => void resend(row.serviceRecordId)}
-                      disabled={row.revenueForgone || row.outboundChaseSuppressed || row.needsAgreement}
+                      onClick={() => void resend(row)}
+                      disabled={
+                        row.revenueForgone || row.outboundChaseSuppressed || row.needsAgreement || !channelFor(row)
+                      }
                     >
                       {strings.console.resendLabel}
                     </button>
