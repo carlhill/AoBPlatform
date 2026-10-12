@@ -67,6 +67,14 @@ describe('chase attempts — what a PERSON at the practice did (e2e, real Postgr
             familyName: 'Unreachable',
             givenNames: 'Robin',
             dateOfBirth: new Date('1962-11-02'),
+            /*
+             * A NUMBER NOBODY ANSWERS (12 Oct 2026). Resend now refuses a
+             * channel with no contact on file before opening a link
+             * (`no_contact_for_channel`, D-2026-10-12-01); the automated rung
+             * below needs a mobile to send to, and "unreachable" is about the
+             * answer, not the record.
+             */
+            mobile: '+61400000999',
             pmsLinkageKey: `chase-pat-${practiceId.slice(0, 8)}`,
           },
         })
@@ -108,6 +116,8 @@ describe('chase attempts — what a PERSON at the practice did (e2e, real Postgr
     // it, so the rows this suite writes stay — as evidence should. Everything
     // they point at stays with them.
     await prisma.withPractice(practiceId, async (tx) => {
+      await tx.correspondence.deleteMany({});
+      await tx.outboundItem.deleteMany({});
       await tx.captureRequest.deleteMany({});
       await tx.agreement.deleteMany({});
       await tx.assignor.deleteMany({});

@@ -84,6 +84,8 @@ type Detail = {
     captureRequestId: string;
     channel: string;
     status: string;
+    /** Why a link was closed, where the server can tell (a locked link). Null otherwise. */
+    cancelledReason?: string | null;
     openedAt: string;
     messages: { id: string; channel: string; to: string | null; state: string; sentAt: string | null }[];
   }[];
@@ -104,8 +106,12 @@ function when(iso: string): string {
     : d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', timeZone: 'UTC' });
 }
 
-/** Email first — a copy the patient keeps — SMS when that is all there is. */
-function channelFor(item: Item): 'email_link' | 'sms_link' | null {
+/**
+ * Email first — a copy the patient keeps — SMS when that is all there is.
+ * Exported for the console dashboard's resend, so both pick the channel the
+ * patient actually has on file (12 Oct 2026).
+ */
+export function channelFor(item: { patientHasEmail: boolean; patientHasMobile: boolean }): 'email_link' | 'sms_link' | null {
   if (item.patientHasEmail) return 'email_link';
   if (item.patientHasMobile) return 'sms_link';
   return null;
@@ -542,6 +548,16 @@ function DetailPanel({
                 .replace('{channel}', a.channel === 'sms_link' ? s.channelSms : a.channel === 'email_link' ? s.channelEmail : a.channel)
                 .replace('{when}', when(a.openedAt))
                 .replace('{status}', a.status)}
+              {a.cancelledReason === 'verification_locked_out' && (
+                <p className={ui.hint} data-testid="reconciliation-attempt-locked">
+                  {strings.link.db4.queueAttemptLocked}
+                  {/* The remedy only where it is true for this record (wow.md 13): a new
+                      link opens only on an agreement still awaiting a signature. */}
+                  {detail.agreement?.status === 'awaiting_signature' && (
+                    <> {strings.link.db4.queueAttemptLockedNewLink}</>
+                  )}
+                </p>
+              )}
               {a.messages.length > 0 && (
                 <ul className={ui.plainList}>
                   {a.messages.map((m) => (

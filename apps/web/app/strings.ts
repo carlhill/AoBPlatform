@@ -2077,6 +2077,70 @@ export const strings = {
   },
 
   /*
+   * THE PATIENT'S LINK PAGE, WHERE THE AGREEMENT IS A DB4 (TELEHEALTH-PLAN §8
+   * step 1, 12 Oct 2026). One contiguous block, so the language layer (step 5)
+   * and the telehealth page (step 2) each add theirs beside it rather than
+   * inside it.
+   *
+   * WHAT IS NOT HERE. The sheets, the ticks and the signature pad are the
+   * kiosk's own screens, and their words are the kiosk's (`kiosk.particulars`,
+   * `kiosk.signature`) — one set of words for one act on two devices. Only
+   * the lines that would be FALSE on a phone are replaced, because on a phone
+   * there is no reception a metre away.
+   */
+  link: {
+    db4: {
+      /** Under who is signing, in place of the tablet's "see reception". */
+      whoNotRight: 'If this is not right, do not sign — contact the practice.',
+      /**
+       * THE SIGNATURE NEVER REACHED US (a network failure, not a refusal). Said
+       * only for that case, because only then is "nothing was recorded" known
+       * to be true and pressing sign again known to be the remedy.
+       */
+      notReached:
+        'Your signature did not reach us, so nothing has been recorded yet. Check your connection and press sign again.',
+      /** The pad had no strokes or no image to send, so nothing left this page. */
+      nothingDrawn:
+        'The signature pad had nothing to send, so nothing has been recorded. Sign again, or approve by tapping.',
+      refusedTitle: 'Your signature was not recorded',
+      /**
+       * WHY, BY THE CODE THE SERVER SENT (CLAUDE.md §7c; wow.md §13). Each
+       * line states what the server observed; a remedy appears only where it
+       * is true for every record that reaches that code. A code with no line
+       * here is shown as itself (`unmapped`), never as a guess.
+       */
+      reasons: {
+        affirmations_missing:
+          'Not every statement on the form was ticked when the signature was sent, so it was not recorded.',
+        signature_capture_invalid: 'The drawn signature could not be read when it arrived, so it was not recorded.',
+        already_signed: 'This form had already been signed when your signature arrived. Nothing more is needed from you.',
+        not_awaiting_signature:
+          'This form was no longer waiting for a signature when yours arrived, so it was not recorded. The practice can tell you why.',
+        not_locked:
+          'The details on this form were not locked when your signature arrived, so it could not be recorded.',
+        agreement_closed_unsigned:
+          'The practice closed this form as not needed before your signature arrived, so it was not recorded.',
+        drawn_not_offered_on_this_link:
+          'This link does not take a drawn signature, so it was not recorded.',
+        link_verification_replaced:
+          'Who you are was checked again after the check on this link, so a signature from this link was not recorded.',
+      } as Record<string, string>,
+      unmapped: (code: string) =>
+        `The practice's system did not record the signature, and gave the reason code "${code}". Quote this code to the practice.`,
+      /** Back to the form, for the two refusals the person can fix on this page. */
+      signAgain: 'Back to the form',
+      /**
+       * ON RECEPTION'S QUEUE, under a link that closed because its identity
+       * check locked (D-2026-10-12-01). The observation, then the remedy that
+       * is true for every such row: a fresh link can be sent.
+       */
+      queueAttemptLocked: 'Closed: the wrong details were entered on this link too many times.',
+      /** Only while the agreement is awaiting a signature: a new link cannot be opened in any other state. */
+      queueAttemptLockedNewLink: 'A new link can be sent.',
+    },
+  },
+
+  /*
    * ONE LOG, TWO AUDIENCES — the design handoff's M-1 (practice) and the
    * Messages tab of P-1 (patient). The same dispatch records, read by
    * different people, so the same strings: "same wording, same timestamps,

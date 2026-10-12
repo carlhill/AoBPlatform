@@ -73,6 +73,8 @@ export function SignatureScreen({
   sessionId,
   patientId,
   onSeeReception,
+  whoNotRight = strings.signature.whoNotRight,
+  failedText = strings.signature.failed,
 }: {
   practiceName: string;
   locationLine: string | null;
@@ -129,7 +131,22 @@ export function SignatureScreen({
    * screens know nobody yet and pass nothing. See `Chrome.tsx`'s `Screen`.
    */
   patientId?: string | null;
-  onSeeReception: () => void;
+  /**
+   * THE WAY OUT TO RECEPTION — every tablet passes it. Optional since 12 Oct
+   * 2026 for the patient's link page alone (TELEHEALTH-PLAN §8 step 1), which
+   * draws this screen on a phone with no reception to see: omitted, neither
+   * the header's leave control nor the "see reception" button under who is
+   * signing is drawn. The tablet passes it and is unchanged.
+   */
+  onSeeReception?: () => void;
+  /**
+   * THE LINE UNDER WHO IS SIGNING. Defaults to the tablet's ("see
+   * reception"); the link page passes its own, which names the practice
+   * instead, because on a phone there is no desk to walk to.
+   */
+  whoNotRight?: string;
+  /** What a failed signature says. Defaults to the tablet's, which sends the person to reception. */
+  failedText?: string;
 }): ReactNode {
   return (
     <Screen
@@ -193,13 +210,15 @@ export function SignatureScreen({
               {signingStatement(parties)}
             </p>
             <p className={styles.muted} data-testid="signature-who-wrong">
-              {strings.signature.whoNotRight}
+              {whoNotRight}
             </p>
-            <SecondaryButton
-              label={strings.errors.seeReception}
-              onPress={onSeeReception}
-              testId="signature-who-see-reception"
-            />
+            {onSeeReception ? (
+              <SecondaryButton
+                label={strings.errors.seeReception}
+                onPress={onSeeReception}
+                testId="signature-who-see-reception"
+              />
+            ) : null}
           </div>
           {validation.state === 'valid' ? (
             <Blueprint accented className={styles.banner}>
@@ -213,7 +232,7 @@ export function SignatureScreen({
         <div className={`${styles.stack} ${styles.signPadColumn}`}>
           <SignaturePad handleRef={padRef} onInkChange={onInkChange} />
 
-          {error ? <p className={styles.error}>{strings.signature.failed}</p> : null}
+          {error ? <p className={styles.error}>{failedText}</p> : null}
 
           <div className={styles.signRow}>
             {/*
