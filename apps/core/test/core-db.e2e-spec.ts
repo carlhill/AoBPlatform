@@ -13,6 +13,7 @@ import type { ValidationResponse } from '@aobplatform/contracts';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { RULES_CLIENT } from '../src/rules-client/rules-client.module';
+import { createServicingProvider, deleteSeededAnchors } from './anchor';
 
 const passingRules = {
   validate: async (): Promise<ValidationResponse> => ({
@@ -47,13 +48,9 @@ describe('core database layer (e2e, real Postgres)', () => {
 
     await prisma.withPractice(practiceA, async (tx) => {
       await tx.practice.create({ data: { id: practiceA, name: 'Practice A (test)' } });
-      const gp = await tx.provider.create({
-        data: { practiceId: practiceA, name: 'Dr GP Test', providerType: 'general_practitioner' },
-      });
+      const gp = await createServicingProvider(tx, practiceA, { name: 'Dr GP Test', providerType: 'general_practitioner' });
       gpId = gp.id;
-      const specialist = await tx.provider.create({
-        data: { practiceId: practiceA, name: 'Dr Specialist Test', providerType: 'specialist' },
-      });
+      const specialist = await createServicingProvider(tx, practiceA, { name: 'Dr Specialist Test', providerType: 'specialist' });
       specialistId = specialist.id;
       const patient = await tx.patient.create({
         data: {
@@ -91,7 +88,8 @@ describe('core database layer (e2e, real Postgres)', () => {
         await tx.assignor.deleteMany({});
         await tx.patient.deleteMany({});
         await tx.provider.deleteMany({});
-        await tx.practice.deleteMany({});
+        await deleteSeededAnchors(tx);
+      await tx.practice.deleteMany({});
       });
     }
     await prisma.vaultOutbox.deleteMany({});
@@ -136,7 +134,7 @@ describe('core database layer (e2e, real Postgres)', () => {
         .set('x-practice-id', practiceA)
         .send({
           type: 'episodic_pre',
-          providerId: gpId,
+          affiliationId: gpId,
           patientId: patientAId,
           assignorId: assignorAId,
           assignorIsPatient: true,
@@ -179,7 +177,7 @@ describe('core database layer (e2e, real Postgres)', () => {
       const fresh = await request(app.getHttpServer())
         .post('/agreements')
         .set('x-practice-id', practiceA)
-        .send({ type: 'episodic_pre', providerId: gpId, patientId: patientAId, assignorId: assignorAId, assignorIsPatient: true })
+        .send({ type: 'episodic_pre', affiliationId: gpId, patientId: patientAId, assignorId: assignorAId, assignorIsPatient: true })
         .expect(201);
       const locked = await request(app.getHttpServer())
         .post(`/agreements/${fresh.body.id}/particulars`)
@@ -208,7 +206,7 @@ describe('core database layer (e2e, real Postgres)', () => {
     it('agreement_anchor_immutable_at_db_layer — HARD-01 trigger rejects a provider swap', async () => {
       await expect(
         prisma.withPractice(practiceA, (tx) =>
-          tx.agreement.update({ where: { id: agreementId }, data: { providerId: specialistId } }),
+          tx.agreement.update({ where: { id: agreementId }, data: { affiliationId: specialistId } }),
         ),
       ).rejects.toThrow(/HARD-01/);
     });
@@ -230,7 +228,7 @@ describe('core database layer (e2e, real Postgres)', () => {
         .send({
           type: 'enduring',
           enduringPathway: 'mymedicare',
-          providerId: specialistId,
+          affiliationId: specialistId,
           patientId: patientAId,
           assignorId: assignorAId,
           assignorIsPatient: true,

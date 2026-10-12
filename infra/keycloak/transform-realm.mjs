@@ -3,6 +3,17 @@
  * policies, passkey-mandatory clinician flow, PKCE public client shape) into
  * the aobplatform realm. Re-run only to regenerate realm-export.json:
  *   node infra/keycloak/transform-realm.mjs
+ *
+ * ⚠ DO NOT RE-RUN THIS BLIND (found 12 Sep 2026). The committed
+ * realm-export.json has moved on from what this script produces, and some of
+ * what it gained is safety-critical: `webAuthnPolicyUserVerificationRequirement`
+ * is `required` in the export and `preferred` here, and both RpIds are pinned
+ * to `localhost` in the export and blank here — the two fixes from
+ * CRITICAL-ISSUES.md item 2. It also predates the `platform_admin` role and the
+ * `console` client. Running it today silently reverts all of that, which is why
+ * the theme keys below were ALSO written into the export by hand rather than
+ * regenerated. Reconcile the drift before trusting this script again
+ * (TODO.md).
  * Flow aliases are kept verbatim ('clinician-browser' = the passkey-REQUIRED
  * flow) so internal subflow references stay intact; in this realm it is bound
  * to the practice console — rule 15: practitioner and admin auth is WebAuthn
@@ -19,6 +30,23 @@ realm.realm = 'aobplatform';
 realm.displayName = 'AoBPlatform';
 realm.webAuthnPolicyRpEntityName = 'AoBPlatform';
 realm.webAuthnPolicyPasswordlessRpEntityName = 'AoBPlatform';
+
+/*
+ * THEMES BELONG IN THE EXPORT, NOT ONLY IN THE RUNNING REALM.
+ *
+ * Both of these were set by hand through the admin console at some point and
+ * then lived only in the database. A container rebuild re-imports this file,
+ * the realm comes back looking healthy, and the theme is quietly the built-in
+ * one again — the same silent-recovery failure mode as CRITICAL-ISSUES.md
+ * item 1, one severity down.
+ *
+ * `login` carries the passkey-enrolment guidance panel; without it the person
+ * enrolling on Windows is offered Microsoft Password Manager by default and
+ * finds out it does not work at their next sign-in (CRITICAL-ISSUES.md item 2).
+ * `email` carries the enrolment message that does not leak a raw message key.
+ */
+realm.loginTheme = 'aobplatform';
+realm.emailTheme = 'aobplatform';
 
 // Inherited SMTP pointed at ReferralPlatform's sender identity. Local dev
 // delivers to the Mailhog container either way; the FROM address should still
@@ -96,8 +124,31 @@ if (!publicTemplate || !serviceTemplate) throw new Error('Template clients not f
 const web = structuredClone(publicTemplate);
 web.clientId = 'web';
 web.name = 'Practice console / portal / tester (Next.js)';
-web.redirectUris = ['http://localhost:3100/*', 'http://localhost:21100/*'];
-web.webOrigins = ['http://localhost:3100', 'http://localhost:21100'];
+/*
+ * BOTH LOCAL SPELLINGS, because they are the same machine and different
+ * origins. A browser on 127.0.0.1 asks for a redirect_uri on 127.0.0.1, and an
+ * unregistered one is refused by Keycloak with "Invalid parameter:
+ * redirect_uri" -- while DEV-LOOP.md sends people to 127.0.0.1 for every
+ * service. Registering only one spelling made the documented address a dead
+ * end. The ISSUER is deliberately NOT duplicated: the browser reaches Keycloak
+ * on localhost either way, and `iss` is compared as a string
+ * (CRITICAL-ISSUES.md section 4).
+ *
+ * Dev addresses only. A deployed environment registers its own hostname and
+ * neither of these is present in it.
+ */
+web.redirectUris = [
+  'http://localhost:3100/*',
+  'http://localhost:21100/*',
+  'http://127.0.0.1:3100/*',
+  'http://127.0.0.1:21100/*',
+];
+web.webOrigins = [
+  'http://localhost:3100',
+  'http://localhost:21100',
+  'http://127.0.0.1:3100',
+  'http://127.0.0.1:21100',
+];
 // Binding override stays on the passkey-REQUIRED flow — staff surface, rule 15.
 
 const serviceClient = (clientId, name) => {

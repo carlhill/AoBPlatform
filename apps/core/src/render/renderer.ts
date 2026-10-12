@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { canonicalJson } from './canonical-json';
 
 /**
  * Rule 13 — ONE deterministic render path. Agreements render server-side,
@@ -44,9 +45,10 @@ export class CanonicalJsonRenderer implements AgreementRenderer {
   }
 }
 
-export function canonicalJson(value: unknown): string {
-  if (value === null || typeof value !== 'object') return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
-  const keys = Object.keys(value as Record<string, unknown>).sort();
-  return `{${keys.map((k) => `${JSON.stringify(k)}:${canonicalJson((value as Record<string, unknown>)[k])}`).join(',')}}`;
-}
+/*
+ * RE-EXPORTED, NOT REDECLARED. The one implementation lives in
+ * `./canonical-json`; this module used to carry a copy of it (see that file for
+ * why three copies was a hard-rule-13 problem). Kept exported here so nothing
+ * that imports it from this module has to move.
+ */
+export { canonicalJson };

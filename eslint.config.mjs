@@ -53,9 +53,134 @@ export default tseslint.config(
     },
   },
   {
+    /*
+     * Repo scripts are plain Node ESM run from a shell, not browser or Nest
+     * code: `process` and `console` ARE their interface, and a generator that
+     * cannot report what it wrote is useless. `infra/**` sidesteps this by
+     * being ignored outright; `scripts/**` is linted instead, because
+     * `scripts/dev/inventory.mjs` generates a file the whole team reads and a
+     * typo in it is worth catching. Placed after the shared rules block so its
+     * `no-console` relaxation actually wins.
+     */
+    files: ['scripts/**/*.mjs'],
+    languageOptions: { globals: { process: 'readonly', console: 'readonly' } },
+    rules: { 'no-console': 'off' },
+  },
+  {
+    /*
+     * ZERO FOOTPRINT ON THE TABLET — Carl, 3 Sep 2026, recorded in CLAUDE.md
+     * §7: "As we could have 1000's of kiosks/tablets, ensure that nothing gets
+     * written to the kiosk/tablet ... We do not want the scenario where a bug
+     * is released and all kiosks are not working and the only way to fix it is
+     * to go to each device — this will break the bank."
+     *
+     * WHY A LINT RULE AND NOT A CODE REVIEW. Every name below is one import or
+     * one line away at all times, each is individually reasonable ("just
+     * remember which patient we were on across a refresh"), and the cost of
+     * getting it wrong is not a bug on one machine — it is stale state, or a
+     * stale service worker, on every tablet in every practice, fixable only by
+     * visiting them. The rule makes the decision structural instead of
+     * remembered.
+     *
+     * SCOPED TO `apps/web/app/kiosk/**` ONLY. The console legitimately uses
+     * `sessionStorage` for the PKCE verifier and `localStorage` for the
+     * has-signed-in hint (`app/auth.ts`); neither belongs on a device a
+     * hundred strangers touch in a morning.
+     *
+     * WHEN PAIRING LANDS it gets exactly one key, listed in
+     * `app/kiosk/session.ts`'s `PERSISTABLE_KEYS`, and this rule gains one
+     * narrow exception for the module that owns it — not a blanket relaxation.
+     */
+    files: ['apps/web/app/kiosk/**/*.ts', 'apps/web/app/kiosk/**/*.tsx'],
+    rules: {
+      'no-restricted-globals': [
+        'error',
+        {
+          name: 'localStorage',
+          message:
+            'The kiosk persists NOTHING on the device (CLAUDE.md §7). Hold it in memory for the life of ' +
+            'the tab, as app/kiosk/session.ts does, or ask the server.',
+        },
+        {
+          name: 'sessionStorage',
+          message:
+            'The kiosk persists NOTHING on the device (CLAUDE.md §7). Hold it in memory for the life of ' +
+            'the tab, as app/kiosk/session.ts does, or ask the server.',
+        },
+        {
+          name: 'indexedDB',
+          message: 'The kiosk persists NOTHING on the device (CLAUDE.md §7). There is no local database.',
+        },
+      ],
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'Identifier[name=/medicareNumber|medicareCardNumber/i]',
+          message:
+            'The Medicare card number is NOT an approved identifier and is never stored ' +
+            '(REQ-VER-02, HARD-03). Use the six approved identifiers in @aobplatform/domain.',
+        },
+        {
+          selector:
+            'MemberExpression[property.name=/^(localStorage|sessionStorage|indexedDB)$/]',
+          message:
+            'The kiosk persists NOTHING on the device (CLAUDE.md §7) — not via `window.` either. ' +
+            'In-memory only; the future pairing credential is the single exception and is not built yet.',
+        },
+        {
+          selector: 'MemberExpression[property.name="serviceWorker"]',
+          message:
+            'No service worker on the kiosk (CLAUDE.md §7). A bad one is a stale tablet in every practice, ' +
+            'fixable only by visiting each device — which is the failure this rule exists to prevent.',
+        },
+        {
+          selector: 'MemberExpression[object.name="document"][property.name="cookie"]',
+          message:
+            'The kiosk sets no cookies (CLAUDE.md §7). Nothing about a patient may outlive the tab.',
+        },
+      ],
+    },
+  },
+  {
     // Hard-rule tests must name the forbidden field in order to prove it is
     // rejected — the only legitimate places the word may appear.
-    files: ['packages/domain/src/**/*.test.ts', 'apps/vault/test/**/*.e2e-spec.ts'],
+    files: [
+      'packages/domain/src/**/*.test.ts',
+      'apps/vault/test/**/*.e2e-spec.ts',
+      // The kiosk's `medicare_number_rejected_as_identifier` test must name the
+      // forbidden field to prove the approved-set guard throws on it; the
+      // zero-footprint test must name the storage APIs to prove none is used.
+      'apps/web/app/kiosk/**/*.test.ts',
+      'apps/web/app/kiosk/**/*.test.tsx',
+    ],
+    rules: { 'no-restricted-syntax': 'off', 'no-restricted-globals': 'off' },
+  },
+  {
+    /*
+     * THE ONE FIELD ON THE DB4 PRINT RECORD — D-2026-09-14-03, 14 September
+     * 2026. Carl: the Medicare card number and IRN are printed in full on the
+     * Signed-DB4, because the patient recognises their own number and the
+     * auditor links the form to the claim by it. So the number travels on the
+     * record AOBPRINTER emits, and the record's type has to name the field the
+     * form prints.
+     *
+     * THE RULE IS NOT RELAXED, IT IS SCOPED TO ONE FILE. `db4-record.ts` is the
+     * type declaration and nothing else — no lookup, no verification, no log
+     * line, no query. Everywhere else in this program, including the parser
+     * (which writes by dotted path from the versioned template) and the tests
+     * (which read by bracket access), the identifier still cannot be written.
+     * What hard rule 1 forbids is unchanged: the number is never an IDENTITY
+     * identifier, never used to find or match a patient, never in a log, an
+     * error message, a filename or an event, and never sent to the rules
+     * service. `the_medicare_number_never_appears_in_a_log_or_a_filename` in
+     * `apps/aobprinter/src/log.test.ts` is the test that holds that line, and
+     * it is the one this exception is safe behind.
+     *
+     * WHAT WOULD REOPEN IT: the file growing anything but type declarations, or
+     * the field being needed in a second file — either is the signal that the
+     * scope is wrong, not that the rule is.
+     */
+    files: ['apps/aobprinter/src/db4-record.ts'],
     rules: { 'no-restricted-syntax': 'off' },
   },
 );

@@ -1,0 +1,318 @@
+import { ConflictException, ForbiddenException, HttpException, NotFoundException } from '@nestjs/common';
+import type { PushBlockedReason } from '@aobplatform/domain';
+import {
+  DB4_PRINT_RECORD_REFUSED_CODE,
+  type Db4PrintRecordCheck,
+  type Db4PrintRecordIdentity,
+} from '@aobplatform/contracts';
+
+/**
+ * WHY A PUSH WAS REFUSED — one named refusal per reason, carrying a CODE the
+ * console maps to its own words.
+ *
+ * THE CODE IS THE CONTRACT, NOT THE SENTENCE. The console renders its own
+ * string-table entry for each reason (REQ-LANG-01), so the words a
+ * receptionist reads are written for a receptionist and can be translated.
+ * The sentence here is the honest fallback for anybody reading the API
+ * directly, and it states a RULE — never a patient's data, never a rules-engine
+ * message with a value folded into it (hard rule 9's reasoning applied to a
+ * staff surface).
+ *
+ * THE STATUS IS PART OF THE ANSWER. `404` for a thing that is not there,
+ * including a thing that belongs to another practice — RLS fails closed, and a
+ * caller cannot tell a cross-practice id from a made-up one, which is the
+ * correct amount to learn. `409` for a thing that exists and is in the wrong
+ * state, which is the whole of the rest of this list: every one of them is
+ * fixable at the desk in a few seconds, and a 400 would suggest the request
+ * was malformed rather than early.
+ *
+ * NOTHING HERE BLOCKS CARE (hard rule 8, REQ-REC-04). Every refusal below
+ * stops a SCREEN, never a patient: reception carries on, the patient is seen,
+ * and capture falls back to post-service or paper.
+ */
+export class PushRefusal extends HttpException {
+  constructor(
+    /**
+     * A `PushBlockedReason` FOR EVERY REFUSAL THE CONSOLE'S LIST CAN PREDICT,
+     * and `DB4_PRINT_RECORD_REFUSED_CODE` for the one it cannot.
+     *
+     * `PUSH_BLOCKED_REASONS` is the domain's list of the preconditions
+     * `blockingReason` evaluates SYNCHRONOUSLY, from facts already on the
+     * agreement, so the console can grey out Send before anybody presses it.
+     * The print-record check is not one of those: it needs a read of another
+     * module's table, so it can only be answered at the moment of the push.
+     * Adding it to that union would put a reason in a list whose whole purpose
+     * is "what the desk can know in advance" — so the code lives beside the
+     * checks it reports, in `packages/contracts`, where the console reads both
+     * halves of the answer from one place.
+     */
+    readonly reason: PushBlockedReason | typeof DB4_PRINT_RECORD_REFUSED_CODE,
+    message: string,
+    status: number,
+    extra: Record<string, unknown> = {},
+  ) {
+    super({ statusCode: status, message, reason, ...extra }, status);
+  }
+}
+
+export const pushRefusals = {
+  deviceUnknown: () =>
+    new PushRefusal(
+      'device_unknown',
+      'That tablet is not registered to this practice.',
+      new NotFoundException().getStatus(),
+    ),
+
+  deviceRevoked: (label: string) =>
+    new PushRefusal(
+      'device_revoked',
+      `${label} has been revoked and holds no credential, so it would show nothing. Rotate it to bring it back.`,
+      new ConflictException().getStatus(),
+    ),
+
+  deviceNotPaired: (label: string) =>
+    new PushRefusal(
+      'device_not_paired',
+      `${label} has not been paired yet. Type its code into the tablet first.`,
+      new ConflictException().getStatus(),
+    ),
+
+  /**
+   * OUT OF USE IS RECEPTION'S OWN SWITCH, AND THE REFUSAL SAYS SO (Carl, 4–5
+   * Sep 2026).
+   *
+   * The fix is one press on `/practice/devices`, by the same person who is
+   * reading this sentence — not a rotate, not an administrator, not a walk to
+   * the tablet. So the refusal names the act rather than the state, and the
+   * console's copy carries the link.
+   */
+  /**
+   * THE AGREEMENT NAMES SOMEBODY WHO CANNOT BE THE PROVIDER ON ONE (Carl,
+   * 5-7 Sep 2026). The fix is a change of billing role on the affiliation, or
+   * a fresh agreement under the provider the claim goes under -- and the
+   * refusal names the role so the reader can tell which.
+   */
+  providerNotServicing: (providerName: string | null, billingRole: string | null) =>
+    new PushRefusal(
+      'provider_not_servicing',
+      `${providerName ?? 'That provider'} is recorded as "${billingRole ?? 'unknown'}" at this practice and ` +
+        'cannot be the provider on an agreement — the claim goes under somebody else’s provider number. ' +
+        'Correct the billing role on their affiliation, or make the agreement under the provider the claim ' +
+        'will go under.',
+      new ConflictException().getStatus(),
+    ),
+
+  deviceOutOfUse: (label: string) =>
+    new PushRefusal(
+      'device_out_of_use',
+      `${label} has been taken out of use, so it is showing "not in use" and would not show this ` +
+        'agreement. Put it back in use, or send to another tablet.',
+      new ConflictException().getStatus(),
+    ),
+
+  /**
+   * ONE SESSION PER DEVICE, and the refusal carries the live session's id so
+   * the console can offer Recall rather than leaving somebody to work out why
+   * the button did nothing.
+   */
+  deviceBusy: (label: string, sessionId: string, state: string) =>
+    new PushRefusal(
+      'device_busy',
+      `${label} is already showing an agreement. Recall it first — one tablet shows one patient.`,
+      new ConflictException().getStatus(),
+      { sessionId, sessionState: state },
+    ),
+
+  agreementNotFound: () =>
+    new PushRefusal('agreement_not_found', 'Agreement not found.', new NotFoundException().getStatus()),
+
+  agreementNotPushable: (status: string) =>
+    new PushRefusal(
+      'agreement_not_pushable',
+      `An agreement in status ${status} cannot be sent to a tablet. Corrections supersede rather than edit (HARD-02).`,
+      new ConflictException().getStatus(),
+    ),
+
+  /**
+   * NOBODY HAS SAID WHO IS SIGNING YET (Carl, 7 Sep 2026: "change the workflow
+   * to 'who is signing' only -- after that is actioned, enable the select
+   * tablet and send button").
+   *
+   * NOT `who_is_signing_unset`, WHICH IS A DIFFERENT FAULT. That one is an
+   * agreement naming a third party with no party recorded. This one is an
+   * agreement that says the patient is signing because EVERY agreement says
+   * that when it is drafted -- so the record cannot tell a default from an
+   * answer. `assignorConfirmedAt` is the answer, and this refusal is the
+   * platform declining to hand a tablet across a desk before anybody was asked.
+   *
+   * ONE TAP AWAY, and the console's copy carries the control rather than a
+   * direction to a screen (CLAUDE.md §7): the row's own "Who is signing?"
+   * opens ticked on the patient. Nothing here blocks care (hard rule 8).
+   */
+  assignorNotConfirmed: () =>
+    new PushRefusal(
+      'assignor_not_confirmed',
+      'Nobody has confirmed who is signing this one yet. Use “Who is signing?” on the row — it opens ' +
+        'with the patient already ticked, so confirming takes one press.',
+      new ConflictException().getStatus(),
+    ),
+
+  serviceDescriptionMissing: () =>
+    new PushRefusal(
+      'service_description_missing',
+      'This agreement still needs a basic description of the service, chosen from the current list. Set it ' +
+        'on the practice screen first — the tablet never asks a patient for it.',
+      new ConflictException().getStatus(),
+    ),
+
+  whoIsSigningUnset: () =>
+    new PushRefusal(
+      'who_is_signing_unset',
+      'This agreement says somebody other than the patient is signing, but no party has been recorded. ' +
+        'Set who is signing at the desk before sending it to a tablet (D7 is explicit, never inferred).',
+      new ConflictException().getStatus(),
+    ),
+
+  patientConfidential: () =>
+    new PushRefusal(
+      'patient_confidential',
+      'This patient record is flagged confidential, so nothing about them is shown on a waiting-room ' +
+        'screen. Capture this one on paper or after the service — the patient is seen either way.',
+      new ConflictException().getStatus(),
+    ),
+
+  /**
+   * ENDURING IS GP-ONLY, PERMANENTLY (hard rule 6, REQ-END-01a).
+   *
+   * A specialist, allied health or optometry provider has NO enduring
+   * pathway — this is not a gap waiting to be filled, it is the rule. The
+   * offer for those providers is an episodic agreement or a Treatment Plan
+   * Assignment (REQ-PLAN-06), and the console says so on the row.
+   *
+   * MISSING IS NOT GP. A provider whose discipline was never recorded fails
+   * this check rather than passing it: the cost of guessing wrong is a
+   * standing commitment to bulk bill, entered by a provider with no pathway to
+   * enter it.
+   */
+  enduringNotGp: (providerType: string | null) =>
+    new PushRefusal(
+      'enduring_not_gp',
+      `Ongoing agreements are for general practitioners only (REQ-END-01a); this provider is recorded as ` +
+        `"${providerType ?? 'no discipline set'}". Offer an agreement for this visit, or a Treatment Plan ` +
+        'Assignment.',
+      new ConflictException().getStatus(),
+    ),
+
+  /**
+   * ENDURING IS PER PRACTITIONER × PATIENT, NEVER PER PRACTICE (hard rule 6,
+   * REQ-END-01). An agreement that names no single provider — an organisation
+   * anchor on the ACCHO/AMS pathway, or a provider that was never set — cannot
+   * be signed on a tablet, because the screen could not tell the person
+   * signing who they are agreeing with.
+   */
+  enduringNotPerProvider: () =>
+    new PushRefusal(
+      'enduring_not_per_provider',
+      'An ongoing agreement is between one provider and one patient, never practice-wide (REQ-END-01). ' +
+        'This one names no single provider, so it cannot be sent to a tablet.',
+      new ConflictException().getStatus(),
+    ),
+
+  /**
+   * THE REPORTED GAP, STATED ON THE SCREEN RATHER THAN GUESSED AT — and it is
+   * now the LAST thing in the way rather than the first (Carl, 4 Sep 2026;
+   * GA-PLAN B5).
+   *
+   * Everything else an enduring push needs exists: the practice setting, the
+   * GP and per-provider checks, the ceremony, the decline path. What does not
+   * exist is the s 65C rule set's ENDURING BRANCH — reg 65CB's content set has
+   * no rules written against it, C5 still demands the single service date a
+   * standing agreement has no honest value for, and the conformance suite
+   * (`apps/rules/src/rules/rule-set.contract.ts`) has no enduring case.
+   *
+   * SO THE PLATFORM ASKS THE RULE SET AND BELIEVES THE ANSWER. It sends the
+   * enduring payload, and if the registered set returns no verdict on the
+   * enduring family then silence is not a pass and this is the refusal. The
+   * rule set is a HUMAN-AUTHORED ZONE (CLAUDE.md §7): writing that branch to
+   * make this button work would be an agent authoring regulation. The contract
+   * it is authored against is written out as a pending spec,
+   * `apps/rules/test/enduring-ruleset.pending.spec.ts`, and the moment it
+   * passes this refusal stops happening without another line of code.
+   */
+  enduringRulesNotAuthored: () =>
+    new PushRefusal(
+      'enduring_rules_not_authored',
+      'Ongoing agreements are not yet enabled: the s 65C rule set returns no verdict on the enduring ' +
+        'content set (reg 65CB), so the particulars cannot be validated or locked. Offer an agreement for ' +
+        'this visit instead.',
+      new ConflictException().getStatus(),
+    ),
+
+  /**
+   * THE DB4 PRINT RECORD BEHIND THIS AGREEMENT IS NOT ONE WE BELIEVE (Carl,
+   * 27 September 2026, from a live tablet: *"If no $ do not allow the approval
+   * to progress. Check all details when the reception pushes to the tablet."*).
+   *
+   * AT THE DESK, NEVER ON THE TABLET. Carl was offered the tablet-side block
+   * and rejected it, and hard rule 8 (REQ-REC-04) is why: this refusal is a
+   * redirect reception can act on in seconds — reprint the form, or capture on
+   * paper, or capture after the service — and the patient is seen and billed
+   * either way. A dead Continue button in front of somebody who has already
+   * sat down is the failure that rule exists to prevent, and they are the one
+   * person in the building who cannot fix a print record.
+   *
+   * IT IS NOT A STATUTORY FAULT, AND THE SENTENCE MUST NOT SUGGEST IT IS. No
+   * dollar amount is in the s 65C data set (hard rule 4), so an agreement with
+   * no amount is COMPLETE. What is in doubt is our own reproduction of the
+   * practice's form.
+   *
+   * EVERY FAILED CHECK, NOT THE FIRST. Reception fixes the form once rather
+   * than pressing Send five times to be told five things (CLAUDE.md §7). The
+   * codes ride on `checks`, the console maps each to its own copy and control
+   * (REQ-LANG-01), and an unmapped code shows its own code.
+   *
+   * THE CODES NAME FIELDS AND CARRY NO VALUES (hard rule 9) — which is what
+   * lets them sit in an HTTP body at all. The sentence below states a RULE and
+   * says nothing about what was on the page.
+   */
+  /**
+   * AND IT NAMES WHICH FORM (Carl, 27 September 2026, at the desk: *"message
+   * needs to say what data is missing on the print and also some unique id to
+   * identify the print and the location of the file"*).
+   *
+   * “REPRINT IT” IS NOT AN INSTRUCTION UNTIL SOMEBODY KNOWS WHICH. A practice
+   * prints all morning. The `checks` say what could not be read; `print` says
+   * what to reprint — the reference on the page, the queue it came off, when
+   * it arrived, and AOBPRINTER's own hash of the source for the audit trail.
+   *
+   * THE IDENTITY IS OPTIONAL AND THE SENTENCE STANDS WITHOUT IT. A refusal
+   * that could not name the record is still a true refusal with a real list,
+   * and losing it would be losing the whole answer to save the footnote.
+   *
+   * NOTHING IN EITHER FIELD IS A PATIENT'S (hard rule 9, REQ-LOG-08) — codes
+   * name fields, the identity names the document and the machinery.
+   */
+  printRecordIncomplete: (checks: readonly Db4PrintRecordCheck[], print?: Db4PrintRecordIdentity) =>
+    new PushRefusal(
+      DB4_PRINT_RECORD_REFUSED_CODE,
+      'The printed form this agreement was read from is missing details the tablet would have to show, so ' +
+        'it has not been sent. This is about our reading of the form, not about the agreement — reprint it ' +
+        'and it will come through again, or capture this one on paper or after the service. The patient is ' +
+        'seen and billed either way.',
+      new ConflictException().getStatus(),
+      print ? { checks, print } : { checks },
+    ),
+
+  /**
+   * THE PUSH IS THE VERIFICATION RECORD, so it cannot be made by nobody
+   * (REQ-VER-03/-04). Refused rather than recorded as `unattributed` — an
+   * audit line naming nobody is worse than a refusal, because later it cannot
+   * be questioned.
+   */
+  noActor: () =>
+    new ForbiddenException(
+      'Sending an agreement to a tablet records the staff-verified identity check that goes with it, so it ' +
+        'is recorded against the person who did it. This request carries no signed-in user, so it is ' +
+        'refused rather than recorded as nobody.',
+    ),
+};

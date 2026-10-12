@@ -1,0 +1,22 @@
+-- RETURN TO THE START WHEN THE TABLET IS UNTOUCHED (Carl, 4 September 2026).
+--
+-- A patient is called in mid-ceremony, or simply walks off. The tablet is then
+-- sitting on a counter in a waiting room with somebody's name, date of birth
+-- and address on it, and the next person to pick it up is a stranger. Every
+-- kiosk screen but the idle one is now on a clock, and this column is how long
+-- that clock runs.
+--
+-- PER PRACTICE, because the right number depends on the room: a tablet at a
+-- busy desk wants it short, and a practice handing one to somebody reading
+-- slowly wants it longer. Bounded 60..1800 by the DTO and by the domain's
+-- `isKioskIdleTimeoutInRange`; the column carries the default.
+--
+-- NOT NULL, DEFAULT 300. "No setting" must never mean "no timeout" — a tablet
+-- that never clears itself is precisely the failure this column exists to
+-- prevent — so every practice that already exists gets five minutes rather
+-- than an unbounded screen.
+--
+-- Idempotent (DEV-LOOP.md): a migration that only works once passes in
+-- development and then breaks `prisma migrate deploy` on the next start.
+ALTER TABLE "practices"
+  ADD COLUMN IF NOT EXISTS "kioskIdleTimeoutSeconds" INTEGER NOT NULL DEFAULT 300;

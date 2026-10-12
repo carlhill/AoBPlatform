@@ -18,8 +18,8 @@ AoBPlatform/
 │   ├── core/        # NestJS modular monolith — modules M1–M8, M12–M14 (port 3001)
 │   ├── rules/       # Rules & Conformance service — zero PII, public tester (port 3002)  ⚠ human-authored zone
 │   ├── vault/       # Evidence Vault service — immudb, hash chain, anchoring (port 3003) ⚠ human-authored zone
-│   ├── web/         # Next.js — console (M12), portal (M8), public tester UI (port 3100)
-│   ├── kiosk/       # Expo/React Native tablet app (C2) — placeholder until Phase 1
+│   ├── web/         # Next.js — console (M12), portal (M8), tester UI, kiosk (C2) (port 3100)
+│   │                #   app/kiosk/ is the waiting-room tablet; apps/kiosk (Expo) was retired 3 Sep 2026
 │   └── connector/   # Site-installed Windows PMS connector — mock adapter until D-01
 ├── packages/
 │   ├── domain/      # Pure TS domain model + structural hard-rule guards. Zero deps.
@@ -153,9 +153,17 @@ stale-`wslrelay.exe` port-conflict note).
   `medicare_number_rejected_as_identifier`) — see
   `packages/domain/src/hard-rules.test.ts` for the pattern and CLAUDE.md §6
   for the obligation. Do not rename these tests; the names are traceability.
-- Playwright for web flows, Maestro for kiosk — added when the first real user
-  flow exists. k6 priority scenarios: the 8–10 am check-in burst and the 89AA
-  dispatch batch.
+- Playwright for web flows, INCLUDING the kiosk ceremony now that the kiosk is
+  a page of `apps/web` (`apps/web/e2e`, run by `npm run e2e:kiosk`). Maestro is
+  no longer used and no device or emulator is needed. That suite is
+  deliberately NOT in CI and is deliberately NOT called `test:e2e`: it needs a
+  live core on 3001 and a live web server on 3100, which CI has neither of.
+- `apps/web` runs **Vitest**, not Jest, and that is not a drift from the §3
+  pin. The repo-wide Jest 29 pin exists for `ts-jest` and `jest-expo`, both of
+  which left with `apps/kiosk`; Vitest reads the same `tsconfig.json` the dev
+  server and `npm run typecheck` read, so a test and the page under test cannot
+  disagree about how the code compiles. Every service and package stays on Jest.
+- k6 priority scenarios: the 8–10 am check-in burst and the 89AA dispatch batch.
 
 ## 8b. A practitioner identity is created by INVITATION only
 
@@ -217,6 +225,37 @@ Checklist before calling a field done:
 - [ ] A test asserts it **round-trips**: entered, stored, and read back.
 - [ ] Anything that lists or projects the record shows it, where the reader needs it.
 
+### 9a(i). The same rule applies to a SURFACE, not only to a field
+
+**A screen that reads a thing must also write it, or say plainly why it
+cannot.** A read-only rendering of something the user is being told to act on
+is the same defect as a half-wired field, wearing different clothes.
+
+This cost us a second time, and the second time was more embarrassing than the
+first. The reviewer dossier rendered the twelve-check catalogue, headed it
+*"Record what you actually did"*, and had no way to record anything. The
+strings for the recording form were written. The API endpoint existed. The
+domain rules existed and were tested. The button did not. Carl opened the
+screen, read the instruction, and asked how he was supposed to follow it.
+
+A read-only surface fails in the same silent way a half-wired field does: it
+**looks like the feature**. Nobody files a bug against a missing button as
+readily as against an error, because the screen appears finished — so the gap
+survives review, survives a demo, and is found by the person trying to do the
+job.
+
+The trap here is specific and worth naming: it is easiest to build the display
+first, because the display is what you can see. The display then *looks* like
+progress, and the write path gets deferred to a next pass that the checklist
+above was written to prevent.
+
+Checklist before calling a surface done:
+
+- [ ] Every instruction the screen gives the user can actually be carried out **on that screen**.
+- [ ] Every list of things-to-do has an action per row, or a written reason it is read-only.
+- [ ] The write path is exercised against a running stack, not only typechecked.
+- [ ] A failure from that write path is displayed in words the user can act on.
+
 ## 9c. Patch scripts: replace everything, then write everything
 
 **A script that edits several files must perform every replacement first and
@@ -272,6 +311,34 @@ around it.
   server data, which drifts.
 - Never persist tokens or credentials. `apps/web/app/auth.ts` keeps the access
   token in memory for exactly this reason, and that is not to be "improved".
+
+## 9d. An email address under verification is a visible, live state
+
+Carl's rule, verbatim: "need an auto-refresh and a tag to say the email
+validation is pending or validated. We should do this everywhere we check
+emails."
+
+Any screen that shows an email address whose verification matters MUST show:
+
+1. **A status tag beside the address.** `Verified` or `Confirmation pending` —
+   a word, never colour alone, and never nothing. An address with no tag reads
+   as fine, and "reads as fine" is precisely how an unverified address gets
+   relied on. The unverified state is the one that costs something, so it is
+   the one that must be loud.
+
+2. **Auto-refresh while anything is pending.** The person who confirms is
+   usually in ANOTHER tab or another building — the flip from pending to
+   verified happens on the server while this screen sits still. Poll the
+   page's own loader (15–30s) while and only while something on it is pending;
+   stop when nothing is. A screen that needs a manual reload to notice teaches
+   people the tag is stale, and a stale tag is worse than none.
+
+The pieces exist — use them rather than re-cutting them:
+`EmailStatusChip` (apps/web/app/EmailStatusChip.tsx) for the tag,
+`usePendingRefresh` (same file) for the polling. Applies to: a practitioner's
+primary (pending change) and backup, a practice's administrator address, the
+applicant's address during onboarding, and every address verification added
+later. A new email-bearing screen without these two is not done (see 9a).
 
 ## 10. Lint/format
 

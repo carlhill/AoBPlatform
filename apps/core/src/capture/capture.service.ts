@@ -1,5 +1,6 @@
 import { BadRequestException, GoneException, Injectable, NotFoundException } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
+import type { Prisma } from '@prisma/client';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import { PrismaService } from '../prisma/prisma.service';
 import { VerificationService } from '../verification/verification.service';
@@ -18,9 +19,27 @@ export class CaptureService {
   ) {}
 
   /**
-   * Opens a capture request for a draft agreement. Multiple channels may be
-   * open at once (send SMS and email where both are held — C3.2); completing
-   * any one closes the rest (FR-2.7).
+   * Opens a capture request for an agreement that has not been signed yet.
+   * Multiple channels may be open at once (send SMS and email where both are
+   * held — C3.2); completing any one closes the rest (FR-2.7).
+   *
+   * `awaiting_signature` IS ALLOWED, AND WAS NOT UNTIL 11 SEPTEMBER 2026 (the
+   * post-service push, Carl 11 Sep 2026).
+   *
+   * The guard used to admit only `draft` and `verification_pending`, which was
+   * true of every agreement that reached it: the remote cascade opened its
+   * channel BEFORE locking. The post-service push locks first — it has to,
+   * because reception hands the tablet over and REQ-REG-06 says the particulars
+   * are complete and locked before a signature control can enable — so an
+   * agreement waiting for a signature at the desk could not then be offered a
+   * link when the patient left instead. That is the "platform slows evidence,
+   * never service" case backwards (REQ-REC-04).
+   *
+   * IT WIDENS NOTHING ELSE. An agreement that is signed, stored, superseded,
+   * declined or expired is still refused, which is what the guard is for; the
+   * duplicate-channel check is unchanged (FR-2.7); and the draft-to-
+   * verification_pending transition below still only fires on a draft, so a
+   * locked agreement's status is untouched by opening a channel to it.
    */
   async open(practiceId: string, input: { agreementId: string; channel: string }) {
     const remote = REMOTE_CHANNELS.includes(input.channel);
@@ -29,7 +48,7 @@ export class CaptureService {
     const request = await this.prisma.withPractice(practiceId, async (tx) => {
       const agreement = await tx.agreement.findFirst({ where: { id: input.agreementId } });
       if (!agreement) throw new NotFoundException('Agreement not found.');
-      if (!['draft', 'verification_pending'].includes(agreement.status)) {
+      if (!['draft', 'verification_pending', 'awaiting_signature'].includes(agreement.status)) {
         throw new BadRequestException(`Cannot open capture for an agreement in status ${agreement.status}.`);
       }
       const practice = await tx.practice.findFirst({});
@@ -70,6 +89,86 @@ export class CaptureService {
     // The raw token appears exactly once, in this response, for the message
     // dispatcher — it is not recoverable afterwards (only its hash is held).
     return { captureRequestId: request.id, channel: request.channel, token: minted?.token, expiresAt: request.expiresAt };
+  }
+
+  /**
+   * THE IN-PRACTICE CHANNEL, OPENED INSIDE A CALLER'S TRANSACTION — for the
+   * push to a paired tablet (TODO.md "Push-to-device capture").
+   *
+   * WHY NOT `open` ABOVE. Two differences, and both matter. `open` owns its own
+   * transaction, and the push must commit the capture request, the lock, the
+   * staff-verified verification event and the session together or not at all
+   * (hard rule 11). And `open` refuses an agreement that is not `draft` or
+   * `verification_pending` — a sensible guard for a channel being opened
+   * speculatively, and the wrong one here: the push has just verified the
+   * patient across the desk and is moving the agreement to
+   * `awaiting_signature` in the same breath. The push's own preconditions,
+   * which are stricter, decide whether this may happen at all.
+   *
+   * IDEMPOTENT ON PURPOSE. An agreement that already has an open `in_practice`
+   * request — a patient who was on the walk-up list and has now come to the
+   * desk — gets that one back rather than a second. Two open requests on one
+   * channel is exactly what FR-2.7's duplicate guard exists to prevent.
+   *
+   * IT NEVER MINTS A TOKEN. `in_practice` is not a remote channel: there is no
+   * link, so there is nothing to hash and nothing that could be forwarded.
+   */
+  async openInPractice(
+    tx: Prisma.TransactionClient,
+    practiceId: string,
+    agreementId: string,
+  ): Promise<{ id: string; reused: boolean }> {
+    const existing = await tx.captureRequest.findFirst({
+      where: { agreementId, channel: 'in_practice', status: 'open' },
+      orderBy: { createdAt: 'asc' },
+    });
+    if (existing) return { id: existing.id, reused: true };
+
+    const created = await tx.captureRequest.create({
+      data: { practiceId, agreementId, channel: 'in_practice', tokenHash: null, expiresAt: null },
+    });
+    await enqueueVaultEvent(tx, {
+      type: 'capture.requested',
+      actor: SYSTEM_ACTOR,
+      subject: { type: 'CaptureRequest', id: created.id },
+      payload: { channel: 'in_practice', agreementId },
+    });
+    return { id: created.id, reused: false };
+  }
+
+  /**
+   * CLOSE EVERY OPEN CHANNEL ON AN AGREEMENT THAT HAS BEEN SUPERSEDED, inside
+   * the caller's transaction (HARD-02: a correction supersedes, it never
+   * edits).
+   *
+   * WHY THIS AND NOT A STATUS CHANGE ON THE AGREEMENT. The superseded
+   * agreement is a real thing that really happened — it was validated, locked,
+   * rendered and hashed, and its evidence stays exactly as it is. What must
+   * stop is somebody being asked to SIGN it, on any channel, now that a
+   * corrected version exists. Closing its capture requests is precisely that,
+   * and it is the codebase's own idiom: `pushable` already treats an agreement
+   * with no open capture request as one that has nowhere left to go.
+   *
+   * IT IS THE SAME SHAPE AS `complete`'s sibling cancellation, with a
+   * different reason on the event — a reader asking "why did that link stop
+   * working" gets an answer either way.
+   */
+  async cancelOpenFor(
+    tx: Prisma.TransactionClient,
+    agreementId: string,
+    reason: string,
+  ): Promise<string[]> {
+    const open = await tx.captureRequest.findMany({ where: { agreementId, status: 'open' } });
+    for (const request of open) {
+      await tx.captureRequest.update({ where: { id: request.id }, data: { status: 'cancelled' } });
+      await enqueueVaultEvent(tx, {
+        type: 'capture.cancelled',
+        actor: SYSTEM_ACTOR,
+        subject: { type: 'CaptureRequest', id: request.id },
+        payload: { reason, agreementId, channel: request.channel },
+      });
+    }
+    return open.map((request) => request.id);
   }
 
   /**

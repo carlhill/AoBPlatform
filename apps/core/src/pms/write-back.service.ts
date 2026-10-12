@@ -4,7 +4,7 @@ import type { PmsAdapter } from '@aobplatform/contracts';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PMS_ADAPTER } from './pms.tokens';
-import { RendererRegistry } from '../render/renderer-registry';
+import { RendererRegistry, renderInputOf } from '../render/renderer-registry';
 
 const SYSTEM_ACTOR = { principalType: 'system', id: 'core' } as const;
 /** FR-9.3: alert on any stored artefact not in the PMS after this long. */
@@ -32,6 +32,26 @@ export class WriteBackService {
     if (!this.adapter.capabilities.writeArtefact) return false;
     try {
       return await this.prisma.withPractice(practiceId, async (tx) => {
+        /*
+         * A PRACTICE THAT COLLECTS BY FOLDER IS NOT WRITTEN TO (GA-PLAN B13;
+         * CONSULTATION-CAPTURE-PLAN.md §8.6). Printing cannot write back and
+         * neither can we: on the print channel the practice's network is
+         * outbound-only, so AOBPRINTER comes and gets the signed form and
+         * drops it into the PMS's document-import folder. `writtenBackAt` is
+         * the platform's ONE meaning of "this reached the practice's record",
+         * and on that route the desktop earns it, through
+         * `WriteBackCollectionService.confirmCollected`.
+         *
+         * PER PRACTICE, NOT PER PROCESS, which is why it is read here rather
+         * than settled by which adapter is bound. One deployment serves
+         * practices on both routes, and the adapter is a singleton.
+         *
+         * THE STALENESS ALERT BELOW STILL WATCHES THEM. A row nobody collects
+         * is a row that stays unwritten, and FR-9.3 says so after four hours
+         * whichever route was meant to move it.
+         */
+        const practice = await tx.practice.findFirst({ where: { id: practiceId } });
+        if (practice?.documentFolderKey) return false;
         const agreement = await tx.agreement.findFirst({ where: { id: agreementId } });
         if (!agreement || agreement.status !== 'stored' || agreement.writtenBackAt) return false;
         if (!agreement.particulars || !agreement.renderedArtefactHash) return false;
@@ -47,10 +67,7 @@ export class WriteBackService {
           this.logger.error(`Renderer ${agreement.rendererVersion} not registered — write-back refused.`);
           return false;
         }
-        const rendered = await renderer.render(
-          agreement.particulars as Record<string, unknown>,
-          agreement.renderedLanguages,
-        );
+        const rendered = await renderer.render(renderInputOf(agreement), agreement.renderedLanguages);
         if (rendered.sha256 !== agreement.renderedArtefactHash) {
           this.logger.error(`Render determinism violation on agreement ${agreementId} — write-back refused.`);
           return false;

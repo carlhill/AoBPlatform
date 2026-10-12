@@ -1,0 +1,544 @@
+/*
+ * PRACTICE FRONTDESK — the rail and the panel (FRONT-DESK-PAGE.md §12).
+ *
+ * TWO COLUMNS, AND THE RAIL IS THE LEFT ONE, DELIBERATELY (§12.2). Reading
+ * order puts it first, and it answers "who am I working on" before "what do I
+ * do", which is the order a beginner needs. The right is where the eye goes
+ * last, and the rail is the thing they look at between every patient.
+ *
+ * IT REFLOWS RATHER THAN SCROLLS SIDEWAYS (WCAG 2.2 AA, 1.4.10). Below the
+ * breakpoint the two columns become one, rail first, at full width — no
+ * horizontal scrollbar and no minimum width that a 320px viewport cannot
+ * meet. The grid is only declared inside the media query for exactly that
+ * reason: the narrow layout is the default, and the wide one is the addition.
+ */
+
+.layout {
+  display: grid;
+  gap: var(--s5);
+  align-items: start;
+}
+
+@media (min-width: 860px) {
+  .layout {
+    grid-template-columns: minmax(15rem, 20rem) minmax(0, 1fr);
+  }
+}
+
+/* ------------------------------------------------------------------ rail */
+
+.rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+  min-width: 0;
+}
+
+.group {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.groupHead {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  padding: var(--s3) var(--s4);
+  border-bottom: 1px solid var(--line);
+}
+
+.groupTitle {
+  margin: 0;
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/*
+ * A COLOUR PER RAIL, ON THE HEADING AND ON THE NUMBER (Carl, 12 September
+ * 2026: *"Put colour on the list heading and the number. Reason: I want my eye
+ * to be drawn to each list."*).
+ *
+ * THE REASON DECIDES THE DESIGN. This is not a severity scale and must not be
+ * read as one — Carl is LOCATING the lists, not triaging them, so each rail
+ * gets its own colour and the eye lands on the right heading directly instead
+ * of reading four of them to find the third.
+ *
+ * "HERE NOW" IS NOT COLOURED, and that is the strongest treatment rather than
+ * the weakest: `--ink` is the darkest text this product has, it is the work,
+ * and Carl asked for a colour on the others.
+ *
+ * EVERY VALUE IS AN EXISTING TOKEN and each passes WCAG 2.2 AA for small text
+ * on `--surface` (#ffffff): `--ok` #1a6c37 is 6.5:1, `--warn` #7a5300 is
+ * 6.6:1, `--info` #1f4d7a is 8.6:1, `--ink-muted` #55595e is 7.4:1. No colour
+ * was invented for this.
+ *
+ * COLOUR IS NEVER THE ONLY CARRIER (1.4.1). Every heading says in words what
+ * its rail is, the counts are spoken as whole sentences by the live region
+ * beside them, and there is no key anywhere that has to be learned.
+ *
+ * `--info` IS THE SAME HEX AS `--accent`, which the token file reserves for
+ * focus and the primary action. Carl has decided the blue stays; the
+ * distinction is kept as a TREATMENT — the accent is a solid FILL on a button,
+ * this is text on a plain background — so the two do not read as the same
+ * control.
+ */
+.toneOk .groupTitle,
+.toneOk .countNumber {
+  color: var(--ok);
+}
+
+.toneWarn .groupTitle,
+.toneWarn .countNumber {
+  color: var(--warn);
+}
+
+.toneInfo .groupTitle,
+.toneInfo .countNumber {
+  color: var(--info);
+}
+
+.toneQuiet .groupTitle,
+.toneQuiet .countNumber {
+  color: var(--ink-muted);
+}
+
+/*
+ * THE COUNT IS THE LIVE REGION (§12.3), so it is a real element of its own
+ * rather than text inside the heading — a heading whose whole content is
+ * announced on every poll is a heading that gets read out all morning.
+ */
+.groupCount {
+  margin-left: auto;
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+}
+
+/*
+ * THE NUMBER, PICKED OUT OF ITS HEADING (Carl, 12 September 2026, annotating
+ * the "3 people" / "0 people" counts: *"Make the font bold and a diff colour
+ * for the number - so it stands out"*).
+ *
+ * `--ink` IS THE BASE AND EACH RAIL'S TONE OVERRIDES IT above — "Here now"
+ * takes no colour at all, which is the STRONGEST treatment on the column
+ * rather than the weakest, because it is the work.
+ *
+ * THE WORD BESIDE IT STAYS QUIET, so the contrast between them is what carries
+ * the emphasis rather than the number simply being loud. And the colour is
+ * never the only signal (1.4.1): the number is bold and a size larger, and the
+ * whole count is spoken as one sentence by the live region next to it.
+ */
+.countNumber {
+  font-weight: 700;
+  font-size: var(--text-base);
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * THE DAY'S TOTAL, ABOVE EVERY GROUP — the number the four arrived rails have
+ * to add up to, and the reason the two pages can be trusted to agree.
+ */
+.total {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+  margin: 0;
+  padding: var(--s3) var(--s4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.totalCount {
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+}
+
+/* Bigger than a group's, because it is the figure the others are checked against. */
+.totalNumber {
+  font-weight: 700;
+  font-size: var(--text-lg);
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  margin-right: var(--s2);
+}
+
+.totalWhy {
+  font-size: var(--text-xs);
+  color: var(--ink-muted);
+}
+
+.rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.row + .row {
+  border-top: 1px solid var(--line);
+}
+
+/*
+ * A REAL BUTTON PER NAME. Keyboard reachable, announces its pressed state, and
+ * — the point of §12.3 — choosing it does nothing but choose it. There is no
+ * control anywhere inside the rail that sends, recalls or confirms anything.
+ */
+.pick {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s3);
+  width: 100%;
+  padding: var(--s3) var(--s4);
+  border: 0;
+  background: transparent;
+  font: inherit;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.pick:hover {
+  background: var(--surface-sunken);
+}
+
+.pick:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.pick[aria-pressed='true'] {
+  background: var(--info-wash);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+/*
+ * A ROW THAT IS ONLY A ROW — the finished and needs-a-look groups, which have
+ * no queue row behind them and so nothing to select. Laid out exactly like
+ * `.pick` so the column reads as one list, and deliberately without its hover,
+ * focus ring or pressed state: nothing here suggests it can be pressed.
+ */
+.read {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s3);
+  width: 100%;
+  padding: var(--s3) var(--s4);
+  color: var(--ink);
+}
+
+.name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/*
+ * THE NUMBER ON THE CARD, LEADING THE ROW (QUEUE-TICKETS.md §4.2: *"as the
+ * leading element of each row in the queue rail, because 'call number twelve'
+ * is the job"*). Fixed-width digits so a column of them lines up, and set in
+ * the row's own ink rather than an accent — it is a handle, not a status.
+ */
+.ticket {
+  flex: none;
+  min-width: 2.25rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+/*
+ * WHICH TABLET THEY HAVE, IN THE PRACTICE'S OWN WORDS (Carl, 12 September
+ * 2026). Small, quiet, on its own line under the name, and the label is
+ * printed exactly as the practice wrote it with nothing added around it — a
+ * sentence built around it produces "has the Blue tablet tablet".
+ */
+.device {
+  display: block;
+  width: 100%;
+  font-size: var(--text-xs);
+  color: var(--ink-muted);
+  overflow-wrap: anywhere;
+}
+
+.time {
+  margin-left: auto;
+  flex: none;
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.empty {
+  margin: 0;
+  padding: var(--s3) var(--s4);
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+}
+
+/*
+ * THE SENTENCE UNDER AN EMPTY "EXPECTED", which is most of that group's value
+ * (§12.1). Quieter than the group's own empty line and longer, because it is
+ * an explanation rather than a status.
+ */
+.why {
+  margin: 0;
+  padding: 0 var(--s4) var(--s3);
+  font-size: var(--text-sm);
+  color: var(--ink-faint);
+}
+
+/* ----------------------------------------------------------------- panel */
+
+.panel {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: var(--s5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+}
+
+.panelName {
+  margin: 0;
+  font-size: var(--text-xl);
+  color: var(--ink);
+}
+
+/*
+ * THE PATIENT ID, UNDER THE NAME. Quieter than the name and than the sentence
+ * below it: it is a handle to read out, not the thing the panel is about.
+ */
+.panelRecordNumber {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+}
+
+.panelLead {
+  margin: 0;
+  color: var(--ink);
+}
+
+.panelNext {
+  margin: 0;
+  color: var(--ink-muted);
+}
+
+/*
+ * SPOKEN, NOT SHOWN. The group heading and the count carry the state to
+ * anybody who can see them; this carries the CHANGE to everybody else, as one
+ * sentence naming the group — "Here now: 2 people" — rather than a bare
+ * number whose heading a screen reader has long since left behind.
+ */
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/*
+ * EXACTLY ONE ROW IS MARKED "DO THIS NEXT" (§4). A WORD, not a colour and not
+ * an icon: the mark has to survive a monochrome screen, a colour-blind reader
+ * and a screen reader, and the shortest thing that does all three is the
+ * sentence itself (WCAG 2.2 AA, 1.4.1).
+ */
+.next {
+  flex: none;
+  padding: 0 var(--s2);
+  border-radius: var(--radius-sm, 4px);
+  background: var(--info-wash);
+  color: var(--accent);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+/* ------------------------------------------------- today's paperwork */
+
+/*
+ * THE CHECKLIST (VISIT-CHECKLIST.md §9 phase 1). It reads top to bottom as a
+ * list of facts, so it is an ordered list with no controls of its own — the
+ * one control that appears inside it is the numbered send card, which belongs
+ * to row 3 (Carl's second note) and is laid out by the tablet desk's own
+ * stylesheet.
+ */
+.checklist {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
+  padding: var(--s4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+
+.checklistTitle {
+  margin: 0;
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/*
+ * TWO COLUMNS: THE TAG, THEN THE WORDS (Carl, 12 September 2026: *"Put tags in
+ * col 1 - left aligned. Put text in col 2 left aligned."*).
+ *
+ * WHY THE GRID IS ON THE LIST AND NOT ON THE ROW. "Done", "Still to do" and
+ * "Nothing to sign" are different widths, so a row-level layout starts every
+ * sentence at a different x and the eye cannot run down the column. One grid
+ * over the whole list, with `max-content` on the first track, makes every tag
+ * cell as wide as the WIDEST tag — which is what Carl asked for, and it follows
+ * the longest word rather than a magic number somebody has to remember to
+ * change the day a fifth state word is added.
+ *
+ * `display: contents` ON THE ROW, so each `li` contributes its two children
+ * straight into the grid. The list semantics survive it in every current
+ * browser, and the row keeps its `data-state` and its test id — it stops
+ * painting a box, not existing.
+ */
+.checkRows {
+  list-style: none;
+  margin: var(--s2) 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  column-gap: var(--s3);
+  row-gap: var(--s3);
+}
+
+.checkRow {
+  display: contents;
+}
+
+/*
+ * THE DIVIDER GOES ON THE CELLS, because the row itself no longer paints.
+ * Both cells of every row after the first, so the line runs the full width.
+ */
+.checkRow:not(:first-child) > * {
+  border-top: 1px solid var(--line);
+  padding-top: var(--s3);
+}
+
+/* Column one. Top-aligned, so the tag sits against the first line of its text. */
+.checkTag {
+  display: block;
+}
+
+/* Column two — the label, the sentence, and anything that hangs off the row. */
+.checkBody {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s2);
+  min-width: 0;
+}
+
+.checkLabel {
+  font-weight: 600;
+  color: var(--ink);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* ------------------------------------------------------ the one action */
+
+/*
+ * THE PANEL'S ACTION AREA — ONE THING, ALWAYS (§4). Whatever is inside it is
+ * "the answer": the numbered send card, or a single button whose label is the
+ * sentence somebody would say. Everything else on the panel is either the
+ * REASON something cannot go (a band, with its own repair in it) or is behind
+ * the one disclosure below.
+ */
+.action {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  margin-top: var(--s3);
+}
+
+.confirmActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s3);
+  margin-top: var(--s3);
+}
+
+.disclose {
+  display: flex;
+  margin-top: var(--s2);
+}
+
+/*
+ * THE EXPERT CONTROLS, REVEALED IN PLACE (§13). Set back from the panel so it
+ * reads as a drawer that was opened rather than as more of the same screen —
+ * a beginner who opened it should be able to see at a glance what to close.
+ */
+.expert {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
+  padding: var(--s4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+}
+
+/*
+ * WHERE THE AGREEMENT IS RIGHT NOW — the same chip the tablet desk shows, on
+ * its own line so it is read before the checklist rather than inside it. A
+ * paragraph rather than a div because it is a sentence made of chips, and
+ * `flex-wrap` because "On Front desk tablet now · a1b2c3d4" plus a fault chip
+ * does not fit a narrow column on one line.
+ */
+.liveLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2);
+  margin: 0;
+}
+
+/*
+ * THE WAY INTO THE WHOLE DAY, under the three groups (Carl, 12 September
+ * 2026). Set apart from the rail's cards rather than styled as a fourth one:
+ * the groups are the morning, and this is the record.
+ */
+.dayLink {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s2);
+  margin: 0;
+}
+
+.dayWhy {
+  font-size: var(--text-xs);
+  color: var(--ink-muted);
+}
+
+/*
+ * THE OTHER DOOR, UNDER THE GROUP IT IS ABOUT (Carl, 12 September 2026). Set
+ * inside the group's card rather than beside it, because it is about THAT
+ * list; the day-register link below the rail is about the whole day and is
+ * laid out apart from every group for the same reason.
+ */
+.groupLink {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s1);
+  margin: 0;
+  padding: var(--s3) var(--s4);
+  border-top: 1px solid var(--line);
+}

@@ -1,0 +1,284 @@
+/**
+ * The reports we ship ready-made, expressed as Cube queries.
+ *
+ * WHY THESE ARE DEFINITIONS RATHER THAN SCREENS. Cube can answer far more than
+ * this, and the Playground is there for anyone who wants to ask something new.
+ * But most people do not want to compose a query — they want the answer to a
+ * question they already have, which is nearly always one of seven. Naming
+ * those seven means the common case is one click and the uncommon case is
+ * still possible.
+ *
+ * ONE PLACE, so the report and its meaning cannot drift apart. A query built in
+ * the browser and a title written beside it are two facts that agree until
+ * somebody edits one of them.
+ *
+ * THE SCOPE IS NOT HERE, deliberately. None of these carries a practice filter.
+ * Cube adds it from the caller's signed token, and the database refuses
+ * anything wider regardless — so a report definition cannot widen its own
+ * scope, however it is edited.
+ */
+
+export type CubeGranularity = 'day' | 'week' | 'month' | 'quarter' | 'year';
+
+export type CubeQuery = {
+  measures: string[];
+  dimensions?: string[];
+  timeDimensions?: { dimension: string; granularity?: CubeGranularity; dateRange?: string | string[] }[];
+  order?: Record<string, 'asc' | 'desc'>;
+  limit?: number;
+  /**
+   * Only ever set from the place controls. Never a practice — that comes off
+   * the token and is enforced by the database, and a filter naming a practice
+   * would be a second place the boundary lived.
+   */
+  filters?: { member: string; operator: 'equals'; values: string[] }[];
+};
+
+/**
+ * How a report is drawn, which is not the same as what it asks for.
+ *
+ * `series` is a period per row. `matrix` reshapes DAILY rows into months down
+ * the side and positions within the month across the top — a shape Cube has no
+ * way to express, because "week 3 of its own month" is not a calendar unit.
+ */
+export type PackedReportShape = 'total' | 'series' | 'matrix_week' | 'matrix_day';
+
+export type PackedReport = {
+  key: string;
+  label: string;
+  /** What question this answers. Shown under the title, not as a tooltip. */
+  detail: string;
+  shape: PackedReportShape;
+  query: CubeQuery;
+};
+
+/**
+ * TWO YEARS, and it is retention rather than a default.
+ *
+ * We do not keep sending records longer than that, so "since the start" means
+ * "as far back as anything exists" rather than implying older figures are being
+ * withheld. The view enforces it too; this makes the query say so as well, so
+ * a reader of the generated SQL is not left wondering where the limit came
+ * from.
+ *
+ * NOT `last 2 years`, WHICH MEANS SOMETHING ELSE. Cube reads that as the last
+ * two COMPLETE CALENDAR YEARS — asked on 22 August 2026 it resolved to
+ * 2024-01-01 → 2025-12-31, excluding everything sent this year. Every report
+ * came back empty, which reads as "you have sent nothing" rather than as a
+ * misunderstanding about dates.
+ *
+ * `from 2 years ago to now` is the rolling window that was actually meant.
+ */
+export const PACKED_REPORT_RANGE = 'from 2 years ago to now';
+
+const TIME = 'OutboundMessages.occurredAt';
+const MEASURES = ['OutboundMessages.count', 'OutboundMessages.sent', 'OutboundMessages.failed'];
+
+function timeSeries(granularity: CubeGranularity): CubeQuery {
+  return {
+    measures: MEASURES,
+    timeDimensions: [{ dimension: TIME, granularity, dateRange: PACKED_REPORT_RANGE }],
+    order: { [TIME]: 'asc' },
+  };
+}
+
+export const PACKED_REPORTS: readonly PackedReport[] = [
+  {
+    key: 'total',
+    label: 'Total since the start',
+    detail: 'Everything we still hold. That is at most two years — we do not keep sending records longer.',
+    shape: 'total',
+    // No granularity: one number, which is the whole point of this one.
+    query: {
+      measures: MEASURES,
+      timeDimensions: [{ dimension: TIME, dateRange: PACKED_REPORT_RANGE }],
+    },
+  },
+  {
+    key: 'quarter',
+    label: 'Per quarter',
+    detail: 'Four buckets a year. The shape of a trend, with the week-to-week noise taken out.',
+    shape: 'series',
+    query: timeSeries('quarter'),
+  },
+  {
+    key: 'month',
+    label: 'Per month',
+    detail: 'The usual one, and the one most questions turn out to be.',
+    shape: 'series',
+    query: timeSeries('month'),
+  },
+  {
+    key: 'week',
+    label: 'Per week',
+    detail: 'Weeks begin on Monday.',
+    shape: 'series',
+    query: timeSeries('week'),
+  },
+  {
+    key: 'day',
+    label: 'Per day',
+    detail: 'Good for finding a spike. Unwieldy across a whole year.',
+    shape: 'series',
+    query: timeSeries('day'),
+  },
+  {
+    key: 'month_by_week',
+    label: 'Months down, weeks across',
+    detail:
+      'Compares the same week of each month — week 1 against week 1 — which answers "is this month worse, ' +
+      'or just further through?" A running total never can.',
+    shape: 'matrix_week',
+    // ASKED FOR BY DAY, then reshaped here. Cube can group by calendar week,
+    // but "week 3 of its own month" is not a calendar unit and it has no way
+    // to express it.
+    query: timeSeries('day'),
+  },
+  {
+    key: 'month_by_day',
+    label: 'Months down, days across',
+    detail: 'The same, by day of the month. Wide, and the only way to see a recurring day-of-month pattern.',
+    shape: 'matrix_day',
+    query: timeSeries('day'),
+  },
+];
+
+export function packedReport(key: string): PackedReport | undefined {
+  return PACKED_REPORTS.find((r) => r.key === key);
+}
+
+/**
+ * The same reports, split by where the messages went.
+ *
+ * A separate axis rather than fourteen more reports: every report above can be
+ * asked with or without a breakdown, and listing the combinations would make a
+ * menu nobody reads.
+ *
+ * `site` groups by site AND department together, because a department only
+ * means anything inside its site — "Reception" is not one thing across four
+ * buildings.
+ */
+export const PACKED_BREAKDOWNS = [
+  { key: 'none', label: 'Everything together', dimensions: [] as string[] },
+  { key: 'org', label: 'By organisation', dimensions: ['OutboundMessages.organisation'] },
+  {
+    key: 'site',
+    label: 'By site and department',
+    dimensions: ['OutboundMessages.organisation', 'OutboundMessages.site', 'OutboundMessages.department'],
+  },
+  /*
+   * WHO RECEIVED IT, BY TYPE. Practitioner, patient, or the practice itself.
+   *
+   * Not by NAME, and that is not a gap to fill later. A name in the reporting
+   * surface is a name a query engine can be asked to group by, and
+   * per-practitioner totals are one join from "and at which practices" — the
+   * cross-practice directory the hard rules forbid. Per-person figures belong
+   * in the console, scoped, attached to a decision somebody is accountable for.
+   */
+  { key: 'recipient', label: 'By who received it', dimensions: ['OutboundMessages.recipientType'] },
+  /*
+   * BY NAME. A practice sees its own people and nobody else's — RLS scopes the
+   * rows, so this cannot reach across a practice boundary. Those are names the
+   * practice already has on its own affiliations screen.
+   */
+  {
+    key: 'practitioner',
+    label: 'By practitioner',
+    dimensions: ['OutboundMessages.recipientType', 'OutboundMessages.recipientName'],
+  },
+  { key: 'channel', label: 'By channel', dimensions: ['OutboundMessages.channel'] },
+  { key: 'format', label: 'By format', dimensions: ['OutboundMessages.mediaType'] },
+] as const;
+
+export type PackedBreakdown = (typeof PACKED_BREAKDOWNS)[number]['key'];
+
+/**
+ * Narrowing to one place, which is not the same as breaking down BY place.
+ *
+ * A breakdown splits the figures and shows every group; a filter picks one and
+ * shows only that. Both are useful and they answer different questions — "how
+ * do my sites compare" versus "what did Yagoona do in March" — so they are
+ * separate controls rather than one clever one.
+ *
+ * These are FILTERS ON DIMENSIONS, never on the practice. The practice comes
+ * off the token and the database enforces it; nothing here can widen that, and
+ * a filter naming a practice would be a second place the boundary lived.
+ */
+export type PlaceFilter = {
+  organisation?: string;
+  site?: string;
+  department?: string;
+};
+
+export function placeFilters(place: PlaceFilter): { member: string; operator: 'equals'; values: string[] }[] {
+  const out: { member: string; operator: 'equals'; values: string[] }[] = [];
+  if (place.organisation) {
+    out.push({ member: 'OutboundMessages.organisation', operator: 'equals', values: [place.organisation] });
+  }
+  if (place.site) out.push({ member: 'OutboundMessages.site', operator: 'equals', values: [place.site] });
+  if (place.department) {
+    out.push({ member: 'OutboundMessages.department', operator: 'equals', values: [place.department] });
+  }
+  return out;
+}
+
+/**
+ * The values available to choose between, for the filter dropdowns.
+ *
+ * Asked of Cube rather than assembled from a report's rows, so the list is the
+ * same whichever report is showing — a dropdown whose options changed when you
+ * switched report would be unusable.
+ */
+/**
+ * A link that opens this query in Cube's own report builder.
+ *
+ * WHY LINK RATHER THAN DRAW. A hand-rolled chart is a second implementation of
+ * something Cube already does properly — and the first version of it rendered
+ * as a black box, which is exactly the failure mode of drawing your own: it
+ * looks fine in the code and wrong on the screen. The builder charts the same
+ * query against the same data, under the same token, so there is nothing to
+ * keep in step and nothing that can disagree with the table.
+ *
+ * It also does more than a chart: somebody who arrives there can change the
+ * question, which is the whole reason Cube is here.
+ */
+export function reportBuilderUrl(base: string, query: CubeQuery): string {
+  // Cube's Playground reads the query from the hash, so it survives the
+  // redirect and never reaches a server log.
+  return `${base}/#/build?query=${encodeURIComponent(JSON.stringify(query))}`;
+}
+
+export function placeOptionsQuery(): CubeQuery {
+  return {
+    measures: ['OutboundMessages.count'],
+    dimensions: [
+      'OutboundMessages.organisation',
+      'OutboundMessages.site',
+      'OutboundMessages.department',
+    ],
+    timeDimensions: [{ dimension: TIME, dateRange: PACKED_REPORT_RANGE }],
+  };
+}
+
+/** The query to actually send: a report, plus a breakdown if one was chosen. */
+export function packedQuery(
+  report: PackedReport,
+  breakdown: PackedBreakdown,
+  place: PlaceFilter = {},
+): CubeQuery {
+  const chosen = PACKED_BREAKDOWNS.find((b) => b.key === breakdown);
+  const filters = placeFilters(place);
+
+  const query: CubeQuery = { ...report.query };
+  if (chosen && chosen.dimensions.length > 0) query.dimensions = [...chosen.dimensions];
+
+  /*
+   * A MATRIX NEEDS ITS GROUPING DIMENSIONS EVEN WHEN FILTERED, because it is
+   * drawn one table per group. Without them every group's days collapse into a
+   * single matrix and the breakdown silently does nothing — which is what
+   * happened: the control was there, the table ignored it.
+   */
+  if (filters.length > 0) query.filters = filters;
+
+  return query;
+}

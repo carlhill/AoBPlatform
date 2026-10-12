@@ -1,0 +1,711 @@
+/* Reviewer surfaces. Shapes that only the queue and the dossier use. */
+
+/* --- Queue ---------------------------------------------------------------- */
+
+.queueControls {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s5);
+  flex-wrap: wrap;
+  margin-bottom: var(--s4);
+}
+
+.queueControls > :first-child {
+  flex: 1 1 320px;
+  margin-bottom: 0;
+}
+
+.queueMeta {
+  font-size: var(--text-xs);
+  color: var(--ink-muted);
+  margin: 0;
+  padding-top: var(--s6);
+}
+
+.searchWrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.searchIcon {
+  position: absolute;
+  left: var(--s3);
+  color: var(--ink-faint);
+  pointer-events: none;
+}
+
+.searchWrap input {
+  padding-left: calc(var(--s3) * 2 + 16px);
+}
+
+.queue {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+
+.queueRow {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s4);
+  padding: var(--s4);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  text-decoration: none;
+  color: inherit;
+}
+
+.queueRow:hover {
+  border-color: var(--line-strong);
+  background: var(--surface-sunken);
+}
+
+.queueMain {
+  flex: 1;
+  min-width: 0;
+}
+
+.queueName {
+  font-weight: 600;
+  font-size: var(--text-base);
+}
+
+.queueSub {
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+  margin-top: 2px;
+}
+
+/*
+ * The flags sit UNDER the name, not beside it. Beside, they compete with the
+ * practice name for the same glance and the eye resolves the larger text first;
+ * under, they are the second thing read, which is the order a reviewer needs.
+ */
+.flagRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  margin-top: var(--s3);
+}
+
+.queueAside {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--s2);
+  flex: none;
+  text-align: right;
+}
+
+.queueOpen {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--accent);
+}
+
+@media (max-width: 640px) {
+  .queueRow {
+    flex-direction: column;
+  }
+
+  .queueAside {
+    align-items: flex-start;
+    text-align: left;
+    flex-direction: row;
+    justify-content: space-between;
+    width: 100%;
+  }
+}
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s2);
+  padding: var(--s8) var(--s5);
+  color: var(--ink-muted);
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius);
+  text-align: center;
+}
+
+.emptyTitle {
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0;
+}
+
+/* --- Dossier -------------------------------------------------------------- */
+
+.backLink {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+  text-decoration: none;
+  margin-bottom: var(--s3);
+}
+
+.backLink:hover {
+  color: var(--ink);
+}
+
+/*
+ * A description list, because that is what this is: a term and its value. A
+ * table would imply rows that relate to each other across columns, and these
+ * do not.
+ */
+.facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--s2) var(--s4);
+  margin: 0;
+  font-size: var(--text-sm);
+}
+
+.facts dt {
+  color: var(--ink-muted);
+}
+
+.facts dd {
+  margin: 0;
+}
+
+@media (max-width: 560px) {
+  .facts {
+    grid-template-columns: 1fr;
+    gap: var(--s1);
+  }
+
+  .facts dd {
+    margin-bottom: var(--s2);
+  }
+}
+
+.factStrong {
+  font-weight: 600;
+}
+
+.contactPair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--s4);
+}
+
+@media (max-width: 700px) {
+  .contactPair {
+    grid-template-columns: 1fr;
+  }
+}
+
+.contactCard {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--s3);
+  background: var(--surface-sunken);
+}
+
+.contactRole {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-muted);
+  margin: 0 0 var(--s2);
+}
+
+.contactName {
+  font-weight: 600;
+}
+
+.contactLine {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+  margin-top: var(--s1);
+}
+
+/* A flag explained in full, where there is room to explain it. */
+.flagDetail {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s3);
+  padding: var(--s3);
+  border-left: 3px solid;
+  border-radius: var(--radius);
+  margin-bottom: var(--s2);
+}
+
+/*
+ * A barrier reads heavier than a warning: a solid rule down the side rather
+ * than a tint, so the two separate without a fifth colour.
+ */
+.flagDetailBlocking {
+  border-color: var(--stop);
+  border-left-width: 6px;
+  background: var(--stop-wash);
+}
+
+.flagDetailHigh {
+  border-color: var(--stop);
+  background: var(--stop-wash);
+}
+
+.flagDetailMedium {
+  border-color: var(--warn);
+  background: var(--warn-wash);
+}
+
+.flagDetailLow {
+  border-color: var(--line-strong);
+  background: var(--surface-sunken);
+}
+
+.flagDetailWhat {
+  font-weight: 600;
+  font-size: var(--text-sm);
+}
+
+.flagDetailWhy {
+  font-size: var(--text-sm);
+  margin: var(--s1) 0 0;
+}
+
+/* --- Score ---------------------------------------------------------------- */
+
+.score {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+}
+
+.scoreValue {
+  font-size: var(--text-2xl);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.scoreOf {
+  color: var(--ink-muted);
+  font-size: var(--text-sm);
+}
+
+.scoreReasons {
+  margin: var(--s3) 0 0;
+  padding-left: var(--s4);
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+}
+
+.scoreReasons li {
+  margin-bottom: var(--s1);
+}
+
+/* --- Checklist ------------------------------------------------------------ */
+
+.checkList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+
+.checkItem {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--s3);
+}
+
+.checkHead {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s3);
+}
+
+.checkLabel {
+  font-weight: 500;
+  font-size: var(--text-sm);
+  flex: 1;
+}
+
+.checkProves {
+  font-size: var(--text-xs);
+  color: var(--ink-muted);
+  margin: var(--s1) 0 0;
+}
+
+.checkForm {
+  margin-top: var(--s3);
+  padding-top: var(--s3);
+  border-top: 1px dashed var(--line);
+}
+
+.decideActions {
+  display: flex;
+  gap: var(--s3);
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: var(--s4);
+}
+
+.buttonStop {
+  border-color: var(--stop);
+  color: var(--stop);
+}
+
+.buttonStop:hover:not(:disabled) {
+  background: var(--stop-wash);
+}
+
+/*
+ * The trail of attempts on one check. Append-only means a correction is a new
+ * entry, so this is deliberately a LIST and not a single latest value — a
+ * reviewer changing their mind is itself evidence.
+ */
+.checkHistory {
+  list-style: none;
+  margin: var(--s2) 0 0;
+  padding: 0 0 0 var(--s3);
+  border-left: 2px solid var(--line);
+  font-size: var(--text-xs);
+  color: var(--ink-muted);
+}
+
+.checkHistory li {
+  margin-bottom: 2px;
+}
+
+/* Where the reviewer actually goes to run this check. */
+.verifyAt {
+  margin: 0 0 var(--s3);
+  font-size: var(--text-sm);
+}
+
+.verifyLink {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  color: var(--accent);
+}
+
+/*
+ * The reviewer's identity, at the TOP of the dossier and asked once.
+ *
+ * It used to be a text box repeated inside all twelve check forms, which made
+ * a typed name look like twelve separate attestations instead of one.
+ */
+.identity {
+  border: 1px solid var(--warn);
+  background: var(--warn-wash);
+  border-left-width: 3px;
+  border-radius: var(--radius);
+  padding: var(--s3) var(--s4);
+  margin-bottom: var(--s5);
+}
+
+.identityHead {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  font-weight: 600;
+  margin-bottom: var(--s1);
+}
+
+.identityBody {
+  font-size: var(--text-sm);
+  margin: 0 0 var(--s3);
+  max-width: 78ch;
+}
+
+.identityField {
+  max-width: 380px;
+}
+
+/* --- Evidence ------------------------------------------------------------- */
+
+.evidence {
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius);
+  padding: var(--s3);
+  margin-bottom: var(--s4);
+  background: var(--surface-sunken);
+}
+
+.evidenceHead {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  margin-bottom: var(--s1);
+}
+
+.evidenceList {
+  list-style: none;
+  margin: var(--s2) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+}
+
+.evidenceItem {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  font-size: var(--text-sm);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--s1) var(--s2);
+}
+
+.evidenceName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
+ * The real file input is hidden but NOT display:none — a display:none input is
+ * unreachable by keyboard and invisible to assistive technology. Clipping it
+ * keeps it focusable, and the label is the visible control.
+ */
+.fileInput {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.fileLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  font-size: var(--text-sm);
+  padding: var(--s2) var(--s3);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.fileLabel:hover {
+  background: var(--surface-sunken);
+}
+
+/* The input is clipped, so its focus ring has to be borrowed by the label. */
+.fileInput:focus-visible + .fileLabel {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* What a check records as structured values, not prose. */
+.requiredFields {
+  border-left: 2px solid var(--accent);
+  padding-left: var(--s3);
+  margin-bottom: var(--s4);
+}
+
+/* --- The audit trail ------------------------------------------------------ */
+
+/*
+ * A vertical timeline. The rule down the left is what makes a list of events
+ * read as a SEQUENCE rather than as a set — which is the whole difference
+ * between an audit trail and a table of rows.
+ */
+.trail {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.trailItem {
+  display: grid;
+  grid-template-columns: 30px 1fr;
+  gap: var(--s3);
+  position: relative;
+  padding-bottom: var(--s5);
+}
+
+/* The connecting rule, drawn from each dot down to the next. */
+.trailItem::before {
+  content: "";
+  position: absolute;
+  left: 14px;
+  top: 26px;
+  bottom: 0;
+  width: 2px;
+  background: var(--line);
+}
+
+.trailItem:last-child::before {
+  display: none;
+}
+
+.trailDot {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  display: grid;
+  place-items: center;
+  color: var(--ink-muted);
+  position: relative;
+  z-index: 1;
+  flex: none;
+}
+
+.trailDotFaded {
+  opacity: 0.5;
+}
+
+.trailBody {
+  min-width: 0;
+  padding-top: 3px;
+}
+
+/*
+ * The summary line is a BUTTON, because it discloses the detail. A div with an
+ * onClick is unreachable by keyboard and announces nothing.
+ */
+.trailHead {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  flex-wrap: wrap;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.trailHead:disabled {
+  cursor: default;
+}
+
+.trailSummary {
+  font-weight: 500;
+  font-size: var(--text-sm);
+}
+
+/* Faded, never hidden. */
+.trailFaded {
+  color: var(--ink-muted);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+.trailMeta {
+  font-size: var(--text-xs);
+  color: var(--ink-muted);
+  margin-top: 2px;
+}
+
+.trailDetail {
+  margin: var(--s3) 0 0;
+  padding: var(--s3);
+  background: var(--surface-sunken);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font-size: var(--text-sm);
+}
+
+.trailDetail > div {
+  display: grid;
+  grid-template-columns: minmax(120px, max-content) 1fr;
+  gap: var(--s2) var(--s4);
+  padding: 2px 0;
+}
+
+.trailDetail dt {
+  color: var(--ink-muted);
+}
+
+.trailDetail dd {
+  margin: 0;
+  word-break: break-word;
+}
+
+@media (max-width: 620px) {
+  .trailDetail > div {
+    grid-template-columns: 1fr;
+    gap: 0;
+    margin-bottom: var(--s2);
+  }
+}
+
+.trailActions {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  flex-wrap: wrap;
+  margin-top: var(--s2);
+}
+
+/*
+ * The identity score, restated beside the Approve button.
+ *
+ * It already appears in the checks section, but a dossier runs to several
+ * screens and that puts it out of view at the exact moment somebody decides.
+ * Boxed rather than italicised: it is a fact about the application, not an
+ * aside about the page.
+ */
+.decideScore {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s2);
+  margin: 0 0 var(--s5);
+  padding: var(--s3) var(--s4);
+  background: var(--surface-sunken);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  line-height: 1.6;
+}
+
+/*
+ * The edit panel on the dossier.
+ *
+ * Set apart from the read-only sections above it, because everything else on
+ * this page is a record of what happened and this is the one place that
+ * CHANGES it. Looking the same as the rest would be the wrong signal.
+ */
+.editPanel {
+  background: var(--surface-sunken);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  padding: var(--s5);
+  margin-top: var(--s4);
+}
+
+.editGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--s3) var(--s4);
+  margin: var(--s3) 0 var(--s5);
+}

@@ -70,11 +70,38 @@ export function assertAffiliationTransition(from: AffiliationStatus, to: Affilia
  * notice period the practitioner is still working and still bulk billing, and
  * blocking capture then would break a practice that has done nothing wrong.
  */
+/**
+ * The last instant of a calendar day, in UTC.
+ *
+ * The THIRD place today where a date was compared as an instant, after the
+ * notice constraint and the same-day departure. The pattern is always the
+ * same: a date input arrives as midnight, gets compared against now(), and
+ * silently means "the start of that day" when the rule means "that day".
+ */
+function endOfDayUtc(date: Date): Date {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 23, 59, 59, 999));
+}
+
 export function canCaptureUnder(affiliation: Affiliation, now: Date = new Date()): boolean {
   if (affiliation.deregisteredAt && affiliation.deregisteredAt <= now) return false;
   if (affiliation.status === 'active') return true;
   if (affiliation.status === 'ending') {
-    return !affiliation.endsAt || affiliation.endsAt > now;
+    /*
+     * THE END DATE IS A DAY, NOT AN INSTANT — their LAST day at this
+     * location, and they are working it.
+     *
+     * This compared `endsAt > now` directly. A date input arrives as midnight,
+     * so on the morning of somebody’s last day the comparison was already
+     * false and capture was blocked FOR THE WHOLE OF A DAY THEY WERE STILL
+     * WORKING. Agreements that should have been captured were refused, and
+     * the screen said both "capture continues until then" and "this has
+     * ended" at the same time, which is how it was noticed.
+     *
+     * Capture runs to the END of the last day. Compared in UTC to match every
+     * other date comparison in the domain.
+     */
+    if (!affiliation.endsAt) return true;
+    return now < endOfDayUtc(affiliation.endsAt);
   }
   return false;
 }

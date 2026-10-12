@@ -1,0 +1,57 @@
+{
+  "$comment": "VERSIONED CONTENT, NOT CODE (hard rule 14). Everything the Signed-DB4 renderer draws that WE author: the page geometry, the fixed labels beside each reproduced value, and the footer that distinguishes our reproduction from the prescribed form. NOTHING HERE IS A VALUE FROM THE FORM. Every patient detail, every service row, every heading line, the privacy notice and both assignment statements are DATA read from the DB4 Print Record and reproduced verbatim (D-2026-09-14-02/-03); this file only says what the page calls them and how it is laid out. THE FOOTER IS THE OPEN RULING (DB4-AND-AOBL.md section 10 item 0). The DB4's own heading says the government's form is the approved form; hard rule 12 forbids us saying that of OUR page, and DECISIONS.md D-2026-09-14-02 keeps the heading verbatim and answers it with a provenance line in the footer. That line is here rather than in the renderer precisely so that changing it when Carl rules is a content edit and a version bump, not a rebuild. The loader refuses a footer that claims our page is certified, approved or accredited, so a well-meaning edit cannot reintroduce the thing the footer exists to prevent. BUMP `version` ON EVERY EDIT: it is recorded on every agreement whose Signed-DB4 was produced from it, and the resolved copy of this file travels inside the stored render payload so an old Signed-DB4 keeps re-rendering byte-identically under the wording it was made with (hard rule 13).",
+  "version": "signed-db4-2026-09-1",
+  "layout": {
+    "$comment": "Points. A4 is 595 x 842. The five service columns must sum to no more than the text width (595 - 2 * marginPoints); the loader checks it, because a column set that overflows would wrap differently on a long description and two renders of one form would still be identical but the page would be wrong.",
+    "marginPoints": 42,
+    "titleSize": 12,
+    "headingSize": 9,
+    "bodySize": 9,
+    "smallSize": 7,
+    "serviceColumnWidths": [52, 30, 44, 300, 60]
+  },
+  "labels": {
+    "$comment": "The words beside the reproduced values. UK/AU spelling. Not in the web string table because this is not a screen: it is the wording baked into a hashed document, and a translated word changing the bytes of stored evidence is exactly what hard rule 13 forbids. A translated Signed-DB4 would be a new content version.",
+    "formReference": "Form reference",
+    "locationId": "Location ID",
+    "claimStatus": "Claim status",
+    "serviceDate": "Date of service",
+    "servicingLocation": "Servicing location",
+    "patient": "Patient",
+    "patientRecordNumber": "Chart number",
+    "medicareCard": "Medicare card number",
+    "irn": "IRN",
+    "dateOfBirth": "Date of birth",
+    "address": "Address",
+    "providers": "Providers",
+    "servicingProvider": "Servicing provider",
+    "payeeProvider": "Payee provider",
+    "providerNumber": "Provider number",
+    "services": "Services",
+    "columnDate": "Date",
+    "columnTime": "Time",
+    "columnItem": "Item",
+    "columnDescription": "Description",
+    "columnBenefit": "Benefit assigned",
+    "privacyNotice": "Privacy notice",
+    "assignment": "Assignment",
+    "referral": "Referral",
+    "acrf": "ACRF",
+    "lspn": "LSPN",
+    "requestingProvider": "Requesting provider",
+    "requestingProviderNumber": "Requesting provider number",
+    "dateOfRequest": "Date of request",
+    "periodOfReferral": "Period of referral",
+    "signature": "Signature of the person assigning benefits",
+    "signedAt": "Signed",
+    "capturedAt": "Print record captured",
+    "notProvided": "—"
+  },
+  "footer": {
+    "$comment": "THE DEFAULT, PENDING CARL'S RULING. Three things it has to do at once: say who drew the page (so the heading above cannot be read as our claim), say plainly that this is a reproduction rather than the prescribed form, and use only the permitted self-assessment wording (REQ-65C-05). It deliberately does NOT repeat or rebut the heading line, because arguing with the government's own words on a reproduction of its own form reads worse than simply saying whose page this is.",
+    "provenance": "Reproduced by AoBPlatform from the practice's own billing record. This page is AoBPlatform's reproduction of the form the practice printed, and is not the prescribed form itself.",
+    "lines": [
+      "Checked against the s 65C data set (self-assessment). AoBPlatform makes no claim of its own about the wording above, which is reproduced from the practice's printed record."
+    ]
+  }
+}

@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { canonicalJson } from './canonical-json';
 import PDFDocument from 'pdfkit';
 import type { AgreementRenderer, RenderedArtefact } from './renderer';
 
@@ -78,11 +79,4 @@ export class DeterministicPdfRenderer implements AgreementRenderer {
       mediaType: 'application/pdf',
     };
   }
-}
-
-function canonicalJson(value: unknown): string {
-  if (value === null || typeof value !== 'object') return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
-  const keys = Object.keys(value as Record<string, unknown>).sort();
-  return `{${keys.map((k) => `${JSON.stringify(k)}:${canonicalJson((value as Record<string, unknown>)[k])}`).join(',')}}`;
 }

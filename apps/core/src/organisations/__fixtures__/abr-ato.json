@@ -1,0 +1,10 @@
+{
+  "note": "ONE REAL RESPONSE from the ABN Lookup document-style JSON service, recorded so the mapper is tested against what the register actually sends rather than against what we hoped it would send. Re-record by running the guarded live smoke test; do not hand-edit.",
+  "recordedAt": "2026-09-04",
+  "method": "AbnDetails",
+  "request": "GET https://abr.business.gov.au/json/AbnDetails.aspx?abn=51824753556&guid=<removed — the GUID is a credential and lives in ABR_API_GUID>",
+  "subject": "ABN 51 824 753 556, the Australian Taxation Office. A public body, deliberately: recording a real response means recording a real entity, and this one is nobody's personal information.",
+  "contentType": "text/javascript; charset=utf-8",
+  "status": 200,
+  "body": "callback({\"Abn\":\"51824753556\",\"AbnStatus\":\"Active\",\"AbnStatusEffectiveFrom\":\"1999-11-01\",\"Acn\":\"\",\"AddressDate\":\"2021-04-27\",\"AddressPostcode\":\"2640\",\"AddressState\":\"NSW\",\"BusinessName\":[],\"EntityName\":\"AUSTRALIAN TAXATION OFFICE\",\"EntityTypeCode\":\"CGE\",\"EntityTypeName\":\"Commonwealth Government Entity\",\"Gst\":\"2000-07-01\",\"Message\":\"\"})"
+}

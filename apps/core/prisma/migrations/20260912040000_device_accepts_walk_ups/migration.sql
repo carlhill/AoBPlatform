@@ -1,0 +1,30 @@
+-- DOES THIS TABLET ACCEPT WALK-UPS? (Carl, 12 Sep 2026, looking at the kiosk
+-- idle screen: "if the reception is pushing to the tablet ... then it should
+-- not say Begin (it will confuse the user/patient) ... It should say 'Please
+-- wait. Loading your details'".)
+--
+-- A tablet on a counter for anyone to pick up is the WALK-UP tablet: it says
+-- Begin, the patient types three details, and the server finds their one
+-- waiting row. A tablet reception HANDS to a named patient after pushing their
+-- agreement to it is not that tablet. There the details are already known,
+-- Begin means "type them again", and a patient who presses it is dropped into
+-- the wrong flow.
+--
+-- DEFAULT TRUE, which is the opposite direction from `showsWaitingList` and
+-- for the opposite reason. That column widens a DISCLOSURE, so its default is
+-- the narrow one. This column narrows what a tablet OFFERS, and every device
+-- that exists today offers the walk-up path — a migration that switched them
+-- all to "please wait" would turn every counter tablet in the country into a
+-- screen that does nothing. Turning walk-ups off is an act somebody performs
+-- per device, from the console.
+--
+-- IT IS SET FROM THE CONSOLE, NEVER FROM THE TABLET (`PATCH
+-- /devices/:id/walk-ups`), for the same reason every other device setting is:
+-- a device that can change what it offers is a device a passer-by can change.
+--
+-- Idempotent (DEV-LOOP.md): a migration that only works once passes in
+-- development and then breaks `prisma migrate deploy` on the next start.
+-- Reversible by `ALTER TABLE "devices" DROP COLUMN IF EXISTS "acceptsWalkUps";`
+-- — the column is new, nothing reads it before this migration, and dropping it
+-- restores exactly today's behaviour because today's behaviour is its default.
+ALTER TABLE "devices" ADD COLUMN IF NOT EXISTS "acceptsWalkUps" BOOLEAN NOT NULL DEFAULT true;

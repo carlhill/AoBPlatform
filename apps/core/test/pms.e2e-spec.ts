@@ -6,6 +6,11 @@ import type { ValidationResponse } from '@aobplatform/contracts';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { RULES_CLIENT } from '../src/rules-client/rules-client.module';
+import { genericAgreementTemplate } from '@aobplatform/domain';
+import { createServicingProvider, deleteSeededAnchors } from './anchor';
+
+/** From the shipped template, never retyped — the words are versioned content. */
+const EPISODIC_AFFIRMATIONS = genericAgreementTemplate('episodic').statements.map((s) => s.key);
 
 const passingRules = {
   validate: async (): Promise<ValidationResponse> => ({
@@ -37,14 +42,7 @@ describe('M9 PMS wiring (e2e, real Postgres + mock adapter)', () => {
     await prisma.withPractice(practiceId, async (tx) => {
       await tx.practice.create({ data: { id: practiceId, name: 'PMS Wiring Test Practice' } });
       providerId = (
-        await tx.provider.create({
-          data: {
-            practiceId,
-            name: 'Dr Example Provider',
-            providerType: 'general_practitioner',
-            pmsLinkageKey: 'mock-prov-001',
-          },
-        })
+        await createServicingProvider(tx, practiceId, { name: 'Dr Example Provider', providerType: 'general_practitioner', pmsLinkageKey: 'mock-prov-001' })
       ).id;
       patientId = (
         await tx.patient.create({
@@ -75,6 +73,7 @@ describe('M9 PMS wiring (e2e, real Postgres + mock adapter)', () => {
       await tx.assignor.deleteMany({});
       await tx.patient.deleteMany({});
       await tx.provider.deleteMany({});
+      await deleteSeededAnchors(tx);
       await tx.practice.deleteMany({});
     });
     await prisma.vaultOutbox.deleteMany({});
@@ -121,7 +120,7 @@ describe('M9 PMS wiring (e2e, real Postgres + mock adapter)', () => {
     const draft = await request(app.getHttpServer())
       .post('/agreements')
       .set('x-practice-id', practiceId)
-      .send({ type: 'episodic_pre', providerId, patientId, assignorId, assignorIsPatient: true })
+      .send({ type: 'episodic_pre', affiliationId: providerId, patientId, assignorId, assignorIsPatient: true })
       .expect(201);
     const agreementId = draft.body.id;
     await request(app.getHttpServer())
@@ -137,7 +136,13 @@ describe('M9 PMS wiring (e2e, real Postgres + mock adapter)', () => {
     const signed = await request(app.getHttpServer())
       .post(`/agreements/${agreementId}/sign`)
       .set('x-practice-id', practiceId)
-      .send({ method: 'drawn', channel: 'in_practice' })
+      /*
+       * TAP-TO-APPROVE, because this suite is about WRITE-BACK and not about
+       * the mark. A `drawn` signature must now arrive with the strokes and the
+       * image it produced (REQ-SIG-01/-02) and is refused without them, which
+       * would make this a test of the signature payload by accident.
+       */
+      .send({ method: 'tap_to_approve', channel: 'in_practice', affirmations: EPISODIC_AFFIRMATIONS })
       .expect(201);
 
     expect(signed.body.status).toBe('stored');
@@ -156,10 +161,18 @@ describe('M9 PMS wiring (e2e, real Postgres + mock adapter)', () => {
       tx.agreement.findMany({ where: { status: 'stored' } }),
     );
     expect(agreements.length).toBeGreaterThan(0);
+    /*
+     * AND MAKE IT THE OLDEST UNWRITTEN ONE. `list_unwritten_stored_agreements`
+     * takes the fifty oldest, which is right for the real sweep -- the one
+     * that has been waiting longest is the one an auditor is about to ask
+     * about -- and means this assertion is otherwise hostage to how many
+     * unwritten agreements every other suite happened to leave behind. Backing
+     * the timestamp up is also the case the FR-9.3 alert exists for.
+     */
     await prisma.withPractice(practiceId, (tx) =>
       tx.agreement.update({
         where: { id: agreements[0].id },
-        data: { writtenBackAt: null, pmsDocumentKey: null },
+        data: { writtenBackAt: null, pmsDocumentKey: null, createdAt: new Date('2020-01-01T00:00:00Z') },
       }),
     );
 

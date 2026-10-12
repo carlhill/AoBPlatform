@@ -14,7 +14,17 @@ export interface DispatchRequest {
   readonly channel: string;
   readonly to: string;
   readonly subject?: string;
+  /**
+   * The plain-text part. ALWAYS required, never optional.
+   *
+   * Not because many people read plain text, but because a message with no
+   * text part scores as spam with most filters, and because screen readers and
+   * terminal clients deserve better than tag soup. When `html` is present the
+   * two are sent as multipart/alternative and the client picks.
+   */
   readonly body: string;
+  /** The HTML part, when the message has a designed form. */
+  readonly html?: string;
 }
 
 export interface DispatchResult {

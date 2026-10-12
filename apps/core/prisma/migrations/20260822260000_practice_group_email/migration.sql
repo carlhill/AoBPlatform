@@ -1,0 +1,17 @@
+-- A shared mailbox for messages to the PRACTICE rather than to a person.
+--
+-- WHY IT IS SEPARATE FROM adminEmail, and this is the whole point of the
+-- column: `adminEmail` identifies a HUMAN who holds the practice-admin role.
+-- `groupEmail` is where practice-level correspondence goes -- "please review
+-- your details for recertification", "your certification lapses in 30 days".
+--
+-- Collapsing the two is what produced the shared-account problem. If the
+-- identity address is also the group address, then everybody with mailbox
+-- access can request a credential-enrolment link, and every practice-admin
+-- action becomes attributable to a mailbox rather than to a person. Splitting
+-- them lets the practice have continuity (a mailbox that outlives any
+-- individual) WITHOUT giving up attribution (an account that belongs to one).
+--
+-- NEVER an identity. Nothing enrols against this address, no invitation is
+-- sent to it, and no account is keyed on it. It receives notices only.
+ALTER TABLE "practices" ADD COLUMN IF NOT EXISTS "groupEmail" text;

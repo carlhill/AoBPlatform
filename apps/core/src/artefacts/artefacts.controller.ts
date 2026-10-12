@@ -1,3 +1,4 @@
+import { SessionActor, type Actor } from '../auth/actor.decorator';
 import {
   BadRequestException,
   Body,
@@ -68,7 +69,11 @@ export class ArtefactsController {
   constructor(private readonly artefacts: ArtefactsService) {}
 
   @Post()
-  upload(@Headers('x-practice-id') practiceId: string | undefined, @Body() dto: UploadArtefactDto) {
+  upload(
+    @Headers('x-practice-id') practiceId: string | undefined,
+    @Body() dto: UploadArtefactDto,
+    @SessionActor() actor: Actor | undefined,
+  ) {
     let bytes: Uint8Array;
     try {
       // Strict: a data: URL prefix or stray whitespace would otherwise be
@@ -78,7 +83,19 @@ export class ArtefactsController {
     } catch {
       throw new BadRequestException('contentBase64 is not valid base64.');
     }
-    return this.artefacts.upload(requirePractice(practiceId), { ...dto, bytes });
+    /*
+     * THE SESSION WINS. A name in the body is an assertion by whoever sent
+     * the request; the token subject is a claim the realm signed. The body
+     * value survives only where there is no verified session at all, which
+     * is the staged-auth path and not a state to write new evidence from.
+     */
+    const uploadedByName = actor?.name ?? dto.uploadedByName;
+    if (!uploadedByName) {
+      throw new BadRequestException(
+        'Evidence records who supplied it, so this needs a signed-in user.',
+      );
+    }
+    return this.artefacts.upload(requirePractice(practiceId), { ...dto, uploadedByName, bytes });
   }
 
   @Get()
@@ -95,17 +112,45 @@ export class ArtefactsController {
    * always nosniff — the headers come from the domain layer so there is one
    * definition of how an artefact is served.
    */
+  /**
+   * Does this file actually evidence what it is about to be cited for?
+   *
+   * Called after upload and before the check is saved, because the check being
+   * evidenced is not known at upload time — a file is uploaded, then cited.
+   *
+   * Returns WARNINGS, never a refusal. Both of the things it looks for are
+   * defeatable by anyone actually trying: a hash match is beaten by re-exporting
+   * the file, and a content match is satisfied by a fabricated screenshot. What
+   * a warning does that a block cannot is put a specific, checkable statement in
+   * front of the person deciding, at the moment they can still act on it.
+   */
+  @Get(':artefactId/inspect')
+  inspect(
+    @Headers('x-practice-id') practiceId: string | undefined,
+    @Param('artefactId', ParseUUIDPipe) artefactId: string,
+    @Query('checkKey') checkKey?: string,
+    @Query('identifier') identifier?: string,
+    @Query('identifierLabel') identifierLabel?: string,
+  ) {
+    return this.artefacts.inspect(requirePractice(practiceId), artefactId, {
+      checkKey,
+      identifier,
+      identifierLabel,
+    });
+  }
+
   @Get(':artefactId/content')
   async download(
     @Headers('x-practice-id') practiceId: string | undefined,
     @Headers('x-read-by') readBy: string | undefined,
     @Param('artefactId', ParseUUIDPipe) artefactId: string,
+    @SessionActor() actor: Actor | undefined,
     @Res() res: Response,
   ) {
     const { bytes, headers } = await this.artefacts.download(
       requirePractice(practiceId),
       artefactId,
-      readBy ?? 'unattributed',
+      actor?.name ?? readBy ?? 'unattributed',
     );
     for (const [key, value] of Object.entries(headers)) res.setHeader(key, value);
     res.send(Buffer.from(bytes));

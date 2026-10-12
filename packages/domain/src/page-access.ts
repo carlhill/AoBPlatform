@@ -1,0 +1,614 @@
+/**
+ * Which audience may reach which page.
+ *
+ * WHY THIS EXISTS AT ALL. Until now there was no such map anywhere. Each
+ * screen decided for itself, mostly by not deciding: `/practice/users` was
+ * reachable by any account with a practice claim, which meant a receptionist
+ * could open the page that decides who may reach patient records. The rule was
+ * not wrong, it was absent — and an absent rule looks exactly like a permissive
+ * one from the outside.
+ *
+ * A MAP RATHER THAN A DECORATOR PER PAGE. Access spread across twenty-six
+ * files cannot be reviewed; you can only audit it by reading all of them and
+ * noticing what is missing, which is the thing nobody ever does. Here it is one
+ * table somebody can read in a minute and say "that is wrong" about.
+ *
+ * DEFAULT DENY. A page not in this table is refused, so adding a screen and
+ * forgetting to classify it fails closed and loudly rather than quietly
+ * shipping an open page. Same reasoning as the RLS policies: the failure that
+ * costs you is the one that looks like success.
+ *
+ * THIS IS NOT THE ONLY CHECK. It answers "may this audience open this page",
+ * which is coarse. It does not answer "may this person touch THIS record" —
+ * that is RLS for practice data, and for an assignor it is the relationship to
+ * a specific patient, which has an expiry and a revocation and cannot be
+ * expressed as a role. A role says somebody is a carer; only the relationship
+ * says which patient, and until when.
+ */
+
+export class PageAccessError extends Error {}
+
+/**
+ * WHO somebody is, in the only terms this map cares about.
+ *
+ * Deliberately not the same list as the Keycloak realm roles. `front_desk`,
+ * `practice_manager` and `practice_principal` all describe jobs at a practice
+ * and all reach the same pages; what separates them here is whether they hold
+ * the practice's single administrator account, which is a column on the staff
+ * row rather than a realm role. Roles describe people; audiences describe
+ * doors.
+ */
+export const AUDIENCES = [
+  'public',
+  'platform',
+  'practice',
+  'practice_admin',
+  'practitioner',
+  'patient',
+  'assignor',
+] as const;
+export type Audience = (typeof AUDIENCES)[number];
+
+export type PageRule = {
+  /** Any one of these is enough. */
+  readonly audiences: readonly Audience[];
+  /** Why it is classified this way — read by the next person to change it. */
+  readonly why: string;
+  /**
+   * Matches everything beneath it, for routes with a `[token]` or `[id]`
+   * segment.
+   *
+   * OPT-IN, because making it the default was a bug the tests caught: with
+   * blanket prefix matching, a brand new `/practice/anything` inherited
+   * `/practice`'s audiences and was allowed. That is precisely the case this
+   * table exists to refuse — an unclassified page must fail closed, and it
+   * cannot do that if its parent answers for it.
+   */
+  readonly matchesChildren?: true;
+};
+
+/**
+ * Every page, and who may open it.
+ *
+ * Paths with a `[token]` or `[id]` segment are matched by prefix, so the
+ * dynamic part never has to appear here.
+ */
+export const PAGES: Readonly<Record<string, PageRule>> = {
+  '/': {
+    audiences: ['public'],
+    why: 'The landing page. Says what this is and offers the two ways in.',
+  },
+  '/apply': {
+    audiences: ['public'],
+    why: 'A practice applying. There is no account yet, by definition.',
+  },
+  '/help': {
+    audiences: ['public'],
+    why: 'Where somebody signed in but unplaceable lands. Public because being unplaceable is the whole point — any audience can arrive here.',
+  },
+  '/callback': {
+    audiences: ['public'],
+    why: 'The OIDC redirect. Reached mid-sign-in, when there is not yet a session to check.',
+  },
+
+  /*
+   * TOKEN-BEARING PAGES. Public in the sense that no session is required, and
+   * not public in any other sense: the token is the authorisation, it is
+   * single-purpose and unguessable, and each of these refuses without one.
+   *
+   * They must stay reachable without a session because the people answering
+   * them are precisely the people who cannot sign in — a practitioner who has
+   * not accepted yet, an applicant with no account, somebody proving they hold
+   * an address that is not yet the practice's.
+   */
+  '/invitation': {
+    audiences: ['public'],
+    why: 'A practitioner accepting an affiliation. They may have no account with us at all yet.',
+    matchesChildren: true,
+  },
+  '/status': {
+    audiences: ['public'],
+    why: 'An applicant checking progress, and correcting what they told us. No account until approval.',
+    matchesChildren: true,
+  },
+  '/verify': {
+    audiences: ['public'],
+    why: 'Confirming an email address. Held by whoever received it, which is the whole test.',
+    matchesChildren: true,
+  },
+  /*
+   * THE PATIENT'S PAGES, and they were not here at all — so the guard answered
+   * "There is no such page" for the approval screen every patient is sent to.
+   * The same omission as `/practice/reconciliation` before it: the page moved
+   * under `/patient` and nobody classified it.
+   *
+   * Public in the token-bearing sense above: no session, and none possible
+   * (REQ-PORT-08). Each page refuses without a token, and the server refuses a
+   * token whose identity challenge has not passed.
+   */
+  '/patient': {
+    audiences: ['public'],
+    why: 'A patient approving from the link they were sent, and their own half of the correspondence log. No account exists to sign in with — the token is the authorisation.',
+    matchesChildren: true,
+  },
+  /*
+   * THE KIOSK. Public in exactly the sense the token-bearing pages above are:
+   * no session is required, and none is possible.
+   *
+   * The tablet is trusted because a staff member signed in on it and it is
+   * scoped to their practice (Part 6 decision 3) — not because the browser
+   * carries a Keycloak session, which it does not and which the Expo build it
+   * replaces never had either. Scope reaches the server as `x-practice-id`,
+   * where RLS re-checks it: a wrong or absent id yields nothing rather than
+   * leaking somebody else's waiting room.
+   *
+   * There is no `matchesChildren` here, and that is deliberate. The ceremony's
+   * steps are component state rather than routes, so there are no children —
+   * and if somebody later adds one it must be classified rather than inherit
+   * this entry.
+   */
+  '/kiosk': {
+    audiences: ['public'],
+    why: 'The waiting-room tablet. A practice-owned device with no sign-in of its own; scope is the practice header, re-checked by RLS. There is deliberately no patient mobile app.',
+  },
+
+  '/practice/confirm-email': {
+    audiences: ['public'],
+    why: 'Confirming a NEW administrator address. Held by somebody who by definition cannot yet sign in as this practice.',
+  },
+  '/practice/stop-email-change': {
+    audiences: ['public'],
+    why: 'Stopping that change. Sent to the OLD address, whose holder may be losing access as we speak.',
+  },
+  '/practice/confirm-backup': {
+    audiences: ['public'],
+    why: 'A backup address proving it works. Held by somebody who may have no account at all — being reachable is their entire role.',
+  },
+
+  /*
+   * PLATFORM. Note that three of these sit under /practice/ and are not
+   * practice pages at all — they show every practice's work. The path is
+   * misleading and the classification is what actually governs, but it is
+   * worth moving them.
+   */
+  '/review': {
+    audiences: ['platform'],
+    why: 'Reviewer dossiers. Carries applicant evidence across every practice.',
+    matchesChildren: true,
+  },
+  '/practice/reviews': {
+    audiences: ['platform'],
+    why: 'The review-task queue. Despite the path this spans practices and is ours, not a practice’s.',
+  },
+  '/practice/queue': {
+    audiences: ['platform'],
+    why: 'The outbound queue. Every practice’s messages, so not a practice screen despite the path.',
+  },
+  '/practice/queuebyOrg': {
+    audiences: ['platform'],
+    why: 'The same queue, grouped. Same reasoning.',
+  },
+  '/practice/queuebyOrgLocDepartment': {
+    audiences: ['platform'],
+    why: 'The same queue, grouped further. Same reasoning.',
+  },
+  '/platform/acting-as': {
+    audiences: ['platform'],
+    why: 'The register of who is acting as which practice. Ours, and the one page that can stop a session early.',
+  },
+  /*
+   * A PRACTICE'S PAGES, REACHED AS THE PLATFORM.
+   *
+   * Not a crack in the acting-as rule — it is the other half of it. Some work
+   * about a practice is OURS: recording what the AHPRA register says is an
+   * independent attestation, and doing it from inside the practice's session
+   * would record it as theirs and force a reapproval for our own job.
+   *
+   * So the rule is not "operators reach practice pages only by acting as
+   * them". It is "an operator does the PRACTICE's acts by acting as them, and
+   * the PLATFORM's acts as themselves". These routes are the second case, and
+   * what they expose is narrower than the practice route, not wider.
+   */
+  '/platform/practices': {
+    audiences: ['platform'],
+    why: 'A practice’s pages reached as the platform, for work that is ours rather than theirs — the register check above all. Never for the practice’s own acts, which still need acting-as.',
+    matchesChildren: true,
+  },
+  '/platform/acting-as/history': {
+    audiences: ['platform'],
+    why: 'Every acting-as session there has ever been, with its reason. Asked about months later, so it is a search rather than a dashboard.',
+  },
+  '/platform/aobprinter-hosts': {
+    audiences: ['platform'],
+    why: 'Every practice’s AOBPRINTER host, worst first (PRINTER-HEARTBEAT.md §4). Spans practices, so it is ours; counts, versions, times and status, never a practice’s records.',
+  },
+  '/platform/templates': {
+    audiences: ['platform'],
+    why: 'Agreement wording practices have proposed, waiting to be read. A practice may not activate the words its own patients sign, so activation is ours — and this is the only page that performs it.',
+  },
+
+  /*
+   * PRACTICE. A platform operator reaches these by ACTING AS somebody at the
+   * practice, which carries a practice claim — so `practice` covers them
+   * without naming `platform` here. Naming platform would let an operator open
+   * them directly and leave no record of whose behalf they were acting on.
+   */
+  /*
+   * THE ORGANISATION LIST, and the one place a platform operator legitimately
+   * belongs on a `/practice/...` path without acting as anybody.
+   *
+   * It was classified `practice` only, which closed it to the exact audience it
+   * was written for: the component redirects practice-scoped users away and
+   * lists every organisation, so an operator was blocked from the operator's
+   * page while a practice user was sent off it — nobody could open it.
+   *
+   * THIS IS NOT A CRACK IN THE ACTING-AS RULE. Every page BELOW this one stays
+   * `practice`-only, so an operator still cannot read one practice's setup,
+   * patients or messages without opening a session against it and leaving a
+   * record of on whose behalf. This page carries no practice's work — it
+   * carries names, ABNs and readiness, which is the directory an operator needs
+   * in order to choose which practice to act as at all. Without it the only way
+   * to reach a practice is to already know its id.
+   */
+  '/practice': {
+    audiences: ['practice', 'platform'],
+    why: 'The practice’s hub, and the platform’s list of every organisation. The list is how an operator finds a practice to act as; everything below it stays practice-only.',
+  },
+  /*
+   * THE DAY'S WORK, AND WHERE PRACTICE STAFF LAND (Carl, 12 Sep 2026;
+   * PRACTICE-NAVIGATION.md §2).
+   *
+   * `practice` ALONE, and it grants nothing: every destination on it names its
+   * own audiences and is gated by them, so a receptionist sees the four they
+   * may open and an administrator sees the same four. The page is a set of
+   * links, not a source of facts — there is no read behind it of its own.
+   *
+   * WHY IT EXISTS RATHER THAN MORE CARDS ON `/practice/setup`. The hub is
+   * organised by WHAT A THING IS; nobody arrives at a practice console
+   * thinking "I need a configuration page". A receptionist starting a shift
+   * and an administrator changing the letterhead were landing on one screen
+   * and each reading past the other's work. This is the shift's half, and the
+   * hub keeps configuration and oversight (§1).
+   */
+  '/practice/today': {
+    audiences: ['practice'],
+    why: 'The day’s work: the front desk, who is waiting, the tablets, the patients and the messages. Where practice staff land, because the shift is the job.',
+  },
+  '/practice/setup': { audiences: ['practice'], why: 'Setting the practice up. Configuration and oversight — the day’s work is on /practice/today.' },
+  '/practice/entity': { audiences: ['practice'], why: 'The practice’s own record.' },
+  '/practice/application': { audiences: ['practice'], why: 'What the practice told us, and corrections to it.' },
+  '/practice/locations': { audiences: ['practice'], why: 'Sites, and the addresses patients are seen at.' },
+  '/practice/channels': { audiences: ['practice'], why: 'How the practice reaches its patients.' },
+  '/practice/templates': {
+    audiences: ['practice', 'platform'],
+    why: 'What the agreement looks like and what it says — the letterhead, the logo, and wording the practice may propose. The platform reaches one practice’s through the view-only twin; activating wording is a platform act on its own page.',
+  },
+  '/practice/pms': { audiences: ['practice'], why: 'The practice management system connection.' },
+  '/practice/practitioners': { audiences: ['practice'], why: 'Who works here.' },
+  '/practice/affiliations': { audiences: ['practice'], why: 'Inviting practitioners, and recording departures.' },
+  '/practice/reconciliation': {
+    audiences: ['practice', 'platform'],
+    why: 'Services billed without an agreement, ranked by the lodgement window (M7). The practice’s own, scoped by its token; the platform reaches one practice’s through the view-only twin.',
+  },
+  '/practice/correspondence': {
+    audiences: ['practice', 'platform'],
+    why: 'Every message sent in the practice’s name (M-1). The practice’s own, scoped by its token; the platform reaches one practice’s through the view-only twin, which shows states and never bodies.',
+  },
+
+  '/practice/reports': {
+    audiences: ['practice', 'platform'],
+    why: 'Counts of what was sent. Named for both audiences because the figures are scoped by the caller’s own token rather than by the page — a practice sees its own, the platform sees across.',
+  },
+
+  '/practice/users': {
+    audiences: ['practice_admin'],
+    why: 'Deciding who may sign in. The administrator’s alone — it decides who can reach patient records.',
+  },
+
+  /*
+   * THE TABLETS, and the same audience as `/practice/users` for the same
+   * reason. Registering a device hands out the credential that lets a screen
+   * in a waiting room read the practice's waiting list; revoking one takes it
+   * back. That is the same class of decision as deciding who may sign in, not
+   * a setting — so it belongs to the administrator rather than to anybody with
+   * a practice claim.
+   *
+   * It is also the ONLY place a device is revoked or rotated. Never on the
+   * device: a tablet that can un-pair itself is a tablet a passer-by can
+   * un-pair (TODO.md "Zero-footprint kiosk").
+   */
+  '/practice/devices': {
+    audiences: ['practice_admin'],
+    why: 'The practice’s paired tablets. Registering one issues the credential that opens the waiting list, and revoking one closes it — the administrator’s alone, and never done on the device.',
+  },
+
+  /*
+   * THE PRACTICE'S AOBPRINTER HOST (PRINTER-HEARTBEAT.md §4, D-2026-10-10-02
+   * decision 10). The administrator's, beside the tablets: it is the state of
+   * a machine the practice runs, not the day's work. Read-only for them —
+   * re-baselining a chain is the platform's act (decision 7), because a
+   * practice may not verify its own evidence. The platform's view of one
+   * practice's host is a twin under `/platform/practices`, covered by that
+   * entry's prefix.
+   */
+  '/practice/aobprinter-host': {
+    audiences: ['practice_admin'],
+    why: 'Whether the practice’s AOBPRINTER is reporting, what it holds at each stage, and whether its audit log still matches what the platform last saw. The administrator’s, like the tablets; re-baselining is ours.',
+  },
+
+  /*
+   * SENDING AN AGREEMENT TO A TABLET IS RECEPTION'S JOB, so it is `practice`
+   * and NOT `practice_admin` — and the difference from `/practice/devices`
+   * just above is the whole reasoning. Registering a device hands out the
+   * credential that opens a practice's waiting list; that is a decision about
+   * who may reach patient records, and it belongs to the administrator. Using
+   * a tablet that is already paired is the ordinary work of the front desk,
+   * performed dozens of times a morning by the person standing at it. An
+   * administrator-only page here would mean either that reception cannot do
+   * its job or that every receptionist is an administrator, and the second is
+   * how access controls die.
+   *
+   * The acts behind it are `@PracticeScoped` on the server, so a platform
+   * operator reaches them only by acting as the practice — which leaves a
+   * record of on whose behalf, and forces a re-approval by somebody else.
+   */
+  '/practice/tablet': {
+    audiences: ['practice'],
+    why: 'Sending a locked agreement to a paired tablet beside reception, and watching what it does. The front desk’s own work — the practice checked the patient across the counter, and the push is what records that.',
+  },
+
+  /*
+   * THE FRONT DESK, FOR SOMEBODY ON THEIR FIRST SHIFT (Carl, 12 Sep 2026;
+   * FRONT-DESK-PAGE.md). The same audience as `/practice/tablet` and for the
+   * identical reason: it is reception's ordinary work, one patient at a time.
+   * It grants nothing the tablet page does not — the queue it shows is the
+   * same practice-scoped read, and every act behind it is the same
+   * `@PracticeScoped` act it already was. What differs is how much of the
+   * domain it puts on screen, which is a question about presentation and not
+   * about access.
+   */
+  '/practice/frontdesk': {
+    audiences: ['practice'],
+    why: 'The front desk’s own queue: who is here, who is on a tablet and who is expected, said in the words the job is done in. The same work as the tablet page, shown so a person on their first shift can do it.',
+  },
+
+  /*
+   * THE SAME FRONT DESK, ON A SMALL SCREEN (Carl, 12 Sep 2026: *"If the
+   * Practice has small screens, we will need to go to a different design"*;
+   * SESSION-HANDOVER.md, "A proposal for the small-screen version").
+   *
+   * THE SAME AUDIENCE AS `/practice/frontdesk`, AND IT HAS TO BE. It is one
+   * dataset shown twice — the same practice-scoped queue, the same day
+   * register, the same `@PracticeScoped` acts — arranged as one list with
+   * filter chips instead of five stacked rails. A different audience here
+   * would mean the same work was reception's on a wide monitor and somebody
+   * else's on a laptop, which is not a statement about access at all.
+   */
+  '/practice/frontdesksmall': {
+    audiences: ['practice'],
+    why: 'The front desk on a small screen: everybody here today in one list, in arrival order, with the state on each row and filter chips above it. The same work and the same reads as the front desk — fewer pixels spent on headings.',
+  },
+
+  /*
+   * THE PRACTICE'S DAY REGISTER (Carl, 12 Sep 2026, on the front desk page:
+   * *"Add a button here with a link to show all Patients seen at this practice
+   * today. You could put a filter on this to search for any day."*).
+   *
+   * `practice`, THE SAME AUDIENCE AS THE PAGE IT IS LINKED FROM, and it grants
+   * strictly less: the front desk panel shows one patient's details, their
+   * assignor, their agreement and every control that acts on it, while this
+   * shows a name, a time, a provider and a word. It is the same
+   * practice-scoped read behind the same RLS. Making it administrator-only
+   * would mean either that reception cannot look up who came in yesterday, or
+   * that every receptionist is an administrator — and the second is how access
+   * controls die.
+   *
+   * ITS OWN ENTRY, NOT `matchesChildren` ON A NEIGHBOUR. An unclassified page
+   * is REFUSED (`mayReach`), which is the right default, and inheriting an
+   * audience from a parent is how a widening becomes invisible.
+   */
+  '/practice/day': {
+    audiences: ['practice'],
+    why: 'Everybody the practice took in on one day, in arrival order, with what happened about each person’s agreement. A record of what happened — nothing on it acts, and nothing on it can stop a patient being seen.',
+  },
+
+  /*
+   * RECEPTION'S WORK LIST, AND THE PAGE FOR ONE PATIENT ON IT (Carl, 4 Sep
+   * 2026). The same audience as `/practice/tablet` and for the identical
+   * reason: this is the front desk's ordinary work, one patient at a time,
+   * and every act behind it — the push, the correction, the re-send — is the
+   * same `@PracticeScoped` act it already was. It shows nothing an
+   * administrator may see that a receptionist may not.
+   *
+   * `matchesChildren` BECAUSE THE PATIENT IS IN THE PATH. `/practice/patients/
+   * <id>` must not be an unclassified page, and an unknown page is REFUSED
+   * (`mayReach`) — which would be a screen reception could not open.
+   */
+  '/practice/patients': {
+    audiences: ['practice'],
+    why: 'The patients with something open today, and everything about one of them in one place. The front desk’s own work — the same acts as the tablet page, grouped by the person standing at the counter.',
+    matchesChildren: true,
+  },
+
+  /*
+   * A PRACTITIONER'S HOME INSIDE A PRACTICE (Carl, 12 Sep 2026;
+   * PRACTITIONER-QUEUE-PAGE.md §1).
+   *
+   * NOT A DUPLICATE OF `/practitioner`, AND BOTH SHOULD EXIST. `/practitioner`
+   * is about ME, ACROSS PRACTICES — my details, my affiliations, what has been
+   * sent to me — and it follows the person wherever they work. This is MY WORK
+   * AT THIS PRACTICE, TODAY, and it disappears when the affiliation does.
+   *
+   * `practitioner` ALONE, because the page is the practitioner's own home and
+   * has nothing on it a practice user needs. The queue beneath it is the
+   * shared surface, and it names its own audiences.
+   */
+  '/practice/practitioner': {
+    audiences: ['practitioner'],
+    why: 'Where a practitioner lands when they sign in at a practice: who they are, which practice, and the way to their waiting list. It exists so a provider does not land on the administrator’s setup hub.',
+  },
+
+  /*
+   * WHO IS WAITING FOR ME, AND IS THEIR PAPERWORK DONE
+   * (PRACTITIONER-QUEUE-PAGE.md §3).
+   *
+   * TWO AUDIENCES, TWO MODES, ONE PAGE (Carl, 12 Sep 2026, widening §3):
+   *
+   *   - `practitioner` sees THEIR OWN list and only ever their own. §4.2 —
+   *     "Never show another practitioner's list" — and it is enforced at the
+   *     query rather than here: this table answers "may this audience open the
+   *     page", which is coarse, and coarse is not good enough for a rule whose
+   *     failure is one provider reading another's waiting room. The server
+   *     resolves whose list it is from the token's own practitioner claim, so
+   *     there is no parameter in which to ask for somebody else's.
+   *
+   *   - `practice` — an administrator, a manager or reception — sees EVERY
+   *     practitioner's list at this practice, grouped. Knowing who is waiting
+   *     for whom is reception's job, and for them the grouping is the whole
+   *     point. It grants nothing the front desk page does not already show:
+   *     the same practice-scoped read, behind the same RLS, with strictly less
+   *     on it.
+   *
+   * ITS OWN ENTRY RATHER THAN `matchesChildren` ON THE PAGE ABOVE. The parent
+   * is `practitioner`-only and this is wider; inheriting would have made the
+   * widening invisible, and an unclassified child must fail closed rather than
+   * be answered for by its parent.
+   */
+  '/practice/practitioner/waiting': {
+    audiences: ['practitioner', 'practice'],
+    why: 'Who is waiting today and whether their paperwork is done. A practitioner sees only their own list; an administrator, manager or receptionist sees every practitioner’s, grouped, because knowing who is waiting for whom is the front desk’s job. It reports and never gates — nothing on it can stop a patient being seen.',
+  },
+
+  /*
+   * PRACTITIONER. Their own affiliations and the notices sent to them, and
+   * nothing about a practice's other people. A practitioner works at several
+   * practices over time and the platform must never become a directory of who
+   * works where — so these pages are scoped to the person, never listed.
+   */
+  '/practitioner': {
+    audiences: ['practitioner'],
+    why: 'A practitioner’s own view: where they work, what we hold about them, and what was sent to them.',
+    matchesChildren: true,
+  },
+};
+
+/**
+ * What somebody is allowed to be, given what the token and the staff row say.
+ *
+ * Takes BOTH, because neither is sufficient. The token says which realm roles
+ * Keycloak issued; the staff row says whether they hold this practice's single
+ * administrator account. Deriving admin from a realm role would be a copy that
+ * drifts the moment somebody is promoted in our console without Keycloak being
+ * told — and that copy would be the one deciding access.
+ */
+export function audiencesOf(principal: {
+  roles?: readonly string[];
+  practiceId?: string | null;
+  /**
+   * A practitioner's own claim. Carried INSTEAD of a practice claim, so it is
+   * checked separately rather than as a fallback — somebody with neither is
+   * not a practitioner with a missing value, they are somebody we cannot place.
+   */
+  practitionerId?: string | null;
+  consoleRole?: string | null;
+  deactivatedAt?: Date | string | null;
+}): Audience[] {
+  const out = new Set<Audience>(['public']);
+  const roles = principal.roles ?? [];
+
+  // Withdrawn is withdrawn. Checking the role without checking whether the row
+  // is still live would leave a former administrator holding the door.
+  if (principal.deactivatedAt) return [...out];
+
+  if (roles.includes('platform_admin')) out.add('platform');
+
+  /*
+   * A PRACTICE CLAIM IS WHAT MAKES SOMEBODY A PRACTICE USER, not a realm role.
+   * That is deliberate and it is what lets acting-as work: an operator with an
+   * open session carries the claim, so they reach practice pages as the
+   * practice, with a record of on whose behalf.
+   */
+  if (principal.practiceId) {
+    out.add('practice');
+    if (principal.consoleRole === 'admin') out.add('practice_admin');
+  }
+
+  /*
+   * THE CLAIM, not the role — the same rule as a practice user. `provider` says
+   * what kind of person they are; the claim says which person. A role with no
+   * claim is an account nothing has been scoped to, and letting it reach a
+   * practitioner page would show it somebody else's or refuse and look broken.
+   */
+  if (principal.practitionerId) out.add('practitioner');
+  if (roles.includes('patient')) out.add('patient');
+  if (roles.includes('assignor')) out.add('assignor');
+
+  return [...out];
+}
+
+/**
+ * WHICH ENTRY IN THIS TABLE ANSWERS FOR A PATH — the key, not the rule.
+ *
+ * Split out of `ruleFor` so a second question about the same page can be asked
+ * of the same answer. `practice-surfaces.ts` asks which surface a page belongs
+ * to and must resolve `/status/abc123` to `/status` exactly as this table
+ * does; resolving it with its own prefix rule would be a second copy that
+ * drifts, and the first thing it would get wrong is `matchesChildren` — which
+ * is opt-in precisely so that `/practice` does not answer for a brand new
+ * `/practice/anything`.
+ */
+export function pageKeyFor(path: string): string | null {
+  const clean = (path.split('?')[0] || '/').replace(/\/+$/, '') || '/';
+  if (PAGES[clean]) return clean;
+
+  /*
+   * Only pages that ASKED to match their children do. Longest first, so a
+   * child with its own entry still wins over a matching parent.
+   */
+  return (
+    Object.keys(PAGES)
+      .filter((p) => PAGES[p].matchesChildren && p !== '/' && clean.startsWith(p + '/'))
+      .sort((a, b) => b.length - a.length)[0] ?? null
+  );
+}
+
+/** The rule for a path, matching `/status/abc123` to `/status`. */
+export function ruleFor(path: string): PageRule | null {
+  const key = pageKeyFor(path);
+  return key ? PAGES[key] : null;
+}
+
+/**
+ * May this audience open this page?
+ *
+ * An unknown page is REFUSED. A new screen that nobody classified is the exact
+ * case this table exists to catch, and answering "yes" to it would make the
+ * table decorative.
+ */
+export function mayReach(path: string, audiences: readonly Audience[]): boolean {
+  const rule = ruleFor(path);
+  if (!rule) return false;
+  return rule.audiences.some((a) => audiences.includes(a));
+}
+
+export function assertMayReach(path: string, audiences: readonly Audience[]): void {
+  if (mayReach(path, audiences)) return;
+
+  const rule = ruleFor(path);
+  if (!rule) {
+    throw new PageAccessError(
+      `There is no such page here, or nobody has said who may open it. Either way it is refused.`,
+    );
+  }
+  throw new PageAccessError(
+    'This page is not one your account can open. If you think it should be, ask your practice’s ' +
+      'administrator — or us, if you are the administrator.',
+  );
+}
+
+/** Every page an audience can open. For building navigation that does not lie. */
+export function pagesFor(audiences: readonly Audience[]): string[] {
+  return Object.keys(PAGES)
+    .filter((p) => PAGES[p].audiences.some((a) => audiences.includes(a)))
+    .sort();
+}

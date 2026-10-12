@@ -36,8 +36,90 @@ check('web client exists', Boolean(web));
 check('web client is public (PKCE, no shipped secret)', web?.publicClient === true);
 check('web client binds the clinician browser flow', Boolean(web?.authenticationFlowBindingOverrides?.browser));
 
+/*
+ * THE TOKEN MUST SAY HOW THE SESSION SIGNED IN (AUTH-TIERS.md §5.1,
+ * D-2026-10-10-06).
+ *
+ * Revoking a tablet asks for a fresh second factor, and core judges that on the
+ * token's `amr` claim. This realm shipped with no amr mapper, so every token
+ * said nothing, core read "unknown", and revoke refused a passkey session with
+ * "password and nothing else" - for everybody, from the day it was built.
+ * Keycloak's mapper emits a value only for an execution that names one in its
+ * authenticator config, so BOTH halves are asserted: the reference on the
+ * passkey step, and the mapper on every staff-facing client.
+ */
+const configs = new Map((realm.authenticatorConfig ?? []).map((c) => [c.alias, c.config ?? {}]));
+check(
+  'the_passkey_step_names_hwk_for_the_amr_claim',
+  configs.get(passkey?.authenticatorConfig)?.['default.reference.value'] === 'hwk',
+);
+check(
+  'the disabled password step would name pwd, so a re-enabled one is reported rather than hidden',
+  !password || configs.get(password.authenticatorConfig)?.['default.reference.value'] === 'pwd',
+);
+/*
+ * The claim must outlive the session, or a long session loses amr and is
+ * refused as "unrecorded" while signing in again would fix it. Nothing else
+ * ties the two numbers together, so this does.
+ */
+const sessionMax = Math.max(realm.ssoSessionMaxLifespan ?? 0, realm.ssoSessionMaxLifespanRememberMe ?? 0);
+check(
+  'the amr reference lasts at least as long as the longest session',
+  Number(configs.get(passkey?.authenticatorConfig)?.['default.reference.maxAge']) >= sessionMax && sessionMax > 0,
+);
+for (const clientId of ['web', 'console']) {
+  const client = (realm.clients ?? []).find((c) => c.clientId === clientId);
+  check(
+    `the ${clientId} client puts the amr claim in the access token`,
+    (client?.protocolMappers ?? []).some(
+      (m) => m.protocolMapper === 'oidc-amr-mapper' && m.config?.['access.token.claim'] === 'true',
+    ),
+  );
+}
+
 // WebAuthn policy present at realm level.
 check('WebAuthn passwordless policy configured', Boolean(realm.webAuthnPolicyPasswordlessRpEntityName));
+
+/*
+ * Themes must be IN THE EXPORT, not only in the running realm.
+ *
+ * Both were once set through the admin console and lived only in the database,
+ * so a container rebuild re-imported this file, the realm came back looking
+ * healthy, and the themes were silently the built-in ones again. The login
+ * theme is what tells somebody enrolling on Windows not to accept Microsoft
+ * Password Manager — the default that enrols successfully and then cannot sign
+ * in (CRITICAL-ISSUES.md item 2). Losing it silently is how that incident
+ * repeats.
+ */
+check('login theme is the aobplatform theme', realm.loginTheme === 'aobplatform');
+check('email theme is the aobplatform theme', realm.emailTheme === 'aobplatform');
+
+/*
+ * ONE PERSON, ONE ADDRESS, SEVERAL ACCOUNTS — and therefore no email login
+ * (Carl, 12 Sep 2026; PRACTICE-SCOPED-LOGIN.md §4, D-2026-09-12-10).
+ *
+ * A practitioner working at three practices holds three accounts, named
+ * `<their email>.<practice code>`, and all three carry the SAME email: their
+ * own. The realm shipped with `duplicateEmailsAllowed: false`, so Keycloak
+ * refused the second one.
+ *
+ * The two settings are mutually exclusive by construction — duplicates cannot
+ * be allowed while email is also a way to sign in, because "which account is
+ * jsmith@outlook.com" would then have three answers — so both are asserted
+ * here, together, as one rule.
+ *
+ * THIS IS RULE 15 BEING KEPT, NOT WEAKENED. A passkey is bound to an account
+ * and nobody types an identifier at all: the browser offers the credentials it
+ * holds and the person picks one. Email-as-login exists to serve a
+ * username-and-password flow this product does not have, and switching it off
+ * removes a route that should never have been reachable.
+ *
+ * IN THE EXPORT, not only on the running realm — the same lesson as the themes
+ * above. Both were once set through the admin console, lived only in the
+ * database, and came back as the defaults on the next container rebuild.
+ */
+check('duplicate emails are allowed (one person, one address, an account per practice)', realm.duplicateEmailsAllowed === true);
+check('the_realm_never_offers_email_as_a_way_to_sign_in', realm.loginWithEmailAllowed === false);
 
 // No social/broker identity providers — a deliberate absence given AoB phishing exposure.
 check('no identity-provider brokers', (realm.identityProviders ?? []).length === 0);

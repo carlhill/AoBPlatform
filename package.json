@@ -3,6 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "description": "AoBPlatform monorepo root. Read CLAUDE.md and CONVENTIONS.md before adding anything here.",
+  "//jsdom": "WHY jsdom IS A ROOT devDependency. Vitest is hoisted here, and it resolves 'jsdom' from its own location — this directory — not from apps/web, which is where the dependency is declared and where npm nests it. Until 4 September 2026 that mismatch was masked: the retired apps/kiosk pulled jest-environment-jsdom, which left a jsdom@20 hoisted here that vitest quietly used. The first npm install after the kiosk left pruned that copy and every web test stopped collecting with ERR_MODULE_NOT_FOUND. Declaring it here is the honest version of what was true by accident. apps/web keeps its own declaration: it is the package that actually uses a DOM.",
   "engines": {
     "node": ">=24.0.0",
     "npm": ">=10.0.0"
@@ -15,10 +16,13 @@
     "build": "npm run build:packages && npm run build:apps",
     "build:packages": "npm run build -w packages/domain && npm run build -w packages/contracts && npm run build -w packages/vault-client && npm run build -w packages/auth-client",
     "build:apps": "npm run build -w apps/connector -w apps/core -w apps/rules -w apps/vault -w apps/web --if-present",
-    "lint": "npm run lint --workspaces --if-present",
+    "//inventory": "INVENTORY.md is the generated index of every export in the repo — read it before writing a component or a helper (wow.md §10). `inventory` rewrites it; the guard below runs first in `lint` so a stale index fails at the bench and in CI, not a fortnight later.",
+    "inventory": "node scripts/dev/inventory.mjs",
+    "validate:inventory": "node scripts/dev/inventory.test.mjs",
+    "lint": "npm run validate:inventory && npm run lint --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "test:e2e": "npm run test:e2e --workspaces --if-present",
-    "validate:realm": "node infra/keycloak/realm-export.test.mjs",
+    "validate:realm": "node infra/keycloak/realm-export.test.mjs && node infra/keycloak/login-theme.test.mjs && node infra/keycloak/tier2-realm.test.mjs",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md}\"",
@@ -35,6 +39,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "eslint": "^10.8.1",
+    "jsdom": "^25.0.1",
     "prettier": "^3.3.3",
     "typescript": "^5.6.3",
     "typescript-eslint": "^8.67.0"

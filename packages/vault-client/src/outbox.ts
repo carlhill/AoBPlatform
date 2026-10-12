@@ -1,4 +1,5 @@
 import type { VaultEventInput } from '@aobplatform/contracts';
+import { actingAsKey } from './ambient';
 
 /**
  * Minimal structural type for "anything with a `vaultOutbox.create` model
@@ -49,13 +50,34 @@ export interface VaultOutboxDbRow {
  * best-effort.
  */
 export async function enqueueVaultEvent(writer: VaultOutboxWriter, input: VaultEventInput): Promise<void> {
+  /*
+   * THE ACTING-AS KEY, added here rather than by callers.
+   *
+   * When a platform user is acting for a practice, every event they cause
+   * carries the session id — so "what did they touch" is one query rather
+   * than an archaeology exercise. Ambient because there are around forty call
+   * sites and a rule that depends on all of them remembering is not a rule.
+   *
+   * Outside a session this is undefined and nothing changes.
+   */
+  const actingAs = actingAsKey();
+
   await writer.vaultOutbox.create({
     data: {
       type: input.type,
-      actor: input.actor as unknown as Record<string, unknown>,
+      actor: {
+        ...(input.actor as unknown as Record<string, unknown>),
+        // On the ACTOR, not only the payload: the actor is what a reader looks
+        // at to answer "who did this", and the honest answer during a session
+        // is "this person, wearing that practice".
+        ...(actingAs ? { actingAsSessionId: actingAs } : {}),
+      },
       subjectType: input.subject.type,
       subjectId: input.subject.id,
-      payload: input.payload ?? {},
+      payload: {
+        ...(input.payload ?? {}),
+        ...(actingAs ? { actingAsSessionId: actingAs } : {}),
+      },
       occurredAt: new Date(),
     },
   });

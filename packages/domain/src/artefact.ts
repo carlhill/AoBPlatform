@@ -39,6 +39,31 @@ export const ARTEFACT_PURPOSES = [
   'website_capture', // what the site showed, and its TLS certificate
   'credential', // an accreditation letter, HPI-O confirmation
   'identity_document', // something tying a person to the entity
+  'address_evidence', // a lease, rates notice, register extract or letterhead for a site
+  /**
+   * The two halves of a drawn signature (REQ-SIG-01, `signature.ts`). Both are
+   * the assignor's own hand and are therefore identifier-grade: encrypted
+   * store only, never a log line, never an error message.
+   */
+  'signature_raster', // the PNG the pad produced
+  'signature_vector', // the strokes, with their timing, exactly as captured
+  /**
+   * The practice's letterhead mark (Carl, 5 Sep 2026; W1). The ONLY artefact
+   * that is embedded in the bytes of an agreement rather than merely stored
+   * beside one, which is why `practice-logo.ts` puts a much shorter allowlist
+   * and a much smaller cap in front of it — and why one of these is never
+   * deleted while an agreement embeds it (hard rules 11 and 13).
+   */
+  'practice_logo',
+  /**
+   * THE SIGNED-DB4 (D-2026-09-14-02) — AoB's deterministic reproduction of the
+   * DB4 the practice printed, with the cost on it, the Medicare card number on
+   * it and the patient's signature at the bottom. Its own purpose rather than
+   * `other`, because it is the one artefact kind that deliberately carries
+   * both, and a retention or export question about it must be answerable
+   * without reading the bytes.
+   */
+  'signed_db4',
   'other',
 ] as const;
 export type ArtefactPurpose = (typeof ARTEFACT_PURPOSES)[number];

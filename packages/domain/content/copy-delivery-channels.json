@@ -1,0 +1,21 @@
+{
+  "$comment": "VERSIONED CONTENT, NOT CODE (hard rule 14; Carl, 3 Sep 2026 -- option lists are content). The ways a signer may ask for their own copy of a signed agreement, in the order the tablet offers them. W6, REQ-PORT-02 -- the s 65C copy-on-request obligation, automated. THE LIST IS THE SCREEN. A channel is added or withdrawn by editing this file: no code change, no deploy of new logic, and the `version` travels with every copy request made from it, so a record made in March still says what it was offered from. NO ADDRESS IS EVER TYPED ON THE TABLET (D-2026-09-11-03). Each option here is a channel TYPE only. The address it goes to is the one already on the record -- the patient's own when the patient signed, the assignor's own when somebody else did (ASSIGNOR-RULES rules 5-6) -- and it is shown to the patient partly masked so they can recognise it without it being readable across the room. An option whose contact is missing is not offered; the answer then is reception, never a text box. `not_now` IS A REAL OPTION AND NOT AN ABSENCE. A patient who wants no copy has said something, and a screen that only offers ways to say yes is not offering a choice. It sends nothing and records nothing beyond the ceremony ending. THE WORDS ARE NOT HERE. Display labels live in the string table keyed by `key` (REQ-LANG-01/-02), because they will be translated and a translated word must never be able to change which channel is used.",
+  "version": "copy-delivery-2026-09-11",
+  "options": [
+    {
+      "key": "email",
+      "channel": "email",
+      "note": "The signer's own email address, as held on the record. Carries a link to the signed PDF the portal already renders; never the document itself, and never an amount (hard rule 4)."
+    },
+    {
+      "key": "sms",
+      "channel": "sms",
+      "note": "The signer's own mobile, as held on the record. One line, the same link."
+    },
+    {
+      "key": "not_now",
+      "channel": null,
+      "note": "No copy. Sends nothing. The ceremony is already complete either way (hard rule 8) -- this option changes nothing about the agreement or the visit."
+    }
+  ]
+}

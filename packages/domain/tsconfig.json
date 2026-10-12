@@ -3,7 +3,11 @@
   "compilerOptions": {
     "outDir": "dist",
     "baseUrl": ".",
-    "composite": false
+    "composite": false,
+    "rootDir": "."
   },
-  "include": ["src/**/*.ts"]
+  "include": [
+    "src/**/*.ts",
+    "content/**/*.json"
+  ]
 }

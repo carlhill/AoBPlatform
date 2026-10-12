@@ -1,3 +1,4 @@
+import { withSilentRestore } from '@aobplatform/contracts';
 import { assertNotPlaceholderSecret } from './service-token';
 
 /**
@@ -29,6 +30,10 @@ export interface KeycloakUserSummary {
   id: string;
   username: string;
   email?: string;
+  /** Absent on older payloads; `false` means the account cannot sign in. */
+  enabled?: boolean;
+  /** Keycloak returns every attribute as an array, even single values. */
+  attributes?: Record<string, string[]>;
 }
 
 export class KeycloakAdminError extends Error {
@@ -101,6 +106,29 @@ export class KeycloakAdminClient {
     return body?.[0] ?? null;
   }
 
+  /**
+   * The account behind an id we already stored.
+   *
+   * EXISTS FOR GRANDFATHERING (PRACTICE-SCOPED-LOGIN.md §3 property 2, §8). A
+   * passkey is bound to a username, so an account that already exists must be
+   * re-found by its ID and keep whatever name it was born with —
+   * `admin.821709fb`, `drjhuang@gmail.com` — rather than be looked up under
+   * whatever the current naming scheme would produce, which would miss it and
+   * create a second account, orphaning a real person's credential.
+   *
+   * Null when the account is gone, so a caller can tell "no account" from "an
+   * account with a different name".
+   */
+  async findById(userId: string): Promise<KeycloakUserSummary | null> {
+    try {
+      const { body } = await this.request<KeycloakUserSummary>('GET', `/users/${encodeURIComponent(userId)}`);
+      return body ?? null;
+    } catch (err) {
+      if (err instanceof KeycloakAdminError && err.status === 404) return null;
+      throw err;
+    }
+  }
+
   async findByUsername(username: string): Promise<KeycloakUserSummary | null> {
     const { body } = await this.request<KeycloakUserSummary[]>(
       'GET',
@@ -123,15 +151,44 @@ export class KeycloakAdminClient {
     attributes?: Record<string, string>;
   }): Promise<KeycloakUserSummary> {
     const existing = await this.findByUsername(input.username);
-    if (existing) return existing;
+    if (existing) {
+      /*
+       * A DISABLED account is never silently reused.
+       *
+       * It was disabled for a reason — on this platform, because the person it
+       * belonged to handed over or left. Returning it here would send an
+       * enrolment invitation to an account that cannot sign in (Keycloak
+       * answers `400 User is disabled`, which explains nothing to the operator)
+       * and, worse, would imply the previous holder's credentials are still the
+       * right ones for whoever is arriving.
+       */
+      if (existing.enabled === false) {
+        throw new KeycloakAdminError(
+          `The account "${input.username}" exists but is DISABLED, so it cannot be invited. It was disabled ` +
+            'deliberately — usually because the person holding it handed over — and reusing it would bind a ' +
+            "new person to the previous holder's account. Create a new one instead.",
+          409,
+        );
+      }
+      return existing;
+    }
 
     /**
-     * Keycloak enforces a UNIQUE EMAIL PER REALM. A practitioner working at
-     * two practices gets a different username at each (username carries the
-     * practice) but the same email — so the second invitation 409s. Swallowing
-     * that produced a baffling "created but could not be read back"; surfacing
-     * it names the real situation, which needs a human decision (is this the
-     * same human, and should the accounts be linked?) rather than a duplicate.
+     * A 409 HERE IS NOW A USERNAME CONFLICT, NOT AN EMAIL ONE (12 Sep 2026,
+     * PRACTICE-SCOPED-LOGIN.md §4).
+     *
+     * It used to be an email conflict: the realm enforced one email per realm,
+     * so a practitioner's SECOND practice account — same address, different
+     * username — was refused, and swallowing that produced a baffling "created
+     * but could not be read back". The realm now sets
+     * `duplicateEmailsAllowed: true` (and `loginWithEmailAllowed: false`,
+     * because the two are mutually exclusive), precisely so that Audrey at
+     * three practices can hold three accounts carrying her own address.
+     *
+     * So the address is no longer the thing to report. It is still LOOKED UP
+     * when a conflict happens, because "an account already exists with this
+     * address" is useful context for a human — but it is context, not the
+     * cause, and the message says which.
      */
     const create = await this.request('POST', '/users', {
       username: input.username,
@@ -150,9 +207,10 @@ export class KeycloakAdminClient {
       const byEmail = input.email ? await this.findByEmail(input.email) : null;
       throw new KeycloakAdminError(
         byEmail
-          ? `An account already exists with the email ${input.email} (username "${byEmail.username}"). ` +
-            'Keycloak enforces one email per realm — the same practitioner at a second practice needs a ' +
-            'different address, or the existing account linked rather than duplicated.'
+          ? `Keycloak refused the account "${input.username}" as a conflict. An account does already exist ` +
+            `with the address ${input.email} (username "${byEmail.username}"), which is allowed — the realm ` +
+            'permits duplicate emails so one person can hold an account at each practice. So the clash is on ' +
+            'the USERNAME, which means this practice code and this address have been paired before.'
           : `Keycloak rejected the account for "${input.username}" as a conflict.`,
         409,
       );
@@ -178,7 +236,25 @@ export class KeycloakAdminClient {
    * verified against a live realm, 21 Aug 2026.
    */
   async sendPasskeyEnrolment(userId: string, options: { clientId: string; redirectUri: string; lifespanSeconds?: number }): Promise<void> {
-    const params = new URLSearchParams({ client_id: options.clientId, redirect_uri: options.redirectUri });
+    /*
+     * THE RETURN URL CARRIES THE SILENT-RESTORE MARKER (Carl, 12 Sep 2026).
+     *
+     * Registering a passkey through an action token authenticates the person in
+     * the REALM but leaves this app without a token, because that flow never
+     * went through the app's own redirect. `AccessGuard` would then say "you
+     * are not signed in" to somebody who has just this second proved who they
+     * are — it only attempts a silent restore for a browser that has signed in
+     * here before, and a new practitioner's browser never has.
+     *
+     * So the invitation tells the app it may ask once. The marker is permission
+     * to attempt `prompt=none`, not evidence of anything, and it names the
+     * client the invitation was issued for because a practice token and a
+     * platform token are not interchangeable.
+     */
+    const params = new URLSearchParams({
+      client_id: options.clientId,
+      redirect_uri: withSilentRestore(options.redirectUri, options.clientId),
+    });
     if (options.lifespanSeconds) params.set('lifespan', String(options.lifespanSeconds));
     await this.request('PUT', `/users/${userId}/execute-actions-email?${params.toString()}`, [
       'webauthn-register-passwordless',
@@ -186,6 +262,59 @@ export class KeycloakAdminClient {
   }
 
   /** REQ-PKI-04/-05: revoke on departure or deregistration. */
+  /**
+   * The realm roles an account holds.
+   *
+   * Exists so a destructive operation can refuse when the target turns out to
+   * be a platform operator — see disablePracticeAdminAccount. Checking the
+   * role at the moment of the act is worth more than trusting the caller to
+   * have looked.
+   */
+  async realmRolesOf(userId: string): Promise<string[]> {
+    const { body } = await this.request<Array<{ name?: string }>>('GET', `/users/${userId}/role-mappings/realm`);
+    return (body ?? []).map((r) => r.name ?? '').filter(Boolean);
+  }
+
+  /**
+   * Revoke every passkey on an account, without touching the account itself.
+   *
+   * THIS IS WHAT A PRACTICE-ADMIN HANDOVER ACTUALLY NEEDS. The account belongs
+   * to the PRACTICE — `admin.<practiceId>`, usually pointed at a shared mailbox
+   * like aobplatform@practice.com.au precisely so that somebody leaving does
+   * not lock the practice out. What belongs to a PERSON is the passkey: it is
+   * bound to their device and their fingerprint.
+   *
+   * So when an administrator leaves, the thing to remove is the credential, not
+   * the account. Disabling the account would take the practice offline to
+   * punish a departure; leaving the passkey would let somebody who has left
+   * carry on signing in from their own laptop.
+   */
+  async revokePasskeys(userId: string): Promise<number> {
+    const { body } = await this.request<Array<{ id: string; type: string }>>(
+      'GET',
+      `/users/${userId}/credentials`,
+    );
+    const passkeys = (body ?? []).filter((c) => String(c.type).startsWith('webauthn'));
+    for (const credential of passkeys) {
+      await this.request('DELETE', `/users/${userId}/credentials/${credential.id}`);
+    }
+    return passkeys.length;
+  }
+
+  /** Change the address an account is reachable at, and its display name. */
+  async updateUser(
+    userId: string,
+    fields: { email?: string; firstName?: string; lastName?: string; enabled?: boolean },
+  ): Promise<void> {
+    const { body } = await this.request<Record<string, unknown>>('GET', `/users/${userId}`);
+    await this.request('PUT', `/users/${userId}`, {
+      ...(body ?? {}),
+      ...fields,
+      // A changed address is an unproven address, whatever the old one was.
+      ...(fields.email ? { emailVerified: false } : {}),
+    });
+  }
+
   async setEnabled(userId: string, enabled: boolean): Promise<void> {
     await this.request('PUT', `/users/${userId}`, { enabled });
   }

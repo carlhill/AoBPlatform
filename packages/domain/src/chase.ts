@@ -96,6 +96,22 @@ export function chaseBandFor(daysRemaining: number): ChaseBandPolicy {
  */
 export const DEFAULT_ATTEMPT_CAP = 3;
 
+/**
+ * What the ladder says comes next, given what has already been tried.
+ *
+ * Read off the band's escalation sequence by position: the attempts made so
+ * far index into it. Past the end of the sequence — or on the expired band,
+ * which has none — the answer is the band's handback. `null` means nothing:
+ * the item is not chased at all (REQ-CHASE-08).
+ */
+export type ChaseNextStep = 'ai' | 'human' | 'handback' | null;
+
+export function chaseNextStep(policy: ChaseBandPolicy, attemptsMade: number): ChaseNextStep {
+  if (policy.band === 'expired') return null;
+  if (attemptsMade < 0) return policy.escalation[0] ?? 'handback';
+  return policy.escalation[attemptsMade] ?? 'handback';
+}
+
 export function attemptAllowed(input: {
   readonly attemptsMade: number;
   readonly daysRemaining: number;

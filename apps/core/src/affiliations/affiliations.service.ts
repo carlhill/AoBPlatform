@@ -14,23 +14,39 @@ import {
   invitationCapMessage,
   invitationLimitFor,
   assertRegistrationPermitsPractice,
+  BILLING_ROLES,
+  BILLING_ROLES_VERSION,
+  BILLING_ROLE_KEYS,
+  isBillingRole,
   assertSightingAttributable,
   registrationWarnings,
   AffiliationError,
   assertDirectoryQueryAllowed,
   assertNoProviderNumber,
-  assertNoticeValid,
+  assessDeparture,
+  DepartureNoticeError,
+  calendarFor,
   assertAffiliationTransition,
   canCaptureUnder,
   captureBlockReason,
   isValidAhpraNumberFormat,
   toDirectoryEntry,
+  toRosterEntry,
+  ACCEPTANCE_MEANS,
+  type AcceptanceMethod,
   AFFILIATION_VELOCITY_THRESHOLD,
   AFFILIATION_VELOCITY_WINDOW_DAYS,
   isAffiliationVelocityAnomalous,
+  PractitionerDepartureError,
+  assessPractitionerDeparture,
+  departureNoticeToPractice,
 } from '@aobplatform/domain';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import { PrismaService } from '../prisma/prisma.service';
+import { PractitionerAccessService } from '../identity/practitioner-access.service';
+import { ReviewTasksService } from '../review-tasks/review-tasks.service';
+import { OutboundService } from '../outbound/outbound.service';
+import { EmailComposer } from '../messaging/composer.service';
 import { OrganisationsService } from '../organisations/organisations.service';
 
 /**
@@ -54,6 +70,11 @@ export class AffiliationsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly organisations: OrganisationsService,
+  
+    private readonly outbound: OutboundService,
+    private readonly composer: EmailComposer,
+    private readonly practitionerAccess: PractitionerAccessService,
+    private readonly reviewTasks: ReviewTasksService,
   ) {}
 
   // -------------------------------------------------------------------------
@@ -126,6 +147,111 @@ export class AffiliationsService {
     );
 
     return toDirectoryEntry(practitioner);
+  }
+
+  /**
+   * One affiliation's life, as a list of things that happened.
+   *
+   * DERIVED FROM THE TIMESTAMPS WE ALREADY HOLD rather than from a new events
+   * table — and that is a deliberate first version, not a shortcut. An
+   * affiliation records WHEN it was invited, sent, accepted, given notice, and
+   * ended, each with who did it where we know. Those columns are the record;
+   * building a second one beside them would create two sources that can
+   * disagree, and the disagreement would be silent.
+   *
+   * WHAT IT THEREFORE CANNOT SHOW: a value that was changed and changed back,
+   * or a provider number corrected twice. Those overwrite, exactly as the
+   * register check used to. If that turns out to matter, the answer is the same
+   * as it was there — an append-only table — and this shape is what will show
+   * that it matters.
+   */
+  async affiliationHistory(practiceId: string, affiliationId: string) {
+    const a = await this.prisma.withPractice(practiceId, (tx) =>
+      tx.affiliation.findFirst({
+        where: { id: affiliationId, practiceId },
+        include: { practitioner: true, location: true },
+      }),
+    );
+    if (!a) throw new NotFoundException('That affiliation is not one of this practice’s.');
+
+    const events: Array<{ at: Date; what: string; who?: string | null; detail?: string | null }> = [];
+
+    if (a.invitedAt) {
+      events.push({ at: a.invitedAt, what: 'Invited', who: a.invitedByName, detail: a.location?.code ?? null });
+    }
+    if (a.inviteSentAt) events.push({ at: a.inviteSentAt, what: 'Invitation sent', detail: null });
+    if (a.startedAt) {
+      /*
+       * HOW it was accepted, not merely that it was. Opening a link and typing
+       * a code proves access to an inbox; it does not prove who was at the
+       * keyboard, and the difference is the whole reason this is recorded.
+       */
+      events.push({ at: a.startedAt, what: 'Accepted by the practitioner', detail: a.acceptanceMethod });
+    }
+    if (a.rejectedAt) events.push({ at: a.rejectedAt, what: 'Declined', detail: null });
+    if (a.noticeGivenAt) {
+      events.push({ at: a.noticeGivenAt, what: 'Notice given', who: a.noticeGivenBy, detail: null });
+    }
+    if (a.externalNoticeGivenAt) {
+      events.push({
+        at: a.externalNoticeGivenAt,
+        what: 'Notice given outside AoBPlatform',
+        who: a.externalNoticeAttestedBy,
+        detail: [a.externalNoticeMeans, a.externalNoticeNote].filter(Boolean).join(' · ') || null,
+      });
+    }
+    if (a.endedAt) events.push({ at: a.endedAt, what: 'Ended', detail: a.endReason });
+
+    return {
+      affiliationId: a.id,
+      // Newest first, like every other history here.
+      events: events
+        .sort((x, y) => y.at.getTime() - x.at.getTime())
+        .map((e) => ({ at: e.at.toISOString(), what: e.what, who: e.who ?? null, detail: e.detail ?? null })),
+      /*
+       * SAID ON THE RESPONSE, so the screen does not have to know it. A list
+       * built from columns cannot show a value that was changed and changed
+       * back, and a history that quietly omits things is worse than one that
+       * admits its shape.
+       */
+      derivedFromColumns: true,
+    };
+  }
+
+  /**
+   * Every register check on one practitioner, newest first.
+   *
+   * A PLATFORM READ. The practice does not get this: it is our record of our
+   * own attestations, and a practice that could read who checked and when could
+   * work out how closely it is being watched. What the practice needs — whether
+   * the check has been done, and what it currently says — it already has.
+   */
+  async registerCheckHistory(practitionerId: string) {
+    const practitioner = await this.prisma.practitioner.findUnique({ where: { id: practitionerId } });
+    if (!practitioner) throw new NotFoundException('Practitioner not found.');
+
+    const checks = await this.prisma.practitionerRegisterCheck.findMany({
+      where: { practitionerId },
+      orderBy: { sightedAt: 'desc' },
+      take: 50,
+    });
+
+    return {
+      practitionerId,
+      ahpraNumber: practitioner.ahpraNumber,
+      checks: checks.map((c) => ({
+        id: c.id,
+        registrationStatus: c.registrationStatus,
+        profession: c.profession,
+        division: c.division,
+        conditions: c.conditions,
+        source: c.source,
+        // NEVER "the system". A manual sighting names the person who read the
+        // register; assertSightingAttributable refuses one that does not.
+        sightedByName: c.sightedByName,
+        sightedAt: c.sightedAt.toISOString(),
+      })),
+    };
   }
 
   /**
@@ -239,6 +365,36 @@ export class AffiliationsService {
           registrationSource: input.source,
           registrationSightedByName: input.sightedByName,
           registrationSightedAt: sightedAt,
+        },
+      }),
+      /*
+       * THE CHECK ITSELF, KEPT.
+       *
+       * The columns above are OVERWRITTEN by each new check, so before this row
+       * existed "who checked, when, and what did it say" had one answer at a
+       * time and asking again destroyed the previous one. A check is somebody's
+       * statement that on a given day the register said a particular thing; it
+       * does not stop being true because a later one was made.
+       *
+       * It is also how a bad check used to hide: recording "Registered" over a
+       * previous "Cancelled" left no trace the earlier reading had existed. Now
+       * both stand, in the order they happened.
+       *
+       * In the SAME transaction as the overwrite, so the cache and the history
+       * cannot disagree about what the newest check said.
+       */
+      this.prisma.practitionerRegisterCheck.create({
+        data: {
+          practitionerId,
+          registrationStatus: input.registrationStatus,
+          profession: input.profession,
+          division: input.division,
+          conditions: input.conditions,
+          undertakings: input.undertakings,
+          reprimands: input.reprimands,
+          source: input.source,
+          sightedByName: input.sightedByName,
+          sightedAt,
         },
       }),
       this.prisma.practitionerRegistration.deleteMany({ where: { practitionerId } }),
@@ -587,7 +743,179 @@ export class AffiliationsService {
       return result;
     });
 
-    return { id: updated.id, status: updated.status, startedAt: updated.startedAt };
+    /*
+     * ACCEPTING IS THE CEREMONY, so this is where a sign-in is issued.
+     *
+     * They opened a message sent to their own address and typed the code from
+     * it — possession of the address, proved — and only then does a credential
+     * follow. REQ-PKI-01: no ceremony, no key.
+     *
+     * AFTER the transaction and never inside it: creating a Keycloak account is
+     * a call to another system, and one that cannot be rolled back has no place
+     * in a database transaction. A failure here leaves them affiliated without
+     * a login, which the practice can put right by re-sending; the reverse —
+     * an account for an affiliation that was never recorded — would be an
+     * identity nothing accounts for.
+     */
+    let access: { invited: boolean; detail: string } = { invited: false, detail: '' };
+    if (decision === 'accept') {
+      access = await this.practitionerAccess
+        .ensureAccount(practitionerId, affiliation.practiceId)
+        .catch((err: Error) => {
+        this.logger.error(`Accepted, but no sign-in could be issued for ${practitionerId}: ${err.message}`);
+        return { invited: false, detail: 'The affiliation is recorded. A sign-in could not be issued just now.' };
+      });
+    }
+
+    return { id: updated.id, status: updated.status, startedAt: updated.startedAt, access };
+  }
+
+  /**
+   * A practitioner ending their own affiliation.
+   *
+   * UNILATERAL, AND THAT IS THE POINT. `giveNotice` below is the practice's
+   * side — a commercial arrangement with a negotiated end date. This is a
+   * statement of fact about where somebody works, and a fact does not need the
+   * other party's agreement. If it did, a practice could keep a departed
+   * practitioner listed, and consent captured under that name would keep
+   * looking valid.
+   *
+   * The rules are in `practitioner-departure.ts` with tests; this writes the
+   * result and tells the practice.
+   */
+  async departByPractitioner(
+    practitionerId: string,
+    affiliationId: string,
+    request: { reason: string; note: string | null; endsAt: Date | null },
+  ) {
+    /*
+     * Keyed on BOTH ids, so it returns nothing unless the affiliation really is
+     * this practitioner's. The ownership check IS the query — a comparison
+     * afterwards is one somebody can forget, and forgetting it here would let
+     * one practitioner end another's employment.
+     */
+    const [affiliation] = await this.prisma.$queryRaw<
+      Array<{ id: string; practiceId: string; status: string; endedAt: Date | null; endsAt: Date | null }>
+    >`SELECT * FROM find_affiliation_for_practitioner(${affiliationId}::uuid, ${practitionerId}::uuid)`;
+
+    if (!affiliation) {
+      // The same answer whether it does not exist or is not theirs, so this
+      // cannot be used to discover which affiliation ids are real.
+      throw new NotFoundException('That affiliation was not found, or is not yours.');
+    }
+
+    const now = new Date();
+    let assessment;
+    try {
+      assessment = assessPractitionerDeparture({
+        affiliation: { status: affiliation.status, endedAt: affiliation.endedAt, endsAt: affiliation.endsAt },
+        request,
+        now,
+      });
+    } catch (err) {
+      if (err instanceof PractitionerDepartureError) throw new BadRequestException(err.message);
+      throw err;
+    }
+
+    const practitioner = await this.prisma.practitioner.findFirst({ where: { id: practitionerId } });
+    const practitionerName = practitioner
+      ? `${practitioner.givenNames} ${practitioner.familyName}`.trim()
+      : 'A practitioner';
+
+    await this.prisma.withPractice(affiliation.practiceId, async (tx) => {
+      await tx.affiliation.update({
+        where: { id: affiliationId },
+        data: assessment.immediate
+          ? {
+              status: 'ended',
+              // endsAt = endedAt = now is the tell that no notice period
+              // applied, which is the same shape deregistration uses.
+              endedAt: assessment.endsAt,
+              endsAt: assessment.endsAt,
+              endReason: request.reason,
+            }
+          : { endsAt: assessment.endsAt, noticeGivenAt: now, noticeGivenBy: practitionerName, endReason: request.reason },
+      });
+
+      await enqueueVaultEvent(tx, {
+        type: assessment.immediate ? 'affiliation.ended' : 'affiliation.notice_given',
+        actor: { principalType: 'provider', id: practitionerId },
+        subject: { type: 'Affiliation', id: affiliationId },
+        payload: {
+          reason: request.reason,
+          byPractitioner: true,
+          noticePeriodApplied: !assessment.immediate,
+          disputed: assessment.concern,
+        },
+      });
+
+      /*
+       * A DISPUTED LISTING ALWAYS REACHES A PERSON. "I never worked here" is a
+       * claim that somebody was listed at a practice they have no connection
+       * to — and if it is true, everything captured under their name there is
+       * in question. Not conditional on there being captures: whether anybody
+       * used it is for the reviewer to establish.
+       */
+      /*
+       * THE PRACTICE IS TOLD, NOT ASKED — and told the fact without the
+       * practitioner's stated reason. That reason is between them and us until
+       * a reviewer decides otherwise; a practice reading "they say they never
+       * worked here" before anybody has checked helps nobody and prejudices the
+       * person who has to check it.
+       *
+       * Enqueued IN this transaction, so a departure that was recorded is a
+       * departure the practice will hear about. The outbox exists precisely so
+       * those two cannot come apart.
+       */
+      const notice = departureNoticeToPractice({
+        practitionerName,
+        endsAt: assessment.endsAt,
+        immediate: assessment.immediate,
+      });
+      const practice = await tx.practice.findFirst({ where: { id: affiliation.practiceId } });
+      const to = practice?.groupEmail ?? practice?.adminEmail;
+      if (to) {
+        await this.outbound.enqueue(tx, {
+          practiceId: affiliation.practiceId,
+          channel: 'email',
+          destination: to,
+          subjectType: 'Affiliation',
+          subjectId: affiliationId,
+          mediaType: 'email',
+          recipientType: 'practice',
+          payload: { subject: notice.subject, body: notice.lines.join('\n\n') },
+        });
+      }
+
+      if (assessment.needsReview) {
+        await this.reviewTasks.raise(tx, {
+          practiceId: affiliation.practiceId,
+          kind: 'admin_contact_changed',
+          subjectType: 'Affiliation',
+          subjectId: affiliationId,
+          summary: `${practitionerName} disputes being listed at this practice`,
+          detail: {
+            reason:
+              'The practitioner ended this affiliation themselves, giving a reason that says the listing was ' +
+              'wrong rather than that it is ending. Anything captured under their name here needs looking at.',
+            departureReason: request.reason,
+            theirWords: request.note,
+          },
+          raisedBy: practitionerName,
+        });
+      }
+    });
+
+
+    return {
+      id: affiliationId,
+      endsAt: assessment.endsAt.toISOString(),
+      immediate: assessment.immediate,
+      reviewRaised: assessment.needsReview,
+      detail: assessment.immediate
+        ? 'Recorded. You are no longer listed there, and consent cannot be captured under your name.'
+        : `Recorded. Your last day there is ${assessment.endsAt.toISOString().slice(0, 10)}.`,
+    };
   }
 
   /**
@@ -595,17 +923,49 @@ export class AffiliationsService {
    * `endsAt` is the commercially agreed date — the platform records it and
    * refuses only the impossible shape, an end date before the notice.
    */
-  async giveNotice(practiceId: string, affiliationId: string, input: { endsAt: Date; givenByName: string; reason?: string }) {
+  async giveNotice(
+    practiceId: string,
+    affiliationId: string,
+    input: {
+      endsAt: Date;
+      givenByName: string;
+      reason?: string;
+      /**
+       * Set when the departure has already happened and notice was given
+       * outside AoBPlatform. Stored AS an attestation, never relabelled as
+       * our own notice.
+       */
+      externalNotice?: { means: string; givenAt: Date; note?: string };
+    },
+  ) {
     const affiliation = await this.prisma.withPractice(practiceId, (tx) =>
       tx.affiliation.findFirst({ where: { id: affiliationId } }),
     );
     if (!affiliation) throw new NotFoundException('Affiliation not found in this practice.');
 
     const noticeGivenAt = new Date();
+
+    /*
+     * THE HOLIDAY CALENDAR IS PER LOCATION, because a Friday notice before
+     * a long weekend lands differently in each state (REQ-OFF-03). The
+     * location carries the state for exactly this.
+     */
+    const location = await this.prisma.withPractice(practiceId, (tx) =>
+      tx.practiceLocation.findFirst({ where: { id: affiliation.locationId } }),
+    );
+    const calendar = calendarFor((location?.state ?? 'NSW') as never, input.endsAt);
+
+    let assessment;
     try {
-      assertNoticeValid({ noticeGivenAt, endsAt: input.endsAt });
+      assessment = assessDeparture({
+        now: noticeGivenAt,
+        endsAt: input.endsAt,
+        calendar,
+        external: input.externalNotice,
+      });
       assertAffiliationTransition(affiliation.status as never, 'ending');
     } catch (err) {
+      if (err instanceof DepartureNoticeError) throw new BadRequestException(err.message);
       if (err instanceof AffiliationError) throw new BadRequestException(err.message);
       throw err;
     }
@@ -619,15 +979,117 @@ export class AffiliationsService {
           noticeGivenBy: input.givenByName,
           endsAt: input.endsAt,
           endReason: input.reason ?? 'practitioner_left_location',
+          externalNoticeMeans: input.externalNotice?.means ?? null,
+          externalNoticeGivenAt: input.externalNotice?.givenAt ?? null,
+          externalNoticeNote: input.externalNotice?.note?.trim() || null,
+          externalNoticeAttestedBy: input.externalNotice ? input.givenByName : null,
+          noticeLeadBusinessDays: assessment.leadBusinessDays,
+          noticeAnomaly: assessment.anomaly ?? null,
         },
       });
+      /*
+       * TELL THE PRACTITIONER, and do it IN THIS TRANSACTION.
+       *
+       * Nothing was being sent at all: the practice recorded a departure and
+       * the person leaving found out from their employer or not at all. For
+       * an affiliation that governs whether consent may be captured in their
+       * name, that is not an oversight to fix later.
+       *
+       * Enqueued rather than sent inline, and enqueued HERE rather than after
+       * the commit, so it is impossible to end up with a recorded departure
+       * nobody was told about, or a notice sent for a departure that rolled
+       * back. See OutboundService — that atomicity is the entire reason the
+       * queue lives in Postgres.
+       */
+      const practitioner = await tx.practitioner.findFirst({ where: { id: affiliation.practitionerId } });
+      if (practitioner?.email) {
+        /*
+         * COMPOSED HERE, not in the worker. This is where we know what the
+         * message is about; the worker moves bytes and should never acquire
+         * opinions about wording.
+         */
+        const who = [practitioner.familyName, practitioner.givenNames].filter(Boolean).join(", ");
+        const lastDay = input.endsAt.toLocaleDateString("en-AU", {
+          day: "numeric",
+          month: "long",
+          year: "numeric",
+          timeZone: "UTC",
+        });
+        const practice = await tx.practice.findFirst({ where: { id: practiceId } });
+        const practiceName = practice?.tradingNames?.[0] ?? practice?.legalName ?? "the practice";
+
+        const subject = `Your last day at ${practiceName} is recorded as ${lastDay}`;
+        const composed = {
+          subject,
+          ...this.composer.compose(subject, [
+            { text: `${who || "Doctor"}, ${practiceName} has recorded that you are leaving this location.` },
+            { heading: "What has been recorded" },
+            { text: `Your last day at this location: ${lastDay}.` },
+            ...(input.reason ? [{ text: `Reason given: ${input.reason}` }] : []),
+            { rule: true },
+            { heading: "What this means" },
+            {
+              text:
+                "Until that date nothing changes — patients can still sign agreements naming you at this " +
+                "location, and those remain valid.",
+            },
+            {
+              text:
+                "From that date, enduring agreements at this location cease under reg 65CA(8). They do not " +
+                "lapse quietly; they cease, and the evidence is kept in full. Claims for services you " +
+                "provided before that date remain valid.",
+            },
+            { rule: true },
+            { heading: "If this is wrong" },
+            {
+              text:
+                `Tell ${practiceName} directly. They recorded this and only they can change or withdraw it. ` +
+                "We have sent this so that you know what has been recorded about you, not to ask you to " +
+                "approve it.",
+            },
+            {
+              small:
+                assessment.basis === "external_attested"
+                  ? "The practice has told us that notice was given to you outside AoBPlatform."
+                  : "This was recorded in AoBPlatform on the date shown above.",
+            },
+          ], this.practitionerFooter(practiceName)),
+        };
+
+        await this.outbound.enqueue(tx, {
+          practiceId,
+          channel: 'email',
+          destination: practitioner.email,
+          subjectType: 'Affiliation',
+          subjectId: affiliationId,
+          // WHERE and WHO, so this is findable when somebody rings to say it
+          // never arrived. Without these the only way to identify it is to
+          // open payloads, which the queue deliberately does not allow.
+          locationId: affiliation.locationId,
+          departmentId: affiliation.departmentId,
+          recipientType: 'practitioner',
+          recipientId: affiliation.practitionerId,
+          recipientName: who || practitioner.email,
+          payload: composed as unknown as Record<string, unknown>,
+          // A withdraw-and-re-notice is a NEW notice, not a retry of the old
+          // one, so it must not collapse onto the same key.
+          attemptGroup: noticeGivenAt.toISOString(),
+        });
+      }
       await enqueueVaultEvent(tx, {
         type: 'affiliation.notice_given',
         actor: { principalType: 'staff', id: practiceId },
         subject: { type: 'Affiliation', id: affiliationId },
         payload: {
           givenBy: input.givenByName,
-          noticeDays: Math.round((input.endsAt.getTime() - noticeGivenAt.getTime()) / 86_400_000),
+          // The BASIS, not just the count. A reader must be able to tell
+          // notice we delivered from notice a practice says it gave.
+          basis: assessment.basis,
+          leadBusinessDays: assessment.leadBusinessDays,
+          sufficientLead: assessment.sufficientLead,
+          agreementsCeasedOn: assessment.agreementsCeasedOn.toISOString(),
+          ...(input.externalNotice ? { externalNoticeMeans: input.externalNotice.means } : {}),
+          ...(assessment.anomaly ? { anomaly: assessment.anomaly } : {}),
         },
       });
       return result;
@@ -638,6 +1100,10 @@ export class AffiliationsService {
       status: updated.status,
       noticeGivenAt: updated.noticeGivenAt,
       endsAt: updated.endsAt,
+      basis: assessment.basis,
+      leadBusinessDays: assessment.leadBusinessDays,
+      sufficientLead: assessment.sufficientLead,
+      anomaly: assessment.anomaly ?? null,
       /** The load-bearing sentence: nothing stops until the end date. */
       effectNow:
         'The affiliation is STILL ACTIVE. Capture proceeds and claims are valid until the end date — notice ' +
@@ -658,11 +1124,147 @@ export class AffiliationsService {
     if (affiliation.status !== 'ending') {
       throw new ConflictException(`This affiliation is ${affiliation.status}; there is no notice to withdraw.`);
     }
-    return this.prisma.withPractice(practiceId, (tx) =>
-      tx.affiliation.update({
+    return this.prisma.withPractice(practiceId, async (tx) => {
+      const updated = await tx.affiliation.update({
         where: { id: affiliationId },
-        data: { status: 'active', noticeGivenAt: null, noticeGivenBy: null, endsAt: null, endReason: null },
-      }),
+        data: {
+          status: 'active',
+          noticeGivenAt: null,
+          noticeGivenBy: null,
+          endsAt: null,
+          endReason: null,
+          /*
+           * THE ATTESTATION GOES TOO. It said notice was given outside
+           * AoBPlatform — for a notice that no longer exists. Leaving it
+           * behind would be a standing claim about a departure that was
+           * called off, and the next reader would have no way to tell it
+           * was stale.
+           */
+          externalNoticeMeans: null,
+          externalNoticeGivenAt: null,
+          externalNoticeNote: null,
+          externalNoticeAttestedBy: null,
+          noticeLeadBusinessDays: null,
+          noticeAnomaly: null,
+        },
+      });
+
+      /*
+       * RECORDED, which it was not before.
+       *
+       * Withdrawing a notice is a real act with a real effect — capture
+       * continues, agreements do not cease — and it left no trace at all.
+       * A notice given and then withdrawn is NOT the same history as one
+       * never given: somebody was told they were leaving.
+       */
+      await enqueueVaultEvent(tx, {
+        type: 'affiliation.notice_withdrawn',
+        actor: { principalType: 'staff', id: practiceId },
+        subject: { type: 'Affiliation', id: affiliationId },
+        payload: {
+          // Omitted rather than null — the vault payload takes primitives, and
+          // an absent key reads the same as "there was none".
+          ...(affiliation.noticeGivenAt
+            ? { withdrewNoticeGivenAt: affiliation.noticeGivenAt.toISOString() }
+            : {}),
+          ...(affiliation.endsAt ? { withdrewEndsAt: affiliation.endsAt.toISOString() } : {}),
+        },
+      });
+
+      /*
+       * TELL THEM IT IS OFF. We emailed this person to say they were
+       * leaving on a date. If that is reversed and we say nothing, the last
+       * thing they heard from us is wrong — and they may act on it.
+       */
+      const practitioner = await tx.practitioner.findFirst({ where: { id: affiliation.practitionerId } });
+      if (practitioner?.email) {
+        const who = [practitioner.familyName, practitioner.givenNames].filter(Boolean).join(", ");
+        const practice = await tx.practice.findFirst({ where: { id: practiceId } });
+        const practiceName = practice?.tradingNames?.[0] ?? practice?.legalName ?? "the practice";
+        const wasEnding = affiliation.endsAt
+          ? affiliation.endsAt.toLocaleDateString("en-AU", {
+              day: "numeric",
+              month: "long",
+              year: "numeric",
+              timeZone: "UTC",
+            })
+          : null;
+
+        const subject = `You are staying at ${practiceName} — the leaving date has been withdrawn`;
+        const composed = {
+          subject,
+          ...this.composer.compose(
+            subject,
+            [
+              {
+                text:
+                  `${who || "Doctor"}, ${practiceName} has withdrawn the leaving date they recorded for ` +
+                  "you at this location.",
+              },
+              { heading: "What has changed" },
+              {
+                text: wasEnding
+                  ? `We previously told you your last day here was ${wasEnding}. That no longer applies.`
+                  : "We previously told you a leaving date had been recorded. That no longer applies.",
+              },
+              { text: "Your affiliation with this location is active again, with no end date." },
+              { rule: true },
+              { heading: "What this means" },
+              {
+                text:
+                  "Nothing ceases. Patients can sign agreements naming you at this location, and existing " +
+                  "enduring agreements continue exactly as before — they were never interrupted.",
+              },
+              { rule: true },
+              { heading: "If this is wrong" },
+              {
+                text:
+                  `Tell ${practiceName} directly. They recorded this and only they can change it. We have ` +
+                  "sent this so that you know what has been recorded about you, not to ask you to approve it.",
+              },
+            ],
+            this.practitionerFooter(practiceName),
+          ),
+        };
+
+        await this.outbound.enqueue(tx, {
+          practiceId,
+          channel: 'email',
+          destination: practitioner.email,
+          subjectType: 'Affiliation',
+          subjectId: affiliationId,
+          // WHERE and WHO, so this is findable when somebody rings to say it
+          // never arrived. Without these the only way to identify it is to
+          // open payloads, which the queue deliberately does not allow.
+          locationId: affiliation.locationId,
+          departmentId: affiliation.departmentId,
+          recipientType: 'practitioner',
+          recipientId: affiliation.practitionerId,
+          recipientName: who || practitioner.email,
+          payload: composed as unknown as Record<string, unknown>,
+          // Each withdrawal is its own message, not a retry of the notice.
+          attemptGroup: `withdrawn:${new Date().toISOString()}`,
+        });
+      }
+
+      return updated;
+    });
+  }
+
+  /**
+   * The footer for somebody who never applied to us.
+   *
+   * A practitioner was added by a practice; they did not fill in a form
+   * here. Telling them "this address was given on an application" is false,
+   * and false in the one paragraph whose entire job is to make the message
+   * credible. A reader who catches us being wrong about why they got it has
+   * every reason to treat the rest as a scam — which for a message about
+   * consent records is exactly the wrong instinct to teach.
+   */
+  private practitionerFooter(practiceName: string) {
+    return this.composer.footerFor(
+      `You received this because ${practiceName} listed this address for you on AoBPlatform, where they ` +
+        `record patient consent naming you as the practitioner.`,
     );
   }
 
@@ -716,8 +1318,115 @@ export class AffiliationsService {
   // Views
   // -------------------------------------------------------------------------
 
-  /** What a practice sees: its own affiliations, provider numbers included. */
-  async listForPractice(practiceId: string) {
+  /**
+   * THE PRACTICE'S OWN ROSTER — every practitioner it has a relationship with.
+   *
+   * WHY THIS ENDPOINT HAD TO EXIST. Until it did, practitioners were only ever
+   * derived from affiliations, so a practitioner who had been pre-registered
+   * and not yet invited anywhere was invisible on every screen. The workflow is
+   * pre-register, THEN invite; a first step whose result cannot be seen is a
+   * first step people redo, and redoing it collides with the unique AHPRA
+   * number and looks like a broken platform.
+   *
+   * THE PRACTITIONER TABLE IS NOT RLS-SCOPED, deliberately (see schema.prisma):
+   * a doctor at three practices is one person. So the boundary here is the
+   * WHERE clause, and it is narrow on purpose. A row qualifies only if:
+   *
+   *   - this practice created it (`invitedByPracticeId`), or
+   *   - its id came out of this practice's own affiliation rows, which WERE
+   *     read under RLS and therefore cannot name anybody else's practitioners.
+   *
+   * There is no third branch, and adding one would need the same argument in
+   * writing (CONVENTIONS.md 6). What comes back is `toRosterEntry`, which is
+   * built field-by-field and carries no provider number.
+   */
+  async listRoster(practiceId: string) {
+    const affiliations = await this.prisma.withPractice(practiceId, (tx) =>
+      tx.affiliation.findMany({
+        select: {
+          practitionerId: true,
+          status: true,
+          locationId: true,
+          billingRole: true,
+          providerNumber: true,
+        },
+      }),
+    );
+    const affiliatedIds = [...new Set(affiliations.map((a) => a.practitionerId))];
+
+    const practitioners = await this.prisma.practitioner.findMany({
+      where: {
+        OR: [{ invitedByPracticeId: practiceId }, { id: { in: affiliatedIds } }],
+      },
+      orderBy: [{ familyName: 'asc' }, { givenNames: 'asc' }],
+    });
+
+    const roster = practitioners.map((p) => {
+      const theirs = affiliations.filter((a) => a.practitionerId === p.id);
+      return {
+        ...toRosterEntry(p, practiceId),
+        /**
+         * Counts, not rows. The affiliations themselves have their own screen;
+         * what this page needs is whether this person is anywhere yet, because
+         * "pre-registered and never invited" is the state that gets lost.
+         */
+        affiliationCount: theirs.length,
+        activeAffiliationCount: theirs.filter((a) => a.status === 'active' || a.status === 'ending').length,
+        invitedAffiliationCount: theirs.filter((a) => a.status === 'invited').length,
+        /*
+         * THE BILLING ROLES THEY HOLD, DE-DUPLICATED (Carl, 5-7 Sep 2026).
+         * A list rather than one value because the role is per LOCATION and
+         * the same person can be a nurse practitioner at one site and an RN at
+         * another -- flattening that to a single word would state something
+         * false about one of the two places.
+         */
+        billingRoles: [...new Set(theirs.map((a) => a.billingRole))],
+        /*
+         * CARL'S SECOND RULING, AS A COUNT. A servicing provider with no
+         * provider number recorded is ALLOWED -- s 65C(5)(a) identifies the
+         * professional by name and the address of the place of practice -- and
+         * FLAGGED, because a practice that meant to record one and did not
+         * should be able to see that from the roster.
+         *
+         * COUNTED ONLY FOR ROLES THAT COULD BE ON AN AGREEMENT. Flagging a
+         * phlebotomist for having no provider number would be flagging them
+         * for being exactly what they are.
+         */
+        affiliationsMissingProviderNumber: theirs.filter(
+          (a) =>
+            a.status !== 'ended' &&
+            a.status !== 'rejected' &&
+            !a.providerNumber &&
+            a.billingRole === 'servicing_provider',
+        ).length,
+      };
+    });
+
+    // Cheap, and it turns a future copy-paste mistake into a failure here
+    // rather than a disclosure at the boundary.
+    assertNoProviderNumber(roster, 'practice roster');
+    return roster;
+  }
+
+  /**
+   * What a practice sees: its own affiliations, provider numbers included.
+   *
+   * `asPractice` DECIDES THE PROVIDER NUMBERS, and it exists because the
+   * comment below used to be true by accident.
+   *
+   * It said "this is the only place it is ever returned", written when the only
+   * caller was the practice itself. A platform operator reading a practice
+   * read-only then became a second caller, and the sentence quietly stopped
+   * being true: provider numbers appeared on screen to somebody who is not the
+   * practice and has no need of them. Their job on that page is checking a
+   * register, not claiming a benefit.
+   *
+   * A provider number is the practice-and-place key that Medicare claims are
+   * made against. "Never crosses a practice boundary" has to mean the platform
+   * too, or the rule is only about other practices — and the platform is the
+   * one party that can see every practice.
+   */
+  async listForPractice(practiceId: string, opts: { asPractice: boolean } = { asPractice: true }) {
     return this.prisma.withPractice(practiceId, async (tx) => {
       const affiliations = await tx.affiliation.findMany({
         include: { practitioner: true, location: true, department: true },
@@ -730,12 +1439,45 @@ export class AffiliationsService {
         practitioner: toDirectoryEntry(a.practitioner),
         location: { id: a.locationId, address: a.location.addressCanonical ?? a.location.address, code: a.location.code },
         department: a.department?.name ?? null,
-        // The practice's OWN provider number for its OWN practitioner. This is
-        // the only place it is ever returned.
-        providerNumber: a.providerNumber,
+        /*
+         * The practice's OWN provider number for its OWN practitioner, and only
+         * when the caller IS the practice. A platform operator viewing gets
+         * whether one exists, which is all the readiness question needs.
+         */
+        providerNumber: opts.asPractice ? a.providerNumber : null,
+        hasProviderNumber: Boolean(a.providerNumber),
+        /*
+         * WHOSE PROVIDER NUMBER THE CLAIM GOES UNDER, at this location (Carl,
+         * 5-7 Sep 2026). Shown to the platform too, unlike the number itself:
+         * the role is not a claiming credential, it is a fact about how this
+         * practice is organised, and a readiness review needs it.
+         */
+        billingRole: a.billingRole,
         startedAt: a.startedAt,
         noticeGivenAt: a.noticeGivenAt,
         endsAt: a.endsAt,
+
+        /*
+         * WHERE THE INVITATION ITSELF HAS GOT TO.
+         *
+         * Without this the console can say "invited" and nothing more, and
+         * "invited" covers two states a practice must not confuse: one where
+         * we have emailed the practitioner and are waiting on them, and one
+         * where nobody has told them anything at all. The second looks
+         * identical and is entirely the practice's move.
+         *
+         * The token and the code are NOT here and never will be. They are
+         * addressed to the practitioner; a practice that could read them could
+         * accept on their behalf, which is the one thing this whole flow
+         * exists to prevent.
+         */
+        invitationSentAt: a.inviteSentAt,
+        invitationExpiresAt: a.inviteExpiresAt,
+        /** email_link_and_code | passkey | console. Null until answered. */
+        acceptanceMethod: a.acceptanceMethod,
+        acceptanceMeans: a.acceptanceMethod
+          ? (ACCEPTANCE_MEANS[a.acceptanceMethod as AcceptanceMethod] ?? null)
+          : null,
         canCapture: canCaptureUnder({ ...a, status: a.status as never }, now),
         blockReason: captureBlockReason({ ...a, status: a.status as never }, now),
       }));
@@ -755,6 +1497,81 @@ export class AffiliationsService {
     >`SELECT * FROM list_practitioner_affiliations(${practitionerId}::uuid)`;
     assertNoProviderNumber(rows, 'practitioner self-view');
     return rows;
+  }
+
+  /**
+   * WHOSE PROVIDER NUMBER THE CLAIM GOES UNDER, at this location, CHANGED
+   * (Carl, 5–7 Sep 2026; TODO.md "Billing role on the affiliation").
+   *
+   * IT IS AN EVENT AND NOT A SILENT COLUMN UPDATE. The role decides who may be
+   * named as the provider on an agreement, so changing it changes which
+   * consent records the practice can make. A practitioner recorded as a
+   * servicing provider on Tuesday and as working under one on Thursday is a
+   * question somebody will ask about a Wednesday agreement, and the answer has
+   * to exist.
+   *
+   * THE PRACTICE'S OWN ACT, like every other write on this page: the practice
+   * knows who its nurses are, and a platform operator asserting it would be
+   * the platform deciding whose name goes on somebody else's contracts.
+   *
+   * NOTHING IS RETROSPECTIVE. Agreements already made keep the provider they
+   * name — HARD-01 makes the anchor immutable and this does not reach it. The
+   * role decides the NEXT arrival, which is the only thing it can honestly do.
+   */
+  async setBillingRole(practiceId: string, affiliationId: string, billingRole: string, actor: string | null) {
+    if (!isBillingRole(billingRole)) {
+      throw new BadRequestException(
+        `"${billingRole}" is not a billing role. The list is versioned content ` +
+          `(packages/domain/content/billing-roles.json, ${BILLING_ROLES_VERSION}) and today reads: ` +
+          `${BILLING_ROLE_KEYS.join(', ')}.`,
+      );
+    }
+
+    return this.prisma.withPractice(practiceId, async (tx) => {
+      const affiliation = await tx.affiliation.findFirst({ where: { id: affiliationId } });
+      if (!affiliation) throw new NotFoundException('That affiliation is not one of this practice’s.');
+      if (affiliation.billingRole === billingRole) return { id: affiliationId, billingRole, changed: false };
+
+      const updated = await tx.affiliation.update({
+        where: { id: affiliationId },
+        data: { billingRole },
+      });
+
+      /*
+       * BEFORE AND AFTER, AND WHICH LIST. No name, no provider number, no
+       * amount (REQ-LOG-08, hard rules 1 and 4) — the ids are enough to join
+       * on, and the content version answers hard rule 14's question about
+       * which list the choice was made from.
+       */
+      await enqueueVaultEvent(tx, {
+        type: 'affiliation.billing_role_set',
+        actor: { principalType: 'staff', id: actor ?? practiceId },
+        subject: { type: 'Affiliation', id: affiliationId },
+        payload: {
+          practiceId,
+          practitionerId: affiliation.practitionerId,
+          locationId: affiliation.locationId,
+          from: affiliation.billingRole,
+          to: billingRole,
+          billingRolesVersion: BILLING_ROLES_VERSION,
+          hasProviderNumber: Boolean(affiliation.providerNumber),
+        },
+      });
+
+      return { id: updated.id, billingRole: updated.billingRole, changed: true };
+    });
+  }
+
+  /**
+   * The roles a practice may choose from, FROM THE SERVER.
+   *
+   * Fetched rather than hard-coded in the screen, for the same reason the
+   * external-notice catalogue is: the list is versioned content, the server
+   * refuses a role it does not know, and a stale copy in the browser would
+   * offer an option that is then rejected.
+   */
+  billingRoleCatalogue() {
+    return { version: BILLING_ROLES_VERSION, roles: BILLING_ROLES };
   }
 
   /** REQ-ANOM-01 — a signal for a human, never an automatic refusal. */

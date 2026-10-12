@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { createServicingProvider, deleteSeededAnchors } from './anchor';
 
 describe('M2 capture cascade (e2e, real Postgres)', () => {
   let app: INestApplication;
@@ -23,9 +24,7 @@ describe('M2 capture cascade (e2e, real Postgres)', () => {
     await prisma.withPractice(practiceId, async (tx) => {
       await tx.practice.create({ data: { id: practiceId, name: 'Capture Test Practice' } });
       providerId = (
-        await tx.provider.create({
-          data: { practiceId, name: 'Dr GP Test', providerType: 'general_practitioner' },
-        })
+        await createServicingProvider(tx, practiceId, { name: 'Dr GP Test', providerType: 'general_practitioner' })
       ).id;
       patientId = (
         await tx.patient.create({
@@ -52,6 +51,7 @@ describe('M2 capture cascade (e2e, real Postgres)', () => {
       await tx.assignor.deleteMany({});
       await tx.patient.deleteMany({});
       await tx.provider.deleteMany({});
+      await deleteSeededAnchors(tx);
       await tx.practice.deleteMany({});
     });
     await prisma.vaultOutbox.deleteMany({});
@@ -62,7 +62,7 @@ describe('M2 capture cascade (e2e, real Postgres)', () => {
     const res = await request(app.getHttpServer())
       .post('/agreements')
       .set('x-practice-id', practiceId)
-      .send({ type: 'episodic_pre', providerId, patientId, assignorId, assignorIsPatient: true })
+      .send({ type: 'episodic_pre', affiliationId: providerId, patientId, assignorId, assignorIsPatient: true })
       .expect(201);
     return res.body.id;
   }

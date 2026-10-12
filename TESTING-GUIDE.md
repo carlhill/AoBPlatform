@@ -157,7 +157,8 @@ admins get passkeys too — rule 15 covers admin roles, not just clinicians.
 curl -s -X POST http://localhost:21001/practices -H 'Content-Type: application/json' -d '{
   "name":"Sampletown Family Practice","pms":"medtech_evolution","state":"NSW",
   "locations":[{"address":"1 Example Street, Sampletown NSW 2000"}]}' | jq
-# then POST /practices/{id}/providers, /staff, then invite each of them
+# then POST /practices/{id}/providers (name, providerType, ahpraNumber -> affiliationId),
+# /staff, then invite each of them
 ```
 
 `state` matters: it drives the public-holiday calendar behind 2-business-day
@@ -232,7 +233,7 @@ Practice-scoped calls need `x-practice-id: <uuid>` (or a bearer token once you'r
 | GET | `/practices/{id}` | Read one |
 | PATCH | `/practices/{id}/config` | Identifier set (floor 3, Medicare non-configurable), link expiry, go-live flags |
 | POST | `/practices/{id}/staff` | Staff list — **activates the REQ-VUL-04 assignor block** |
-| POST | `/practices/{id}/providers` | Provider (provider number optional — s 65C(5)(a) or (b)) |
+| POST | `/practices/{id}/providers` | **A practitioner at a location** — creates the `Practitioner` + `Affiliation` and returns the `affiliationId` an agreement is anchored on. `ahpraNumber` required; `locationId` required where the practice has more than one; provider number optional (s 65C(5)(a) or (b)) |
 | POST | `/practices/{id}/assignors` | Assignor — **refuses anyone on the staff list** |
 | GET | `/practices/{id}/go-live-checklist` | Honest checklist; blocked until write-back + sender ID + rule set exist |
 

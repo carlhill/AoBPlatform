@@ -1,0 +1,60 @@
+/*
+ * THE DAY'S WORK (PRACTICE-NAVIGATION.md §2).
+ *
+ * ITS OWN FILE RATHER THAN THE SETUP HUB'S, for the reason the practitioner's
+ * pages have theirs: this is not a configuration screen, and a page that
+ * inherits the administrator hub's look is a page reception reads as somebody
+ * else's. The card shape deliberately matches the practitioner landing's,
+ * because they are the same kind of thing — a short list of places to go.
+ *
+ * IT REFLOWS RATHER THAN SCROLLS SIDEWAYS (WCAG 2.2 AA, 1.4.10). One column is
+ * the default and the wider grids are the addition, so a 320px viewport never
+ * meets a minimum width it cannot satisfy.
+ */
+
+.cards {
+  display: grid;
+  gap: var(--s4);
+}
+
+@media (min-width: 720px) {
+  .cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1100px) {
+  .cards {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  align-items: flex-start;
+  padding: var(--s4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.cardTitle {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  margin: 0;
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.cardBody {
+  /* The link sits at the foot of every card whatever the body's length, so a
+     row of cards reads as one row rather than as five ragged ones. */
+  flex: 1 1 auto;
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+}

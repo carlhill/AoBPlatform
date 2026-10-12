@@ -1,0 +1,219 @@
+/*
+ * The practice setup hub.
+ *
+ * A GRID of cards, not a wizard's single column. The layout carries the
+ * meaning: nothing here happens in a fixed order, and a column implies one.
+ */
+
+.readiness {
+  border: 1px solid;
+  border-left-width: 4px;
+  border-radius: var(--radius);
+  padding: var(--s4);
+  margin-bottom: var(--s6);
+}
+
+.readinessOk {
+  border-color: var(--ok);
+  background: var(--ok-wash);
+}
+
+.readinessBlocked {
+  border-color: var(--warn);
+  background: var(--warn-wash);
+}
+
+.readinessHead {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s3);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+/*
+ * Numbered, because the order IS the order they must be fixed — a practitioner
+ * cannot accept an affiliation to a location that does not exist yet. A
+ * bulleted list would imply they are independent.
+ */
+.blockers {
+  margin: var(--s3) 0 0;
+  padding-left: calc(var(--s5) + var(--s2));
+  font-size: var(--text-sm);
+  line-height: 1.65;
+}
+
+.blockers li {
+  margin-bottom: var(--s2);
+}
+
+/*
+ * TWO COLUMNS, FIXED — so a card keeps its place.
+ *
+ * `auto-fill` gave three columns on a wide screen and one on a narrow one, and
+ * every card moved when the window did. A hub is a place people learn the
+ * position of things: "locations is top right" has to stay true, or they read
+ * all six every time.
+ *
+ * Still collapses to one column when there is not room for two, because a
+ * fixed grid that overflows is worse than a moved card.
+ */
+.cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s4);
+}
+
+@media (max-width: 760px) {
+  .cards {
+    grid-template-columns: 1fr;
+  }
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--s4);
+  display: flex;
+  flex-direction: column;
+  /*
+   * The card NEVER scrolls. It caps at a roll-up plus two rows and opens a
+   * table — a scrolling card would hide exactly the row that worst-row-first
+   * just promoted.
+   */
+  overflow: hidden;
+}
+
+/*
+ * Dashed for what we do not control yet. The write-back mechanism is an open
+ * decision, so the card promises a download and nothing more — a solid border
+ * would imply a working integration that does not exist.
+ */
+.cardUnsettled {
+  border-style: dashed;
+  border-color: var(--line-strong);
+  background: var(--surface-sunken);
+}
+
+.cardHead {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  margin-bottom: var(--s2);
+}
+
+.cardIcon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
+  border: 1px solid var(--line);
+  color: var(--ink-muted);
+  flex: none;
+}
+
+.cardTitle {
+  font-size: var(--text-base);
+  font-weight: 600;
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+}
+
+.cardRollup {
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+  margin: 0 0 var(--s3);
+}
+
+.cardRows {
+  list-style: none;
+  margin: 0 0 var(--s3);
+  padding: 0;
+  flex: 1;
+}
+
+/*
+ * Label on top, note beneath — STACKED, not side by side.
+ *
+ * Side by side was tried twice and failed both ways. With `nowrap` the note was
+ * clipped at the card edge, losing the half of "unregistered — patients see
+ * Unverified, alongside scams" that explains why it matters. With wrapping, a
+ * long note collapsed into a four-word-wide column down the right.
+ *
+ * The notes here are SENTENCES, not statuses, so they need a line rather than a
+ * column. Stacking also puts them in reading order: what the row is, then what
+ * is wrong with it.
+ */
+.cardRow {
+  padding: var(--s2) 0;
+  border-top: 1px solid var(--line);
+  font-size: var(--text-sm);
+}
+
+.rowLabel {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rowNote {
+  display: block;
+  color: var(--ink-muted);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  margin-top: 1px;
+}
+
+/*
+ * A row needing work says so in WORDS. Weight and colour are the second and
+ * third signals; the sentence is the first, and the only one that survives
+ * greyscale and a screen reader.
+ */
+.rowNoteWork {
+  display: block;
+  color: var(--warn);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  line-height: 1.5;
+  margin-top: 1px;
+}
+
+.cardLink {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--accent);
+  text-decoration: none;
+  margin-top: auto;
+}
+
+.cardLink:hover {
+  text-decoration: underline;
+}
+
+/*
+ * A FIELD'S OWN ACTION, pulled close to the hint that explains it rather than
+ * pushed away by a row-of-buttons margin meant for a different layout.
+ */
+.fieldAction {
+  margin-top: var(--s2);
+}
+
+/*
+ * A LIGHT LINE between one field group and the next — Carl's words: "we want
+ * to separate both the email addresses." Whitespace alone read as one
+ * continuous block; an actual rule says two different answers live here.
+ */
+.fieldDivider {
+  border: none;
+  border-top: 1px solid var(--line);
+  margin: var(--s5) 0;
+}

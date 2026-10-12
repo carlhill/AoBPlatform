@@ -1,0 +1,136 @@
+{
+  "$comment": "THE WORDS ON THE AGREEMENT ITSELF — versioned content, not code (hard rule 14; Carl, 5 Sep 2026, PMS_to_AoB_Workflow.md W1). THE LEGAL POSITION THIS FILE IS BUILT ON: from 1 July 2026 there is NO approved form and, per REQ-REG-04, no prescribed assignment wording was found anywhere in ss 65A-65E. What s 65C(6) requires is the D1-D7 data set, a written document, a statement of whether the assignor is the patient, and the assignor's signature. The practitioner signature was abolished. So these templates carry the DATA SET plus the minimum affirmation a signature has to attach to, and nothing else. EVERY TEMPLATE HERE IS A DRAFT PENDING REVIEW BY CARL AND COUNSEL and says so in its own `status`. Nobody on this project may promote one to `active_generic` without that review; the loader does not care which status it carries, so the status is a statement to humans and to the renderer's draft marker, not a gate. THE PLACEHOLDERS ARE MANDATORY, not decorative: the loader refuses a template that fails to use every D-element placeholder its type requires, because a template missing one is an agreement missing a particular of the s 65C data set. THREE THINGS THE LOADER REFUSES OUTRIGHT in any template text: a currency symbol or amount (hard rule 4), anything that reads as a practitioner signature line (hard rule 3), and the words certified / approved / accredited / government-approved (hard rule 12). DISPLAY LABELS THAT ARE NOT PART OF THE INSTRUMENT — button text, screen headings — are NOT here; they live in the string table (REQ-LANG-01). What is here is the instrument's own words, which are the same on the tablet and in the PDF because both render this one file.",
+  "version": "agreement-templates-2026-09-1",
+  "placeholders": [
+    "patientName",
+    "agreementDate",
+    "providerDetails",
+    "providerName",
+    "serviceDate",
+    "basicServiceDescription",
+    "mbsItemNumbers",
+    "mappingVersion",
+    "assignorName",
+    "assignorRelationship",
+    "enduringPathway",
+    "coveredServiceScope",
+    "notificationMethod",
+    "terminationMethod",
+    "commencementDate"
+  ],
+  "conditions": ["assignorIsPatient", "isPreAgreement"],
+  "templates": [
+    {
+      "id": "episodic-generic",
+      "version": "episodic-generic-1",
+      "agreementType": "episodic",
+      "status": "draft_pending_review",
+      "title": "Assignment of Medicare benefit",
+      "note": "The episodic agreement — one service, one signature. Covers both the pre-service and the post-service case through `isPreAgreement`, because D3 is a statement the one document makes either way and two near-identical templates would drift.",
+      "sections": [
+        {
+          "key": "parties",
+          "heading": "This agreement",
+          "paragraphs": [
+            "Patient: {{patientName}}",
+            "Date of this agreement: {{agreementDate}}",
+            "Provider: {{providerDetails}}",
+            "{{#if isPreAgreement}}This agreement is made before the service is provided.{{/if}}{{#unless isPreAgreement}}This agreement is made after the service was provided.{{/unless}}"
+          ]
+        },
+        {
+          "key": "service",
+          "heading": "The service",
+          "paragraphs": [
+            "{{#if isPreAgreement}}Date the service will be provided: {{serviceDate}}{{/if}}{{#unless isPreAgreement}}Date the service was provided: {{serviceDate}}{{/unless}}",
+            "{{#if isPreAgreement}}Description of the service: {{basicServiceDescription}}{{/if}}",
+            "{{#unless isPreAgreement}}Medicare item numbers: {{mbsItemNumbers}}{{/unless}}"
+          ]
+        },
+        {
+          "key": "who_is_signing",
+          "heading": "Who is signing",
+          "paragraphs": [
+            "{{#if assignorIsPatient}}The patient is signing this agreement.{{/if}}",
+            "{{#unless assignorIsPatient}}The patient is not signing this agreement. It is being signed by {{assignorName}}, the patient's {{assignorRelationship}}.{{/unless}}"
+          ]
+        }
+      ],
+      "statements": [
+        {
+          "key": "episodic_assign_v1",
+          "text": "I assign my right to the Medicare benefit for the service described above to {{providerName}}."
+        },
+        {
+          "key": "episodic_details_correct_v1",
+          "text": "I confirm the details above are correct{{#unless assignorIsPatient}}, and that I am making this agreement on behalf of {{patientName}} as their {{assignorRelationship}}{{/unless}}."
+        }
+      ],
+      "footer": [
+        "Checked against the s 65C data set (self-assessment). Service description mapping {{mappingVersion}}.",
+        "This practice keeps a record of this agreement for at least two years from the date of the related claim, and will give the patient a copy on request."
+      ]
+    },
+    {
+      "id": "enduring-generic",
+      "version": "enduring-generic-1",
+      "agreementType": "enduring",
+      "status": "draft_pending_review",
+      "title": "Ongoing assignment of Medicare benefit",
+      "note": "The enduring agreement — reg 65CB's content set as REQ-END-02 records it: the declaration, the patient, the covered service classes, the pathway, the notification and termination methods, who is signing, and the date. There is deliberately NO benefit amount and no service date: a standing agreement has neither (see agreements.service.ts on why D5/D6a are not assembled for this type).",
+      "sections": [
+        {
+          "key": "parties",
+          "heading": "This agreement",
+          "paragraphs": [
+            "Patient: {{patientName}}",
+            "Date of this agreement: {{agreementDate}}",
+            "Provider: {{providerDetails}}",
+            "This is an ongoing agreement with that one provider. It is not made with the practice, and it does not cover any other provider at the practice."
+          ]
+        },
+        {
+          "key": "coverage",
+          "heading": "What it covers",
+          "paragraphs": [
+            "Covered services: {{coveredServiceScope}}",
+            "Commencing: {{commencementDate}}",
+            "Pathway: {{enduringPathway}}",
+            "The provider will bulk bill the covered services they provide from that date until this agreement ends."
+          ]
+        },
+        {
+          "key": "ending_it",
+          "heading": "How it ends",
+          "paragraphs": [
+            "Either the patient or the provider may end this agreement by written notice. It ends two business days after that notice is given.",
+            "How the practice will contact the patient about this agreement: {{notificationMethod}}",
+            "How notice to end this agreement is given: {{terminationMethod}}"
+          ]
+        },
+        {
+          "key": "who_is_signing",
+          "heading": "Who is signing",
+          "paragraphs": [
+            "{{#if assignorIsPatient}}The patient is signing this agreement.{{/if}}",
+            "{{#unless assignorIsPatient}}The patient is not signing this agreement. It is being signed by {{assignorName}}, the patient's {{assignorRelationship}}. The patient may end this agreement themselves at any time.{{/unless}}"
+          ]
+        }
+      ],
+      "statements": [
+        {
+          "key": "enduring_assign_v1",
+          "text": "I assign to {{providerName}} my right to the Medicare benefit for the bulk-billed services they provide to me from {{commencementDate}} until this agreement ends."
+        },
+        {
+          "key": "enduring_scope_and_ending_v1",
+          "text": "I understand this agreement covers {{providerName}} only, and that I can end it at any time by telling the practice in writing; it ends two business days after that."
+        }
+      ],
+      "footer": [
+        "Checked against the s 65C data set (self-assessment).",
+        "This practice keeps a record of this agreement for at least two years from the date of the related claim, and will give the patient a copy on request."
+      ]
+    }
+  ]
+}

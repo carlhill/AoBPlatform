@@ -88,15 +88,34 @@ export class EnduringController {
     return this.enduring.cease(requirePractice(practiceId), agreementId, dto.trigger as never);
   }
 
-  /** FR-5.5 — coverage query used by the capture cascade's first stage. */
+  /**
+   * FR-5.5 — coverage query used by the capture cascade's first stage.
+   *
+   * NAME THE PERSON, NOT THE ROW (Carl, 7 Sep 2026). Coverage is per
+   * practitioner × patient (REQ-END-01, hard rule 6), so `practitionerId` is
+   * the true question and `affiliationId` is resolved to it — a GP at two of
+   * the practice's sites is one practitioner, and asking about one site would
+   * report the same patient as uncovered at the other.
+   *
+   * `providerId` still answers for agreements made before the anchor moved,
+   * and goes when that column does.
+   */
   @Get('coverage')
   coverage(
     @Headers('x-practice-id') practiceId: string | undefined,
     @Query('patientId') patientId: string,
+    @Query('practitionerId') practitionerId?: string,
+    @Query('affiliationId') affiliationId?: string,
     @Query('providerId') providerId?: string,
     @Query('at') at?: string,
   ) {
-    return this.enduring.coverage(requirePractice(practiceId), { patientId, providerId, at });
+    return this.enduring.coverage(requirePractice(practiceId), {
+      patientId,
+      practitionerId,
+      affiliationId,
+      providerId,
+      at,
+    });
   }
 
   @Get('anniversary-pipeline')

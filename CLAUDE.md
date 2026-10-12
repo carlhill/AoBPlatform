@@ -21,6 +21,7 @@ Read in this order before writing code. All are provided alongside this file.
 | `aob-build-plan.md` | Phase order, gates, and the cost-aware agent-build policy |
 | `aob-faq-reconciliation.md`, addenda v2–v5, `aob-threat-model.md` | Background: why the rules below exist. Consult when a requirement seems arbitrary |
 | `glossary.md` | Every acronym. If you introduce a new acronym in code docs, add it here |
+| `DECISIONS.md` | Running log of product and regulatory decisions from working sessions, dated and attributed, with what would reopen each. Check it before proposing a change to something already decided |
 
 Requirement language: MUST = release-blocking, SHOULD = deferrable with a recorded decision, MAY = roadmap.
 
@@ -50,9 +51,9 @@ These are legal/regulatory invariants. Each MUST be enforced **in code** (valida
 
 ## 4. Stack summary (full detail: aob-tech-stack.md)
 
-TypeScript everywhere. NestJS modular monolith (M1–M8, M12–M14 as enforced modules — no cross-module table access) + two satellite services: **Rules & Conformance** (zero PII, hosts the public tester) and **Evidence Vault** (immudb, hash chain, RFC 3161 anchoring, S3 Object Lock). Next.js + Radix (console, portal, tester; WCAG 2.2 AA). Expo/React Native for the offline-first kiosk tablet only — there is **no patient mobile app**. Postgres with RLS (practice scoping at the DB layer), Redis, SQS. Keycloak (OIDC, passkeys). Site-installed Windows connector for Medtech Evolution, outbound-only mTLS. AWS Sydney, ECS Fargate, Terraform, account-per-environment, GitHub Actions. Tests: Vitest, Playwright, Maestro, k6.
+TypeScript everywhere. NestJS modular monolith (M1–M8, M12–M14 as enforced modules — no cross-module table access) + two satellite services: **Rules & Conformance** (zero PII, hosts the public tester) and **Evidence Vault** (immudb, hash chain, RFC 3161 anchoring, S3 Object Lock). Next.js + Radix (console, portal, tester; WCAG 2.2 AA). The kiosk is a **cloud-served web app with zero device footprint** — no native build, no installer, nothing persisted on the tablet beyond one revocable pairing credential (Carl, 3 Sep 2026; supersedes the Expo offline-first native shell — see §7 and TODO.md). There is **no patient mobile app**. Postgres with RLS (practice scoping at the DB layer), Redis, SQS. Keycloak (OIDC, passkeys). Site-installed Windows connector for Medtech Evolution, outbound-only mTLS. AWS Sydney, ECS Fargate, Terraform, account-per-environment, GitHub Actions. Tests: Vitest, Playwright, Maestro, k6.
 
-Repo shape (suggested, adjust with a recorded decision): monorepo — `apps/core`, `apps/rules`, `apps/vault`, `apps/web`, `apps/kiosk`, `apps/connector`, `packages/domain`, `packages/contracts` (OpenAPI + shared types), `infra/` (Terraform).
+Repo shape (suggested, adjust with a recorded decision): monorepo — `apps/core`, `apps/rules`, `apps/vault`, `apps/web` (console, portal, tester and — from 3 Sep 2026 — the kiosk at `/kiosk`; `apps/kiosk` is retired once the port lands), `apps/connector`, `packages/domain`, `packages/contracts` (OpenAPI + shared types), `infra/` (Terraform).
 
 ## 5. Build order and current blockers
 
@@ -76,12 +77,47 @@ Regulatory whipsaw is the top project risk (the rules changed twice and reversed
 
 ## 7. Working rules for Claude Code sessions
 
-- **Human-authored zones:** the vault service, the s 65C rules engine, and anything touching key management are written and reviewed by humans. You may assist (tests, review, refactors) but not author them wholesale. (Build-plan policy.)
-- **Cost-aware agent builds:** before any multi-agent fan-out, pilot the environment (can it run Expo builds, Postgres, immudb?), agree a budget ceiling, scope agents to whole modules not files, cap turns ~40–60, separate write from verify with fresh fix-up agents, and give a pre-flight cost estimate. (cost-aware-agent-builds-SKILL.md, adopted as policy.)
-- **Never invent regulatory facts.** Section numbers, dates, data elements and thresholds come from the requirements docs. If a needed fact is missing, flag it — do not infer it from training data; this regime changed in 2025–26 and your priors are stale.
-- **Ask before:** adding a dependency with network access at runtime, changing an ADR, touching auth flows, or writing anything that sends a real SMS/email (use the sandbox gateway config in dev — real sends require a registered sender and cost money).
-- Secrets never in code or fixtures; sample data uses obviously fake identities (no real Medicare-format numbers in fixtures — generate invalid-checksum ones).
-- Conventional commits; one module per PR where feasible; CI green (tests, SAST, dependency scan) before merge — these gates are release-blocking, not advisory.
+*The rules, not the reasoning. Every one of these came from something that went wrong or a decision Carl made, and `wow.md` holds those accounts — read it at the start of a session. This section is the checklist; keep it short. A rule earns its place here only if removing it would cause a mistake.*
+
+### 7a. Method
+
+1. **Confirm what "done" means before starting.** If the requirements are ambiguous, ask once, in a single round, then proceed on stated assumptions rather than stalling.
+2. **Minimal changes.** No unrelated refactors, renames or reformatting; match the neighbouring code. Read `INVENTORY.md` before writing a component or a helper — reuse beats a new one — and say in the report what you imported and what you wrote, with a line justifying each new thing.
+3. **Bugs: a failing test first, then fix the root cause.** The test stays afterwards.
+4. **If a fix fails twice, stop.** Report what you tried, what you saw, and your theory. Not a third variation.
+5. **Never delete, skip, weaken or `.only` a test to make a run pass.** A test you believe is wrong is a finding to report, not an edit to make quietly (wow.md §11).
+6. **Run the tests the change touches, not the suite:** `npx jest --findRelatedTests <files>` in `apps/core` or `packages/domain`; `npm test -w apps/web -- <path>` for Vitest (the root runner is broken); name the e2e spec, never the whole config. **Full suite only if Carl asks or a shared module changed** — `packages/domain`, `packages/contracts`, the Prisma schema, the string table, config — and then **ask first**. Say which tests ran and why. The named hard-rule test for any rule the change touches always runs, whatever `--findRelatedTests` picks up.
+7. **Unsure of an API? Read the installed package or the docs.** Never reconstruct a signature from memory.
+8. **Finish with:** files changed, tests run and why those, assumptions, risks.
+9. **Compact before ~40% of the 5-hour budget or ~100k tokens,** recording the next step in the plan doc first. **When compacting, preserve the list of modified files, the test commands run, and any hard rule under discussion.**
+
+### 7b. Git
+
+1. **Never work on `main`.** Branch `<type>/<short-description>`.
+2. **Small commits, conventional prefixes** (`feat: fix: test: refactor: docs: chore:`), one concern each. `carls_notes_1.txt` rides along whenever it has been modified.
+3. **Commit only on a passing exit code** from the targeted tests — the code, not the impression.
+4. **Show `git diff --stat` before each commit** and check the file count is the one you expect. `git add <paths> && git commit` commits **the whole index**, not those paths: use `git commit -o <paths>` (wow.md §5a).
+5. **Never `push --force`, `reset --hard`, `clean -fd`, or rewrite pushed history.** Denied in `.claude/settings.json`; a denial is the rule working, not an obstacle to route around. Undo with `git revert`.
+6. **Never commit secrets, `.env` files, logs or large generated files.**
+7. **`git log` / `git blame` before changing unfamiliar code.** The commit usually names a decision; `DECISIONS.md` says why.
+8. **PRs with `gh`:** summary, changes, tests run, risks. One concern per PR.
+
+Rules 1, 4 and 6 are enforced by `.claude/hooks/git-commit-guard.mjs`, which runs before every `git commit`.
+
+### 7c. Project rules
+
+- **Human-authored zones:** the vault service, the s 65C rules engine, anything touching key management. Assist with tests, review and refactors; never author wholesale.
+- **Model split:** builds run in Opus subagents; mechanical fix-ups and test re-runs on Sonnet; **every review that touches a hard rule is Opus**.
+- **Cost-aware agent builds:** pilot the environment, agree a ceiling, scope agents to modules not files, cap turns ~40–60, separate write from verify, give a pre-flight estimate. A reviewer reports only what affects correctness or requirements — plus any hard-rule violation, at any severity.
+- **Zero-footprint kiosk:** nothing installed on a tablet and nothing written to it but one revocable pairing credential; no PII in any storage API. Enforced by a lint rule and `kiosk_persists_nothing_but_pairing`.
+- **Choose tech for iteration speed:** "a look costs a build" is a defect in the choice, not a cost of doing business. Prefer the toolchain the monorepo already runs.
+- **Option lists are content, not code:** a versioned file under `packages/domain/content/`, schema-validated at load, labels in the string table, rendered in file order.
+- **Shortcuts to the answer, not directions to a screen:** every blocked, wrong or waiting message names its specific reason and links to the exact item where it is fixed; an unmapped reason code shows its code.
+- **Never generic advice under a specific failure:** a blocked, wrong or waiting message states what the system actually observed, and offers a remedy only where that remedy is true for THAT record. Where it cannot tell, it says what it checked and stops. Guidance that is honest in general and wrong for the row in front of somebody is worse than none — it moves the suspicion onto the reader's data and hides the defect (Carl, 28 Sep 2026; wow.md §13).
+- **Never invent regulatory facts.** Section numbers, dates, data elements and thresholds come from the requirements docs. Missing one? Flag it — this regime changed in 2025–26 and your priors are stale.
+- **Ask before:** adding any dependency to any `package.json` (dev dependencies included), changing an ADR, touching auth flows, or sending a real SMS or email (the dev sandbox gateway is there for this).
+- **Security in every change:** no secrets in code, fixtures or logs; parameterised queries only, never concatenated SQL; validate at the boundary with the DTO validators; no PII in logs, events or test names; RLS respected; identifier types, never values. Fixtures use obviously fake identities and invalid-checksum Medicare numbers.
+- **Conventional commits; one module per PR where feasible; CI green** (tests, SAST, dependency scan) before merge — release-blocking, not advisory.
 
 ## 8. Out of scope — do not build
 

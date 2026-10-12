@@ -1,8 +1,22 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { assertValidIdentifierSet, IdentifierSetError } from '@aobplatform/domain';
+import {
+  assertValidIdentifierSet,
+  BILLING_ROLES_VERSION,
+  DEFAULT_BILLING_ROLE,
+  IdentifierSetError,
+  isBillingRole,
+  PRACTICE_SURFACES_VERSION,
+  PRACTICE_TIMEZONES_VERSION,
+  profileSurfaces,
+  UNSIGNED_DRAFT_CLOSURE_DEFAULT_DAYS,
+  UNSIGNED_DRAFT_CLOSURE_VERSION,
+} from '@aobplatform/domain';
 import { enqueueVaultEvent } from '@aobplatform/vault-client';
 import { PrismaService } from '../prisma/prisma.service';
+import { PracticeSurfacesService } from './practice-surfaces.service';
+import { allocatePracticeCodeIfPossible } from './practice-code';
+import type { Actor } from '../auth/actor.decorator';
 import type {
   CreateAssignorDto,
   CreatePracticeDto,
@@ -19,13 +33,22 @@ function collapse(value: string): string {
 
 @Injectable()
 export class PracticesService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(PracticesService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    /*
+     * ONLY TO DROP ITS CACHE WHEN THE PROFILE MOVES. The lookup itself belongs
+     * to the guard, not here; this service never asks it a question.
+     */
+    private readonly surfaces: PracticeSurfacesService,
+  ) {}
 
   /** FR-1.1 — practice record with locations. */
   async create(dto: CreatePracticeDto) {
     const practiceId = randomUUID();
-    return this.prisma.withPractice(practiceId, async (tx) => {
-      const practice = await tx.practice.create({
+    const practice = await this.prisma.withPractice(practiceId, async (tx) =>
+      tx.practice.create({
         data: {
           id: practiceId,
           name: dto.name,
@@ -36,9 +59,24 @@ export class PracticesService {
           locations: { create: dto.locations.map((l) => ({ address: l.address })) },
         },
         include: { locations: true },
-      });
-      return practice;
-    });
+      }),
+    );
+
+    /*
+     * THE CODE IS ALLOCATED WHERE THE PRACTICE IS CREATED
+     * (PRACTICE-SCOPED-LOGIN.md §5; D-2026-09-12-10). It is the practice half
+     * of every account name it will ever hold, so it belongs to the practice
+     * from its first moment rather than being worked out later by whoever
+     * happens to invite the first person.
+     *
+     * OUTSIDE the create transaction, deliberately. Allocation may have to try
+     * a second candidate when the UNIQUE index refuses the first, and a failed
+     * insert inside a transaction poisons it -- every later statement would
+     * error until rollback. Its own short transaction retries cleanly, and the
+     * practice row it needs is committed by then.
+     */
+    const allocation = await allocatePracticeCodeIfPossible(this.prisma, practiceId, this.logger);
+    return { ...practice, code: allocation?.code ?? null, codeGenerated: allocation?.generated ?? false };
   }
 
   async get(practiceId: string) {
@@ -50,7 +88,7 @@ export class PracticesService {
   }
 
   /** FR-1.4 — configuration. Identifier floor + Medicare exclusion enforced by the domain guard. */
-  async updateConfig(practiceId: string, dto: UpdateConfigDto) {
+  async updateConfig(practiceId: string, dto: UpdateConfigDto, actor?: Actor) {
     if (dto.identifierTypes) {
       try {
         assertValidIdentifierSet(dto.identifierTypes);
@@ -62,15 +100,204 @@ export class PracticesService {
     return this.prisma.withPractice(practiceId, async (tx) => {
       const practice = await tx.practice.findFirst({});
       if (!practice) throw new NotFoundException('Practice not found.');
-      return tx.practice.update({
+      const updated = await tx.practice.update({
         where: { id: practiceId },
         data: {
           identifierTypes: dto.identifierTypes,
           linkExpiryHours: dto.linkExpiryHours,
+          kioskIdleTimeoutSeconds: dto.kioskIdleTimeoutSeconds,
+          unsignedDraftClosureDays: dto.unsignedDraftClosureDays,
+          enduringByDefault: dto.enduringByDefault,
+          surfaceProfile: dto.surfaceProfile,
+          timezone: dto.timezone,
           writeBackProven: dto.writeBackProven,
           senderIdRegistered: dto.senderIdRegistered,
         },
       });
+
+      /*
+       * THE INACTIVITY RESET IS EVIDENCED WHEN IT MOVES (Carl, 4 Sep 2026).
+       *
+       * It is a screen-hygiene control, not a comfort setting: it decides how
+       * long a walked-away patient's name, date of birth and address stay on a
+       * tablet sitting on a counter. Lengthening it is a decision somebody
+       * should have to own, so it is written through the OUTBOX in the same
+       * transaction as the row it evidences — one without the other is
+       * structurally impossible (hard rule 11, FR-11.2).
+       *
+       * ONLY WHEN IT ACTUALLY CHANGES. This endpoint is a whole-form save and
+       * the console posts every field on every press; an event per save would
+       * make the trail say "somebody changed the timeout" on the morning
+       * somebody ticked the sender-ID box.
+       *
+       * THE VALUE GOES IN THE PAYLOAD because a number of seconds is not PII
+       * and "it was changed" without "to what" is not evidence of anything
+       * (REQ-LOG-08 forbids identifier VALUES, not settings).
+       */
+      if (
+        dto.kioskIdleTimeoutSeconds !== undefined &&
+        dto.kioskIdleTimeoutSeconds !== practice.kioskIdleTimeoutSeconds
+      ) {
+        await enqueueVaultEvent(tx, {
+          type: 'practice.kiosk_idle_timeout_set',
+          // Attributed to the signed-in staff member where there is one. This
+          // endpoint predates `SessionActor` and is still reachable without a
+          // token while `AUTH_ENFORCE` is false, so it falls back to the
+          // system actor rather than refusing a save that has always worked.
+          actor: actor ? { principalType: actor.principalType, id: actor.id } : SYSTEM_ACTOR,
+          subject: { type: 'Practice', id: practiceId },
+          payload: {
+            kioskIdleTimeoutSeconds: dto.kioskIdleTimeoutSeconds,
+            previousSeconds: practice.kioskIdleTimeoutSeconds,
+            ...(actor ? { setBy: actor.name } : {}),
+          },
+        });
+      }
+
+      /*
+       * HOW LONG AN UNSIGNED AGREEMENT WAITS BEFORE IT IS CLOSED IS EVIDENCED
+       * WHEN IT MOVES (D-2026-10-10-09, option 3). It decides when agreements
+       * stop being open, so who changed it and to what is evidence. Only on a
+       * real change; NULL is "the versioned default" and is said so, with the
+       * content version and the default it stands for.
+       */
+      if (
+        dto.unsignedDraftClosureDays !== undefined &&
+        (dto.unsignedDraftClosureDays ?? null) !== practice.unsignedDraftClosureDays
+      ) {
+        await enqueueVaultEvent(tx, {
+          type: 'practice.unsigned_draft_closure_days_set',
+          actor: actor ? { principalType: actor.principalType, id: actor.id } : SYSTEM_ACTOR,
+          subject: { type: 'Practice', id: practiceId },
+          payload: {
+            unsignedDraftClosureDays: dto.unsignedDraftClosureDays ?? 'content_default',
+            previous: practice.unsignedDraftClosureDays ?? 'content_default',
+            contentVersion: UNSIGNED_DRAFT_CLOSURE_VERSION,
+            contentDefaultDays: UNSIGNED_DRAFT_CLOSURE_DEFAULT_DAYS,
+            ...(actor ? { setBy: actor.name } : {}),
+          },
+        });
+      }
+
+      /*
+       * WHICH AGREEMENT THE PRE-STEP OFFERS IS EVIDENCED WHEN IT MOVES (Carl,
+       * 4 Sep 2026; GA-PLAN B6) — the same treatment, and the same reasoning,
+       * as the idle timeout above.
+       *
+       * It is a practice-wide choice with a per-patient consequence: with it
+       * on, the first thing a GP practice offers at the desk is a STANDING
+       * commitment to bulk bill this patient for this provider's in-scope
+       * services until somebody ends it (REQ-END-06a). Turning it off changes
+       * what every patient after that is asked. So who changed it, and to
+       * what, is evidence rather than a preference — written through the
+       * outbox in the same transaction as the row it evidences (hard rule 11).
+       *
+       * ONLY WHEN IT ACTUALLY CHANGES, because this endpoint is a whole-form
+       * save and the console posts every field on every press.
+       *
+       * A BOOLEAN IS NOT PII (REQ-LOG-08), so the value travels in the
+       * payload; "somebody changed a setting" without saying which way is not
+       * evidence of anything.
+       */
+      if (
+        dto.enduringByDefault !== undefined &&
+        dto.enduringByDefault !== practice.enduringByDefault
+      ) {
+        await enqueueVaultEvent(tx, {
+          type: 'practice.enduring_by_default_set',
+          actor: actor ? { principalType: actor.principalType, id: actor.id } : SYSTEM_ACTOR,
+          subject: { type: 'Practice', id: practiceId },
+          payload: {
+            enduringByDefault: dto.enduringByDefault,
+            previous: practice.enduringByDefault,
+            ...(actor ? { setBy: actor.name } : {}),
+          },
+        });
+      }
+
+      /*
+       * WHICH PARTS OF AoB THIS PRACTICE USES (D-2026-09-14-04) — evidenced
+       * when it moves, like the two above it, and for a stronger reason than
+       * either.
+       *
+       * THE TWO ABOVE ARE NOT PERMISSIONS AND THIS ONE IS. The idle timeout
+       * and the enduring default change what a tablet does and what the desk
+       * offers; this changes what the practice's staff can reach and what this
+       * server will answer for them. Switching the front desk's rails, the
+       * patient portal or ongoing agreements off for a practice is a decision
+       * somebody should have to own by name, and switching one back ON is the
+       * one somebody will be asked about afterwards.
+       *
+       * THE CONTENT VERSION TRAVELS WITH IT (hard rule 14). "Set to db4" means
+       * nothing a year later without saying which list `db4` came from, and
+       * the surfaces a profile names are versioned content that will move.
+       *
+       * ONLY WHEN IT ACTUALLY CHANGES, because this endpoint is a whole-form
+       * save and the console posts every field on every press. Written through
+       * the outbox in the same transaction as the row it evidences, so one
+       * without the other is structurally impossible (hard rule 11).
+       */
+      if (dto.surfaceProfile !== undefined && dto.surfaceProfile !== practice.surfaceProfile) {
+        await enqueueVaultEvent(tx, {
+          type: 'practice.surface_profile_set',
+          actor: actor ? { principalType: actor.principalType, id: actor.id } : SYSTEM_ACTOR,
+          subject: { type: 'Practice', id: practiceId },
+          payload: {
+            surfaceProfile: dto.surfaceProfile,
+            previous: practice.surfaceProfile,
+            /*
+             * A STRING, BECAUSE A VAULT PAYLOAD HOLDS SCALARS. Joined rather
+             * than left out: the profile key alone is a label, and what the
+             * label MEANT on the day is the thing somebody reads back.
+             */
+            surfaces: profileSurfaces(dto.surfaceProfile).join(', '),
+            surfacesVersion: PRACTICE_SURFACES_VERSION,
+            ...(actor ? { setBy: actor.name } : {}),
+          },
+        });
+      }
+
+      /*
+       * THE ZONE THIS PRACTICE'S DAY IS MEASURED IN (D-2026-10-10-03) —
+       * evidenced when it moves, the same treatment as the settings above.
+       *
+       * It decides which agreements are "today's" on the desk and the tablet,
+       * and which fall to "Unsigned from earlier days", and it is the date the
+       * desk writes as D2 when it locks particulars. Moving it moves where
+       * every one of those lines falls, so who moved it and to what is
+       * evidence. Written through the outbox in the same transaction as the
+       * row it evidences (hard rule 11).
+       *
+       * THE CONTENT VERSION TRAVELS WITH IT (hard rule 14), as the surface
+       * profile's does. A zone name is not PII (REQ-LOG-08).
+       *
+       * ONLY WHEN IT ACTUALLY CHANGES, because this endpoint is a whole-form
+       * save and the console posts every field on every press.
+       */
+      if (dto.timezone !== undefined && dto.timezone !== practice.timezone) {
+        await enqueueVaultEvent(tx, {
+          type: 'practice.timezone_set',
+          actor: actor ? { principalType: actor.principalType, id: actor.id } : SYSTEM_ACTOR,
+          subject: { type: 'Practice', id: practiceId },
+          payload: {
+            timezone: dto.timezone,
+            previous: practice.timezone,
+            timezonesVersion: PRACTICE_TIMEZONES_VERSION,
+            ...(actor ? { setBy: actor.name } : {}),
+          },
+        });
+      }
+
+      /*
+       * THE CACHE THE GUARD READS IS DROPPED IN THE SAME BREATH. It is short
+       * lived anyway, but a practice that has just been switched off a surface
+       * and can still call it for the next few seconds is a confusing thing to
+       * watch, and somebody testing the change would reasonably conclude it
+       * had not worked.
+       */
+      if (dto.surfaceProfile !== undefined) this.surfaces.forget(practiceId);
+
+      return updated;
     });
   }
 
@@ -88,20 +315,112 @@ export class PracticesService {
     );
   }
 
-  /** FR-1.8 — provider record; provider number optional by design (REQ-REG-02). */
-  addProvider(practiceId: string, dto: CreateProviderDto) {
-    return this.prisma.withPractice(practiceId, (tx) =>
-      tx.provider.create({
+  /**
+   * FR-1.8 — THE PRACTITIONER AND THEIR AFFILIATION AT A LOCATION (Carl,
+   * 7 Sep 2026). Provider number optional by design (REQ-REG-02), and per
+   * location because that is how it is issued.
+   *
+   * WHAT THIS NO LONGER WRITES: a `providers` row. That table is
+   * practice-scoped with no location and no link to a person, and it stopped
+   * being the agreement anchor today — so writing one here would be adding to
+   * the thing being retired. The returned `affiliationId` is what an agreement
+   * is anchored on, and `id` mirrors it so a caller that only reads `id` gets
+   * the anchor rather than a row nothing points at.
+   *
+   * THE PERSON IS SHARED, THE AFFILIATION IS NOT. A practitioner already known
+   * to the platform (they work at another practice, or they were here before)
+   * is REUSED on their AHPRA number rather than duplicated — the identity is
+   * person-level and outlives any one practice.
+   *
+   * `status: 'active'` AND `startedAt`, because this is the practice recording
+   * somebody who already works there, not inviting somebody who might. The
+   * invitation path (`AffiliationsService.invite`) is the one that leaves a
+   * practitioner to accept for themselves, and it is still the only way an
+   * affiliation gets there from `invited`.
+   */
+  async addProvider(practiceId: string, dto: CreateProviderDto) {
+    return this.prisma.withPractice(practiceId, async (tx) => {
+      const locations = await tx.practiceLocation.findMany({ select: { id: true }, orderBy: { createdAt: 'asc' } });
+      if (locations.length === 0) {
+        throw new BadRequestException(
+          'This practice has no location yet. A provider number is issued per practitioner per location and ' +
+            's 65C(5)(a) identifies the professional by the address of their place of practice, so there is ' +
+            'nowhere to put either. Add a location first.',
+        );
+      }
+      const locationId = dto.locationId ?? (locations.length === 1 ? locations[0]!.id : null);
+      if (!locationId) {
+        throw new BadRequestException(
+          'This practice has more than one location, so name the one this practitioner works at ' +
+            '(locationId). Their provider number and the address on every agreement they sign come from it — ' +
+            'it is not something to guess.',
+        );
+      }
+      if (!locations.some((l) => l.id === locationId)) {
+        throw new NotFoundException('That location was not found in this practice.');
+      }
+      if (dto.billingRole && !isBillingRole(dto.billingRole)) {
+        throw new BadRequestException(
+          `"${dto.billingRole}" is not a billing role. The list is versioned content ` +
+            `(packages/domain/content/billing-roles.json, ${BILLING_ROLES_VERSION}).`,
+        );
+      }
+
+      // One name, split the way the register holds it: everything before the
+      // last space is given names. Crude, and it is the practice's own typing
+      // being tidied rather than a fact being invented — the register lookup
+      // (`AffiliationsService.preRegister`) is what replaces it.
+      const trimmed = dto.name.trim().replace(/\s+/g, ' ');
+      const cut = trimmed.lastIndexOf(' ');
+      const givenNames = cut > 0 ? trimmed.slice(0, cut) : trimmed;
+      const familyName = cut > 0 ? trimmed.slice(cut + 1) : trimmed;
+
+      const practitioner =
+        (await tx.practitioner.findFirst({ where: { ahpraNumber: dto.ahpraNumber } })) ??
+        (await tx.practitioner.create({
+          data: {
+            ahpraNumber: dto.ahpraNumber,
+            givenNames,
+            familyName,
+            providerType: dto.providerType,
+            invitedByPracticeId: practiceId,
+          },
+        }));
+
+      const existing = await tx.affiliation.findFirst({
+        where: { practitionerId: practitioner.id, locationId },
+      });
+      if (existing) {
+        throw new BadRequestException(
+          'That practitioner already has an affiliation at that location. Change it on the affiliation ' +
+            'screen rather than adding a second one — the pair is unique for a reason.',
+        );
+      }
+
+      const affiliation = await tx.affiliation.create({
         data: {
           practiceId,
-          name: dto.name,
-          providerType: dto.providerType,
-          placeOfPracticeAddress: dto.placeOfPracticeAddress,
-          providerNumber: dto.providerNumber,
-          ahpraNumber: dto.ahpraNumber,
+          practitionerId: practitioner.id,
+          locationId,
+          providerNumber: dto.providerNumber ?? null,
+          billingRole: dto.billingRole ?? DEFAULT_BILLING_ROLE,
+          status: 'active',
+          startedAt: new Date(),
+          acceptanceMethod: 'console',
         },
-      }),
-    );
+      });
+
+      return {
+        id: affiliation.id,
+        affiliationId: affiliation.id,
+        practitionerId: practitioner.id,
+        locationId,
+        name: `${practitioner.givenNames} ${practitioner.familyName}`.trim(),
+        providerType: practitioner.providerType,
+        providerNumber: affiliation.providerNumber,
+        billingRole: affiliation.billingRole,
+      };
+    });
   }
 
   /**
@@ -111,6 +430,16 @@ export class PracticesService {
    * block is the Departmental position, not a preference.
    */
   async addAssignor(practiceId: string, dto: CreateAssignorDto) {
+    // "Other" WITHOUT ITS NOTE IS NOT A BASIS, it is a shrug — the note IS the
+    // basis on that branch (REQ-VUL-01). The database refuses it too
+    // (assignors_other_basis_has_note); this is the sentence a person can act
+    // on, said before the constraint has to say it.
+    if (dto.authorityBasis === 'other_with_note' && !dto.authorityNote?.trim()) {
+      throw new BadRequestException(
+        'REQ-VUL-01: an "other" authority basis carries a note saying what it is. A friend signing is ' +
+          'a legitimate answer; write "friend".',
+      );
+    }
     return this.prisma.withPractice(practiceId, async (tx) => {
       const staff = await tx.staffMember.findMany({ where: { active: true } });
       const candidateName = collapse(dto.name);
@@ -152,7 +481,16 @@ export class PracticesService {
     return this.prisma.withPractice(practiceId, async (tx) => {
       const practice = await tx.practice.findFirst({});
       if (!practice) throw new NotFoundException('Practice not found.');
-      const providerCount = await tx.provider.count({ where: { active: true } });
+      /*
+       * "SOMEBODY CAN BE THE PROVIDER ON AN AGREEMENT HERE" — counted on
+       * affiliations now, not on the retired `providers` table (Carl, 7 Sep
+       * 2026). A practice whose only `providers` rows match no practitioner
+       * could not anchor a single agreement, and the old count said it was
+       * ready to go live.
+       */
+      const providerCount = await tx.affiliation.count({
+        where: { status: { in: ['active', 'ending'] }, billingRole: 'servicing_provider' },
+      });
       const items = [
         { item: 'write_back_proven', done: practice.writeBackProven, blocking: true, note: 'D-01 spike (FR-1.3)' },
         { item: 'sender_id_registered', done: practice.senderIdRegistered, blocking: true, note: 'ACMA Sender ID (FR-1.4)' },

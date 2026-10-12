@@ -1,0 +1,168 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg style="background:#ffffff" viewBox="0 0 1600 716" role="img" aria-label="Swim-lane diagram of a bulk-billed GP visit across Patient, PMS, AoBPlatform and Medicare. Pre-billing: booking, pre-visit agreement link, arrival, check for an approved enduring or episodic agreement, tablet capture if none, consultation. Billing gate: the PMS cannot bill unless a patient-approved enduring or episodic agreement is on file for this practitioner today. Post-billing: invoice, claim to Medicare, benefit paid, reports reconciled against the agreement." xmlns="http://www.w3.org/2000/svg" font-family="'Source Sans 3', 'Segoe UI', system-ui, sans-serif" font-size="12">
+<defs>
+<marker id="arw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#1e2a2c"/></marker>
+<marker id="arw-gate" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#b5411c"/></marker>
+<marker id="arw-ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#2c7a3f"/></marker>
+</defs>
+<rect x="0" y="96" width="1600" height="150" fill="#ffffff"/>
+<rect x="0" y="96" width="150" height="150" fill="#e2e8e4"/>
+<line x1="0" y1="96" x2="1600" y2="96" stroke="#cfd6d3" stroke-width="1"/>
+<text x="75.0" y="176.0" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, monospace" font-size="14" font-weight="600" letter-spacing="0.06em" fill="#1e2a2c">PATIENT</text>
+<rect x="0" y="246" width="1600" height="150" fill="#eef2ef"/>
+<rect x="0" y="246" width="150" height="150" fill="#e2e8e4"/>
+<line x1="0" y1="246" x2="1600" y2="246" stroke="#cfd6d3" stroke-width="1"/>
+<text x="75.0" y="326.0" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, monospace" font-size="14" font-weight="600" letter-spacing="0.06em" fill="#1e2a2c">PMS</text>
+<rect x="0" y="396" width="1600" height="150" fill="#ffffff"/>
+<rect x="0" y="396" width="150" height="150" fill="#e2e8e4"/>
+<line x1="0" y1="396" x2="1600" y2="396" stroke="#cfd6d3" stroke-width="1"/>
+<text x="75.0" y="476.0" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, monospace" font-size="14" font-weight="600" letter-spacing="0.06em" fill="#1e2a2c">AOBPLATFORM</text>
+<rect x="0" y="546" width="1600" height="150" fill="#eef2ef"/>
+<rect x="0" y="546" width="150" height="150" fill="#e2e8e4"/>
+<line x1="0" y1="546" x2="1600" y2="546" stroke="#cfd6d3" stroke-width="1"/>
+<text x="75.0" y="626.0" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, monospace" font-size="14" font-weight="600" letter-spacing="0.06em" fill="#1e2a2c">MEDICARE</text>
+<line x1="0" y1="696" x2="1600" y2="696" stroke="#cfd6d3" stroke-width="1"/>
+<rect x="870" y="96" width="150" height="600" fill="#fbeee7"/>
+<line x1="870" y1="96" x2="870" y2="696" stroke="#b5411c" stroke-width="2" stroke-dasharray="6 5"/>
+<line x1="1020" y1="96" x2="1020" y2="696" stroke="#b5411c" stroke-width="2" stroke-dasharray="6 5"/>
+<rect x="160" y="8" width="700" height="34" rx="3" fill="#dfe7e2"/>
+<text x="510.0" y="30.0" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, monospace" font-size="13" font-weight="700" letter-spacing="0.08em" fill="#1e2a2c">PRE-BILLING</text>
+<rect x="870" y="8" width="150" height="34" rx="3" fill="#b5411c"/>
+<text x="945.0" y="30.0" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, monospace" font-size="13" font-weight="700" letter-spacing="0.08em" fill="#fff">GATE</text>
+<rect x="1030" y="8" width="560" height="34" rx="3" fill="#dfe7e2"/>
+<text x="1310.0" y="30.0" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, monospace" font-size="13" font-weight="700" letter-spacing="0.08em" fill="#1e2a2c">POST-BILLING</text>
+<text x="280.0" y="72" text-anchor="middle" font-size="12" font-weight="600" fill="#5b6a6d">Pre-visit</text>
+<line x1="160" y1="82" x2="400" y2="82" stroke="#cfd6d3" stroke-width="1"/>
+<text x="540.0" y="72" text-anchor="middle" font-size="12" font-weight="600" fill="#5b6a6d">Arrival & check-in</text>
+<line x1="410" y1="82" x2="670" y2="82" stroke="#cfd6d3" stroke-width="1"/>
+<text x="770.0" y="72" text-anchor="middle" font-size="12" font-weight="600" fill="#5b6a6d">Consultation</text>
+<line x1="680" y1="82" x2="860" y2="82" stroke="#cfd6d3" stroke-width="1"/>
+<text x="945.0" y="72" text-anchor="middle" font-size="12" font-weight="600" fill="#b5411c">Billing gate</text>
+<text x="1160.0" y="72" text-anchor="middle" font-size="12" font-weight="600" fill="#5b6a6d">Billing & claim</text>
+<line x1="1030" y1="82" x2="1290" y2="82" stroke="#cfd6d3" stroke-width="1"/>
+<text x="1445.0" y="72" text-anchor="middle" font-size="12" font-weight="600" fill="#5b6a6d">Post-billing</text>
+<line x1="1300" y1="82" x2="1590" y2="82" stroke="#cfd6d3" stroke-width="1"/>
+<line x1="230" y1="201.0" x2="230" y2="291.0" stroke="#1e2a2c" stroke-width="1.5" marker-end="url(#arw)"/>
+<text x="224" y="250.0" text-anchor="end" font-size="11" font-style="italic" fill="#5b6a6d">books</text>
+<line x1="230" y1="351.0" x2="230" y2="441.0" stroke="#1e2a2c" stroke-width="1.5" marker-end="url(#arw)"/>
+<text x="224" y="400.0" text-anchor="end" font-size="11" font-style="italic" fill="#5b6a6d">appointment event</text>
+<path d="M300,441.0 L300,201.0" fill="none" stroke="#1e2a2c" stroke-width="1.5" marker-end="url(#arw)"/>
+<text x="306" y="250.0" text-anchor="start" font-size="11" font-style="italic" fill="#5b6a6d">agreement link</text>
+<line x1="360" y1="351.0" x2="360" y2="591.0" stroke="#1e2a2c" stroke-width="1.5" marker-end="url(#arw)" stroke-dasharray="5 4"/>
+<text x="370" y="523.0" text-anchor="middle" font-size="11" font-style="italic" fill="#5b6a6d">OPV</text>
+<path d="M380,591.0 L380,351.0" fill="none" stroke="#1e2a2c" stroke-width="1.5" marker-end="url(#arw)" stroke-dasharray="5 4"/>
+<line x1="460" y1="201.0" x2="460" y2="291.0" stroke="#1e2a2c" stroke-width="1.5" marker-end="url(#arw)"/>
+<text x="454" y="250.0" text-anchor="end" font-size="11" font-style="italic" fill="#5b6a6d">checks in</text>
+<line x1="460" y1="351.0" x2="460" y2="441.0" stroke="#1e2a2c" stroke-width="1.5" marker-end="url(#arw)"/>
+<text x="454" y="400.0" text-anchor="end" font-size="11" font-style="italic" fill="#5b6a6d">arrival event</text>
+<path d="M560,441.0 L560,351.0" fill="none" stroke="#2c7a3f" stroke-width="1.5" marker-end="url(#arw-ok)"/>
+<text x="566" y="400.0" text-anchor="start" font-size="11" font-style="italic" fill="#5b6a6d">writes back status</text>
+<path d="M630,441.0 L630,201.0" fill="none" stroke="#1e2a2c" stroke-width="1.5" marker-end="url(#arw)" stroke-dasharray="5 4"/>
+<text x="636" y="250.0" text-anchor="start" font-size="11" font-style="italic" fill="#5b6a6d">tablet</text>
+<line x1="770" y1="201.0" x2="770" y2="291.0" stroke="#1e2a2c" stroke-width="1.5" marker-end="url(#arw)"/>
+<polygon points="945.0,267.0 1009.0,321.0 945.0,375.0 881.0,321.0" fill="#ffffff" stroke="#b5411c" stroke-width="2.5"/>
+<text x="945.0" y="311.0" text-anchor="middle" font-size="11.5" font-weight="700" fill="#b5411c">Approved</text>
+<text x="945.0" y="325.0" text-anchor="middle" font-size="11.5" font-weight="700" fill="#b5411c">agreement</text>
+<text x="945.0" y="339.0" text-anchor="middle" font-size="11.5" font-weight="700" fill="#b5411c">on file?</text>
+<line x1="850" y1="321.0" x2="881.0" y2="321.0" stroke="#1e2a2c" stroke-width="1.5" marker-end="url(#arw)"/>
+<rect x="876" y="133.0" width="138" height="76" rx="4" fill="#b5411c"/>
+<text x="945.0" y="148.0" text-anchor="middle" font-size="11" font-weight="700" fill="#fff">PMS CANNOT BILL</text>
+<text x="945.0" y="162.0" text-anchor="middle" font-size="11" font-weight="500" fill="#fff">without a patient-</text>
+<text x="945.0" y="176.0" text-anchor="middle" font-size="11" font-weight="500" fill="#fff">approved enduring</text>
+<text x="945.0" y="190.0" text-anchor="middle" font-size="11" font-weight="500" fill="#fff">or episodic</text>
+<text x="945.0" y="204.0" text-anchor="middle" font-size="11" font-weight="500" fill="#fff">agreement</text>
+<line x1="945.0" y1="375.0" x2="945.0" y2="441.0" stroke="#b5411c" stroke-width="1.5" marker-end="url(#arw-gate)"/>
+<text x="953.0" y="399.0" font-size="11.5" font-weight="700" fill="#b5411c">NO</text>
+<path d="M876,491.0 L670,491.0" fill="none" stroke="#b5411c" stroke-width="1.5" marker-end="url(#arw-gate)" stroke-dasharray="5 4"/>
+<text x="770" y="517.0" text-anchor="middle" font-size="11" font-style="italic" fill="#5b6a6d">re-capture</text>
+<text x="945.0" y="617.0" text-anchor="middle" font-size="11" font-style="italic" fill="#b5411c">nothing lodged</text>
+<text x="945.0" y="632.0" text-anchor="middle" font-size="11" font-style="italic" fill="#b5411c">until YES</text>
+<line x1="1009.0" y1="321.0" x2="1040" y2="321.0" stroke="#2c7a3f" stroke-width="1.5" marker-end="url(#arw-ok)"/>
+<text x="1011.0" y="311.0" font-size="11.5" font-weight="700" fill="#2c7a3f">YES</text>
+<line x1="1080" y1="351.0" x2="1080" y2="441.0" stroke="#1e2a2c" stroke-width="1.5" marker-end="url(#arw)"/>
+<text x="1074" y="400.0" text-anchor="end" font-size="11" font-style="italic" fill="#5b6a6d">items</text>
+<path d="M1150,441.0 L1150,351.0" fill="none" stroke="#2c7a3f" stroke-width="1.5" marker-end="url(#arw-ok)"/>
+<text x="1156" y="400.0" text-anchor="start" font-size="11" font-style="italic" fill="#5b6a6d">match / mismatch</text>
+<line x1="1250" y1="351.0" x2="1250" y2="591.0" stroke="#1e2a2c" stroke-width="1.5" marker-end="url(#arw)" stroke-dasharray="5 4"/>
+<text x="1256" y="550.0" text-anchor="start" font-size="11" font-style="italic" fill="#5b6a6d">claim</text>
+<path d="M1220,441.0 L1220,201.0" fill="none" stroke="#1e2a2c" stroke-width="1.5" marker-end="url(#arw)" stroke-dasharray="5 4"/>
+<text x="1214" y="250.0" text-anchor="end" font-size="11" font-style="italic" fill="#5b6a6d">patient copy</text>
+<path d="M1350,591.0 L1350,351.0" fill="none" stroke="#1e2a2c" stroke-width="1.5" marker-end="url(#arw)" stroke-dasharray="5 4"/>
+<text x="1344" y="550.0" text-anchor="end" font-size="11" font-style="italic" fill="#5b6a6d">reports</text>
+<line x1="1520" y1="351.0" x2="1520" y2="441.0" stroke="#1e2a2c" stroke-width="1.5" marker-end="url(#arw)"/>
+<text x="1526" y="400.0" text-anchor="start" font-size="11" font-style="italic" fill="#5b6a6d">reports</text>
+<line x1="1280" y1="621.0" x2="1310" y2="621.0" stroke="#1e2a2c" stroke-width="1.5" marker-end="url(#arw)"/>
+<line x1="1280" y1="321.0" x2="1310" y2="321.0" stroke="#1e2a2c" stroke-width="1.5" marker-end="url(#arw)"/>
+<rect x="170" y="141.0" width="220" height="60" rx="4" fill="#ffffff" stroke="#1e2a2c" stroke-width="1.2"/>
+<text x="280.0" y="160.5" text-anchor="middle" font-weight="600" fill="#1e2a2c">Books appointment</text>
+<text x="280.0" y="175.5" text-anchor="middle" fill="#1e2a2c">Opens link → approves</text>
+<text x="280.0" y="190.5" text-anchor="middle" fill="#1e2a2c">enduring / episodic agreement</text>
+<rect x="170" y="291.0" width="220" height="60" rx="4" fill="#ffffff" stroke="#1e2a2c" stroke-width="1.2"/>
+<text x="280.0" y="310.5" text-anchor="middle" font-weight="600" fill="#1e2a2c">Appointment written</text>
+<text x="280.0" y="325.5" text-anchor="middle" fill="#1e2a2c">Reminder SMS · OPV card check</text>
+<text x="280.0" y="340.5" text-anchor="middle" fill="#1e2a2c">Account type: bulk bill</text>
+<rect x="170" y="441.0" width="220" height="60" rx="4" fill="#e3f1ee" stroke="#17706a" stroke-width="2"/>
+<text x="280.0" y="460.5" text-anchor="middle" font-weight="600" fill="#1e2a2c">Reads appointment book</text>
+<text x="280.0" y="475.5" text-anchor="middle" fill="#1e2a2c">Sends pre-visit agreement</text>
+<text x="280.0" y="490.5" text-anchor="middle" fill="#1e2a2c">link (SMS / email)</text>
+<rect x="170" y="591.0" width="220" height="60" rx="4" fill="#ffffff" stroke="#1e2a2c" stroke-width="1.2"/>
+<text x="280.0" y="610.5" text-anchor="middle" font-weight="600" fill="#1e2a2c">OPV response</text>
+<text x="280.0" y="625.5" text-anchor="middle" fill="#1e2a2c">Medicare card valid,</text>
+<text x="280.0" y="640.5" text-anchor="middle" fill="#1e2a2c">details match</text>
+<rect x="420" y="141.0" width="240" height="60" rx="4" fill="#ffffff" stroke="#1e2a2c" stroke-width="1.2"/>
+<text x="540.0" y="160.5" text-anchor="middle" font-weight="600" fill="#1e2a2c">Arrives · 3-point ID check</text>
+<text x="540.0" y="175.5" text-anchor="middle" fill="#1e2a2c">No agreement on file?</text>
+<text x="540.0" y="190.5" text-anchor="middle" fill="#1e2a2c">Approves on tablet (< 45 s)</text>
+<rect x="420" y="291.0" width="240" height="60" rx="4" fill="#ffffff" stroke="#1e2a2c" stroke-width="1.2"/>
+<text x="540.0" y="310.5" text-anchor="middle" font-weight="600" fill="#1e2a2c">Patient found / registered</text>
+<text x="540.0" y="325.5" text-anchor="middle" fill="#1e2a2c">Marked ARRIVED</text>
+<text x="540.0" y="340.5" text-anchor="middle" fill="#1e2a2c">Agreement status shown</text>
+<rect x="420" y="441.0" width="240" height="60" rx="4" fill="#e3f1ee" stroke="#17706a" stroke-width="2"/>
+<text x="540.0" y="460.5" text-anchor="middle" font-weight="600" fill="#1e2a2c">Arrival event → check agreement</text>
+<text x="540.0" y="475.5" text-anchor="middle" fill="#1e2a2c">None? tablet capture · verify</text>
+<text x="540.0" y="490.5" text-anchor="middle" fill="#1e2a2c">validate · vault · write back</text>
+<rect x="690" y="141.0" width="160" height="60" rx="4" fill="#ffffff" stroke="#1e2a2c" stroke-width="1.2"/>
+<text x="770.0" y="175.5" text-anchor="middle" font-weight="600" fill="#1e2a2c">Consult with GP</text>
+<rect x="690" y="291.0" width="160" height="60" rx="4" fill="#ffffff" stroke="#1e2a2c" stroke-width="1.2"/>
+<text x="770.0" y="318.0" text-anchor="middle" font-weight="600" fill="#1e2a2c">GP records notes</text>
+<text x="770.0" y="333.0" text-anchor="middle" fill="#1e2a2c">Selects MBS item(s)</text>
+<rect x="690" y="441.0" width="160" height="60" rx="4" fill="#e3f1ee" stroke="#17706a" stroke-width="2"/>
+<text x="770.0" y="460.5" text-anchor="middle" font-weight="600" fill="#1e2a2c">Holds status:</text>
+<text x="770.0" y="475.5" text-anchor="middle" fill="#1e2a2c">APPROVED · PENDING</text>
+<text x="770.0" y="490.5" text-anchor="middle" fill="#1e2a2c">· DECLINED</text>
+<rect x="876" y="441.0" width="138" height="60" rx="4" fill="#ffffff" stroke="#b5411c" stroke-width="2"/>
+<text x="945.0" y="460.5" text-anchor="middle" font-weight="600" fill="#1e2a2c">Capture cascade</text>
+<text x="945.0" y="475.5" text-anchor="middle" fill="#1e2a2c">tablet · link · paper</text>
+<text x="945.0" y="490.5" text-anchor="middle" fill="#1e2a2c">or private bill</text>
+<rect x="1040" y="141.0" width="240" height="60" rx="4" fill="#ffffff" stroke="#1e2a2c" stroke-width="1.2"/>
+<text x="1160.0" y="160.5" text-anchor="middle" font-weight="600" fill="#1e2a2c">Assigns benefit → pays nothing</text>
+<text x="1160.0" y="175.5" text-anchor="middle" fill="#1e2a2c">Declined → pays privately,</text>
+<text x="1160.0" y="190.5" text-anchor="middle" fill="#1e2a2c">receives claimable invoice</text>
+<rect x="1040" y="291.0" width="240" height="60" rx="4" fill="#ffffff" stroke="#1e2a2c" stroke-width="1.2"/>
+<text x="1160.0" y="310.5" text-anchor="middle" font-weight="600" fill="#1e2a2c">Invoice finalised</text>
+<text x="1160.0" y="325.5" text-anchor="middle" fill="#1e2a2c">Bulk-bill claim lodged</text>
+<text x="1160.0" y="340.5" text-anchor="middle" fill="#1e2a2c">via Medicare Online</text>
+<rect x="1040" y="441.0" width="240" height="60" rx="4" fill="#e3f1ee" stroke="#17706a" stroke-width="2"/>
+<text x="1160.0" y="460.5" text-anchor="middle" font-weight="600" fill="#1e2a2c">Reconciles agreement ↔ items</text>
+<text x="1160.0" y="475.5" text-anchor="middle" fill="#1e2a2c">same practitioner, same day</text>
+<text x="1160.0" y="490.5" text-anchor="middle" fill="#1e2a2c">Copy sent to patient</text>
+<rect x="1040" y="591.0" width="240" height="60" rx="4" fill="#ffffff" stroke="#1e2a2c" stroke-width="1.2"/>
+<text x="1160.0" y="618.0" text-anchor="middle" font-weight="600" fill="#1e2a2c">Claim received</text>
+<text x="1160.0" y="633.0" text-anchor="middle" fill="#1e2a2c">Assessed against MBS</text>
+<rect x="1310" y="141.0" width="270" height="60" rx="4" fill="#ffffff" stroke="#1e2a2c" stroke-width="1.2"/>
+<text x="1445.0" y="160.5" text-anchor="middle" font-weight="600" fill="#1e2a2c">Holds copy of agreement</text>
+<text x="1445.0" y="175.5" text-anchor="middle" fill="#1e2a2c">Enduring: stands for future</text>
+<text x="1445.0" y="190.5" text-anchor="middle" fill="#1e2a2c">visits with this GP</text>
+<rect x="1310" y="291.0" width="270" height="60" rx="4" fill="#ffffff" stroke="#1e2a2c" stroke-width="1.2"/>
+<text x="1445.0" y="310.5" text-anchor="middle" font-weight="600" fill="#1e2a2c">Processing & payment reports</text>
+<text x="1445.0" y="325.5" text-anchor="middle" fill="#1e2a2c">received · reconciled</text>
+<text x="1445.0" y="340.5" text-anchor="middle" fill="#1e2a2c">Rejections reworked</text>
+<rect x="1310" y="441.0" width="270" height="60" rx="4" fill="#e3f1ee" stroke="#17706a" stroke-width="2"/>
+<text x="1445.0" y="460.5" text-anchor="middle" font-weight="600" fill="#1e2a2c">Matches outcome to agreement</text>
+<text x="1445.0" y="475.5" text-anchor="middle" fill="#1e2a2c">Exceptions flagged</text>
+<text x="1445.0" y="490.5" text-anchor="middle" fill="#1e2a2c">Retained 2 yrs from claim</text>
+<rect x="1310" y="591.0" width="270" height="60" rx="4" fill="#ffffff" stroke="#1e2a2c" stroke-width="1.2"/>
+<text x="1445.0" y="610.5" text-anchor="middle" font-weight="600" fill="#1e2a2c">Benefit paid to practice</text>
+<text x="1445.0" y="625.5" text-anchor="middle" fill="#1e2a2c">Processing & payment</text>
+<text x="1445.0" y="640.5" text-anchor="middle" fill="#1e2a2c">reports returned</text>
+</svg>

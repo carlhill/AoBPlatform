@@ -1,0 +1,289 @@
+# VISIT-CHECKLIST.md — everything this patient is here for today, and what is still outstanding
+### v1.0 · 12 September 2026 · Owner: Carl. A plan, not yet built. Companion to `FRONT-DESK-PAGE.md` (the panel this lives in), `PRACTITIONER-QUEUE-PAGE.md`, `ARRIVAL-WHO-IS-SEEN.md`, `VISIT-WORKFLOW.md`.
+
+Carl, 12 September 2026, annotating the front desk page: *"a list of all services
+to the patient on today's visit (this is the per patient workflow)"* — check
+whether an agreement is needed, create it, get it approved on the tablet, see the
+doctor, do a blood test, see the nurse, approve the post-service agreement, make
+a payment. *"We need to track that these steps have been completed… the dr will
+flag their card as complete. The nurse and the blood-test will do the same."*
+
+---
+
+## 1. The idea is right, and one distinction decides whether it is buildable
+
+The eight steps are **two different kinds of thing**, and the plan lives or dies
+on keeping them apart:
+
+| | Steps | Whose they are |
+|---|---|---|
+| **Paperwork** | 1 needs an agreement · 2 create it · 3 approve on the tablet · 7 post-service agreement | **Ours.** The platform decides, creates, captures and proves these |
+| **The visit itself** | 4 see the provider · 5 blood test · 6 see the nurse · 8 payment | **The practice's.** Clinical and financial events we do not run |
+
+**We must never direct the second kind.** Clinical features of any kind are out
+of scope, and so is payment processing (CLAUDE.md §8). `VISIT-WORKFLOW.md` says
+the practice management system is the register of patients and we keep no shadow
+list.
+
+**But we may LISTEN to them, and we already need to.** The post-service agreement
+exists precisely because a service was rendered; there is already an endpoint for
+being told so. A doctor pressing "seen" is that same signal wearing a friendlier
+hat.
+
+So the checklist is **a record of what has happened, arranged so the paperwork
+that depends on it becomes obvious.** It is not a workflow engine, it never tells
+a clinician what to do next, and it cannot stop anything.
+
+## 2. What each step actually is
+
+| # | Carl's step | What it is here | State comes from |
+|---|---|---|---|
+| 1 | Needs an agreement approved | Already answered by the versioned visit policy at arrival — enduring, episodic or none | `decideVisitAgreement`, today |
+| 2 | Create the agreement | Already automatic. Drafted, validated, rendered, locked | The agreement lifecycle, today |
+| 3 | Approve on the tablet | The push and the signature | Tablet session, today. **Carl's second note: the send card appears here** |
+| 4 | See the provider | A milestone the provider marks | New — a "seen" mark |
+| 5 | Blood test | A milestone the phlebotomist marks | New — same mechanism |
+| 6 | See the nurse | A milestone the nurse marks | New — same mechanism |
+| 7 | Post-service agreement | Already built. A rendered service decides, drafts and locks | `POST /arrivals/service-rendered`, today |
+| 8 | Payment | **Out of scope as an action.** See §4 | Not ours |
+
+**Steps 1, 2, 3 and 7 already exist.** The genuinely new thing is one mechanism —
+a person marking their part of the visit done — and a panel that shows all of it
+in one list.
+
+## 3. The model: a visit has services, not steps
+
+A numbered list implies an order that the room does not keep. A patient may see
+the nurse first, give blood after the consultation, or never see the doctor at
+all. So:
+
+**A visit is a set of SERVICES for today, each with a state.** Not a sequence.
+The panel lists them in the order they were added and marks each one, which is
+what Carl's tick-or-"Completed (was pending)" tag describes.
+
+Each service carries: who it is with (a provider, a nurse, a phlebotomist — the
+`seeingAffiliationId` work makes this expressible), what it is in the practice's
+own words, and one state: **outstanding**, **done**, or **not needed**.
+
+The paperwork rows sit in the same list so reception reads one thing, but they
+are computed, never marked by hand.
+
+### 3a. Carl's name for it, and the rule it settles (12 September 2026)
+
+Carl, re-reaching this model from the other end, after seeing a patient sent to
+"Finished" before the doctor had called them in:
+
+> *"What you call 'Paper work' per patient, I call the patient service list. We
+> need a patient service list, just like a car has service list when taken to
+> the service centre. Only when all services are completed or some are cancelled
+> does the client go to Finished."*
+
+**This is section 3 arrived at independently, which is the best evidence the
+model is right.** Two people reasoning from different ends — one from "what does
+this screen have to show", one from "what is a visit" — landed on the same
+shape. Adopt his name for it: it is the **patient service list**, and the car
+service analogy is the right one to explain it with, because everybody has seen
+one.
+
+**What his framing ADDS, and it is not small.** Section 3 said a visit is a set
+of services each with a state. It did not say what that makes "Finished". Carl
+does:
+
+> **A patient is Finished when every service on their list is resolved — each
+> one completed, or cancelled.**
+
+That is the general rule, and it supersedes the narrower one recorded the same
+day in D-2026-09-12-20 ("the paperwork is done AND the visit is complete").
+The narrow one is not wrong; it is what the general one REDUCES TO while the
+only services on the list are the computed paperwork rows and the consultation.
+Write the code as the general rule, so adding "bloods" to a practice's list
+changes what Finished means without changing a line.
+
+**"Cancelled" earns its place beside "not needed".** Section 3 has one state for
+both and they are different facts. *Not needed* was never required — the visit
+policy said no agreement was owed. *Cancelled* was on the list and was dropped —
+the patient declined the blood test, or ran out of time. A car service list
+distinguishes them and so should this, because "we never planned to" and "we
+planned to and did not" are different answers to an auditor and to the patient.
+
+| State | Meaning |
+|---|---|
+| `outstanding` | On the list, not done yet |
+| `done` | Completed |
+| `not_needed` | Never required in the first place |
+| `cancelled` | Was on the list, deliberately dropped |
+
+**The scope line does not move**, and it is worth restating under a name that
+sounds more clinical than the old one. A patient service list is **a record of
+what the practice said would happen and whether it happened** — nothing more. It
+carries no reason for the visit, no finding, no note, no triage category, no
+duration, and it never tells a clinician what to do next. It is not a care plan
+and it is not a task list. Clinical features of any kind are out of scope
+(CLAUDE.md §8), and the name changing does not change that.
+
+**Nor does it gate anything** (hard rule 8). A patient with three outstanding
+services is seen and billed exactly as they would be otherwise. The list reports;
+it never blocks.
+
+**Where the build actually is.** Sections 1 and 2 remain accurate: the paperwork
+rows are computed and exist today, and the consultation step is being added now.
+The genuinely unbuilt part is unchanged — **one mechanism for a person to mark
+their part of the visit done**, and the practice's own list of what those parts
+are, which is versioned content and not code.
+
+### 3b. Where the list actually lives today — and it is not a table (12 September 2026)
+
+Carl asked the right question: *"did you create a table of services for the
+patient in this visit and are we tracking it in the database? If not how are you
+tracking the services the patient needs in this visit."*
+
+**Straight answer: there is no such table, and two of the three sources are not
+stored at all.**
+
+| Row on the list | Where its state lives today |
+|---|---|
+| Needs an agreement · Create it · Signed on a tablet · Signed after the visit | **Nowhere.** Computed on read from the agreement's own columns |
+| Seen by the provider | **`core.visit_states`** — append-only per arrival, carrying the state, `statesVersion`, who set it and when |
+| Nurse · bloods · anything the practice adds | **Nowhere. Not modelled.** |
+
+So "Finished means every service resolved" is written to generalise but ranges
+over a list whose membership is fixed in code. That is honest for today, because
+the only members ARE the computed rows and the consultation — but it does not
+survive the first practice that wants "bloods" on the list.
+
+**Note the name collision before anybody builds it.** `core.service_records`
+already exists and means something else entirely: the MBS items and service date
+from the practice's billing, which is what raises a post-agreement. And
+"service" in this domain is the statutory thing an agreement is ABOUT (D5, D6a).
+Carl's "patient service list" is a third meaning. **The user-facing words stay
+his; the table must not reuse the word** — `visit_items` or similar, decided
+before the migration rather than after.
+
+**The shape, following `visit_states` rather than inventing one:**
+
+- `practiceId`, `arrivalId` — it belongs to the visit, like the state does.
+- `itemType` plus the content version, because the list of possible items is
+  versioned content and never code (hard rule 14).
+- `affiliationId`, nullable — who it is with, where there is somebody.
+- `state`: `outstanding` · `done` · `not_needed` · `cancelled` (§3a).
+- `setByPrincipalId` / `Type` / `setAt`, **append-only, latest row wins** — the
+  same pattern `visit_states` uses, which gives the history for free.
+- No clinical content of any kind. No reason, no note, no duration, no finding.
+
+**The paperwork rows stay computed and never get stored**, because the agreement
+already holds that truth and a second copy would be a second answer.
+
+**Do not build the table on its own.** An empty table changes nothing: today's
+list would look identical, because nothing would ever create a row. The table,
+the versioned content file listing what items a practice may add, and the
+control that adds one have to land together or the first two are dead weight.
+
+## 4. Payment, and why it is only a line of text
+
+Bulk billing means the patient pays nothing — that is the entire point of the
+regime this product serves. A payment step therefore only exists where the
+patient **declined** to assign, or where the service is private, which is
+already modelled: a declined agreement leads to a private bill with a claimable
+invoice.
+
+So step 8 is **a fact the panel may show — "this visit will be billed privately"
+— and never an action, a total, or an amount.** No dollar figure appears on any
+agreement artefact (hard rule 4), and payment processing is out of scope. If a
+practice wants to take money, that is their software.
+
+## 5. Who may mark what
+
+| Who | May mark |
+|---|---|
+| The provider | Their own consultation, on their own queue page |
+| The nurse, the phlebotomist | Their own service, on theirs |
+| Reception | Any service, because a clinician who forgot is the ordinary case and the desk is who notices |
+
+**Marking is not clinical documentation.** It records that an encounter happened,
+by whom and when — never what was found, done or prescribed. A free-text box
+here would become a clinical note within a week, so there is none.
+
+**It is a write on the practitioner queue page**, which `PRACTITIONER-QUEUE-PAGE.md`
+§3 currently forbids. That rule was written to keep agreement controls off a
+clinician's screen and it still should. Marking your own attendance is not acting
+on an agreement, so the rule narrows rather than falls: **the only control a
+practitioner ever gets is "I have seen this patient".**
+
+## 6. The payoff
+
+This is what makes the work worth doing rather than merely tidy.
+
+**The post-service agreement becomes automatic and visible.** Today something has
+to tell us a service was rendered. When the doctor marks the consultation done,
+that IS the signal, so step 7 appears on the list by itself, already drafted, and
+reception sees it the moment it is needed rather than discovering it later.
+
+**The covering-doctor trap gets caught.** An enduring agreement is per
+practitioner. If the patient is marked as seen by somebody other than the one
+their agreement names, the list says so immediately instead of the practice
+billing a visit with nothing behind it.
+
+**A nurse's or phlebotomist's visit resolves cleanly.** A blood test with no
+claim shows "nothing to sign" and the visit closes with nobody chasing anything.
+
+## 7. Rules
+
+1. **Never blocks anything** (hard rule 8). Nothing on this list gates care, and
+   an unmarked service never prevents a patient being seen or billed.
+2. **No clinical content.** No reason, no note, no result, no diagnosis. Types,
+   times and who — nothing else.
+3. **No amounts, ever** (hard rule 4).
+4. **Marking is attributable** — who marked it and when, from the token, never a
+   typed name.
+5. **Reversible.** A mis-marked service is un-marked, and the correction is
+   recorded rather than the original being erased.
+6. **The list is not a record of care.** It is today's working view. The evidence
+   of what was agreed lives in the vault; this is scaffolding around it.
+7. **Where the practice has a feed, it wins.** If the practice management system
+   already knows the visit's services, we read them rather than asking reception
+   to type them twice.
+
+## 8. Named tests
+
+- `the_checklist_never_gates_a_consultation_or_a_bill`
+- `marking_a_service_done_records_who_and_when_and_no_clinical_detail`
+- `a_marked_consultation_raises_the_post_service_agreement_by_itself`
+- `a_patient_seen_by_somebody_other_than_their_enduring_provider_is_flagged`
+- `a_blood_test_with_no_claim_closes_with_nothing_to_sign`
+- `no_amount_appears_anywhere_on_the_checklist`
+- `a_practitioner_may_mark_their_own_service_and_nothing_else`
+- `a_mis_marked_service_can_be_un_marked_and_the_correction_is_recorded`
+- `the_checklist_across_a_practice_boundary_finds_nothing`
+
+## 9. Build order
+
+1. **The list, read-only**, in the front desk panel: the four paperwork rows that
+   already exist, computed. This alone replaces the placeholder panel and is
+   useful on its own.
+2. **The send card in row 3** — Carl's second note. The existing numbered strip,
+   shown in place when reception picks a patient, so the whole job is on one page.
+3. **Services and marking.** The new column, the mark, the queue-page control.
+4. **The automatic post-service row**, once marking exists.
+
+## 10. For Carl
+
+- **Where do the non-paperwork services come from** before a practice has a feed?
+  Reception adding them by hand is the honest answer, but it is typing, and
+  typing at a busy desk is what does not get done. An alternative is to infer
+  them from who the patient is booked with and let reception add only the extras.
+- **Does an unmarked visit ever chase anybody?** Recommendation: no. A list that
+  nags about a doctor who forgot to press a button trains people to press it
+  without meaning it, and then the signal is worthless.
+- **Is step 8 acceptable as a line of text** rather than an action (§4)?
+- **Should the checklist survive the day?** It is a working view; a visit that
+  spills past midnight is rare but real.
+
+## Change log
+| Date | Change |
+|---|---|
+| 12 Sep 2026 | v1.0. Written from Carl's annotated front-desk screenshot. Not built. |
+| 12 Sep 2026 | **§9 phases 1 and 2 BUILT**, in the front desk panel (`apps/web/app/practice/frontdesk/`). Phase 1: the four paperwork rows, computed by `visitChecklist.ts` from the queue row and today's covered line — `GET /tablet-sessions/pushable` and `GET /tablet-sessions/covered`, both already read by the desk. No new endpoint. Phase 2: the existing numbered send card renders as row 3's own body. Phases 3 and 4 — services, marking, the automatic post-service row — are NOT built. |
+| 12 Sep 2026 | **The distinction that makes row 3 honest.** The queue holds only UNSIGNED agreements, so a signature takes the row off it and "Done" cannot be read from the queue at all. It is read from the covered line instead: `covered` means the item was covered by the agreement the patient signed on the way in, so they DID sign and row 3 is Done; `covered_by_enduring` means an ongoing agreement already stood and nobody signed anything today, so it reads "Nothing to sign" and never "Done". Test: `a_signature_today_reads_as_done_and_an_ongoing_agreement_does_not`. |
+| 12 Sep 2026 | **Row 4 says "Nothing to sign" until something is billed after the visit**, rather than being hidden. A row that appears out of nowhere at checkout is a surprise; a row that says why it is quiet is not. No amount appears on it and there is no field for one (hard rule 4). |
+| 12 Sep 2026 | §3a: Carl's name adopted — the PATIENT SERVICE LIST, on the car-service analogy — and the rule it settles: Finished means every service resolved, completed or cancelled. `cancelled` split from `not_needed`. The scope line restated, because the new name sounds more clinical than the old one and is not. |
+| 12 Sep 2026 | §3b: answered Carl's question about persistence. There is NO services table — the paperwork rows are computed, the consultation is in `visit_states`, and the practice's own items are not modelled. Shape proposed, plus the name collision with `service_records` flagged before anybody migrates. |

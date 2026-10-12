@@ -3,6 +3,7 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { deleteSeededAnchors } from './anchor';
 
 describe('M1.A practice onboarding (e2e, real Postgres)', () => {
   let app: INestApplication;
@@ -23,6 +24,7 @@ describe('M1.A practice onboarding (e2e, real Postgres)', () => {
         await tx.assignor.deleteMany({});
         await tx.provider.deleteMany({});
         await tx.staffMember.deleteMany({});
+        await deleteSeededAnchors(tx);
         await tx.practiceLocation.deleteMany({});
         await tx.practice.deleteMany({});
       });
@@ -93,16 +95,30 @@ describe('M1.A practice onboarding (e2e, real Postgres)', () => {
   });
 
   it('provider number is optional — s 65C(5)(a) name+address suffices (REQ-REG-02)', async () => {
+    /*
+     * ADDING A PROVIDER MAKES A PRACTITIONER AT A LOCATION (Carl, 7 Sep 2026).
+     * The practice has exactly one location, so it need not be named; the
+     * AHPRA number must be, because a person record without the national
+     * register number is a person nobody can look up. No place-of-practice
+     * line is sent: the address on an agreement is the LOCATION's.
+     */
     const res = await request(app.getHttpServer())
       .post(`/practices/${practiceId}/providers`)
       .set('x-practice-id', practiceId)
       .send({
         name: 'Dr Example Provider',
         providerType: 'general_practitioner',
-        placeOfPracticeAddress: '1 Example Street, Sampletown NSW 2000',
+        ahpraNumber: `MED${String(Math.floor(Math.random() * 1e10)).padStart(10, '0')}`,
       })
       .expect(201);
     expect(res.body.providerNumber).toBeNull();
+    // The anchor an agreement is made on comes back, and it reaches a person
+    // and a place.
+    expect(res.body.affiliationId).toBeTruthy();
+    expect(res.body.id).toBe(res.body.affiliationId);
+    expect(res.body.practitionerId).toBeTruthy();
+    expect(res.body.locationId).toBeTruthy();
+    expect(res.body.billingRole).toBe('servicing_provider');
   });
 
   it('go-live checklist is honest: blocked until write-back, sender ID and the rule set exist (FR-1.7)', async () => {
