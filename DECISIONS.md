@@ -4056,10 +4056,11 @@ as built, with why, and what would reopen it.
 than the tablet's; a decision that a link should never take a drawn signature;
 or a practice wanting reception's resend to open a link without sending one.
 
-## D-2026-10-12-02 - PROPOSED, needs Carl's approval: the vault event types for a telehealth session
+## D-2026-10-12-02 - APPROVED by Carl (12 Oct 2026): the vault event types for a telehealth session, and the seven provisional choices
 
 **Date:** 12 October 2026. **Proposed by:** Claude, building TELEHEALTH-PLAN.md §8
-step 2. **Status: PROPOSED — needs Carl's approval.** Nothing ships without it:
+step 2. **Status: APPROVED by Carl, 12 October 2026 ("agree to all"), see
+"Carl's ruling" below.** Until the wiring PR lands, what follows still holds:
 the feature is behind `TELEHEALTH_ENABLED` (default off), and while
 `TELEHEALTH_VAULT_EVENTS_APPROVED` in `apps/core/src/telehealth/telehealth-evidence.ts`
 is false core runs it only when `NODE_ENV` is `development` or `test`; it fails
@@ -4110,6 +4111,22 @@ codes, counts and times only: never the 6-digit code, a contact, a name or the
   14 can be recorded as agreeing to the consultation. TELEHEALTH-PLAN.md §3
   step 4 says the signer rules apply (14+ may self-assign); nothing was changed
   pending Carl's ruling.
+
+**Carl's ruling (12 October 2026, "agree to all").** Every item above is
+approved as proposed:
+1. the seven `telehealth.*` event types and payloads in the table. The wiring
+   (add them to `VAULT_EVENT_TYPES`, replace the sink with `enqueueVaultEvent`,
+   set `TELEHEALTH_VAULT_EVENTS_APPROVED` to true, all in one commit) follows in
+   its own PR from `main`, so this PR stays as reviewed;
+2. the name "AoBPlatform" stays in the email footer and the Shell wordmark;
+3. no age check when the patient consents for themselves to the consultation.
+   This is consent to the call only: the DB4 signed in step 3 still applies the
+   signer rules (14+ may self-assign, hard rule 10);
+4. 5 wrong attempts lock the code, and the page stays open 12 hours;
+5. telehealth stays in the `practitioner_pages` surface;
+6. the English consent wording as written, carer form included;
+7. the carer path records no name; the staff-list block runs at the DB4 in
+   step 3.
 
 **What would reopen it:** Carl choosing different event names or payloads, or
 the Department's answer to G10 changing what the step before the call records.
