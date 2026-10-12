@@ -755,9 +755,18 @@ describe('the DB4 print record (e2e, real Postgres)', () => {
        * 2026) — and it was always the wrong question: what these tests mean is
        * "the one agreement this form made", not "whatever is still pointing at
        * the first spool of it".
+       *
+       * THROUGH THE SERVICE RECORD, as the Signed-DB4 block below does. By now
+       * the rules refusal above has made a second `episodic_post` for this
+       * patient, so a `findFirst` on patient and type returned whichever row
+       * the planner chose and failed five tests at random. `pmsInvoiceKey` is
+       * the form's own idempotency key; no reprint or supersession moves it.
        */
+      const record = await prisma.withPractice(practiceId, (tx) =>
+        tx.serviceRecord.findFirst({ where: { pmsInvoiceKey: IDEMPOTENCY_KEY } }),
+      );
       const agreement = await prisma.withPractice(practiceId, (tx) =>
-        tx.agreement.findFirst({ where: { type: 'episodic_post', patientId } }),
+        tx.agreement.findFirst({ where: { id: record!.agreementId!, type: 'episodic_post', patientId } }),
       );
       return {
         agreement: agreement!,
@@ -1453,7 +1462,11 @@ describe('the DB4 print record (e2e, real Postgres)', () => {
       expect(reprint?.action).toBe('supersede');
       // TYPES, NEVER VALUES (hard rule 9) — no item number in the answer.
       expect(reprint?.changed).toEqual(['service_items']);
-      expect(JSON.stringify(reprint)).not.toContain('36');
+      // UUIDS OUT FIRST. `reprint` carries the replacement's id, and a random
+      // UUID contains "36" about one run in ten; the item number must still
+      // appear nowhere else in the answer.
+      const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+      expect(JSON.stringify(reprint).replace(UUID, '<id>')).not.toContain('36');
 
       // A REPLACEMENT, and it points at the CORRECTED page — not the stale
       // one every other supersession carries forward.
