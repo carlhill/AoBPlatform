@@ -3926,3 +3926,52 @@ DB4, no contact on file).
 
 **What would reopen it:** a reason that turns out to be used to skip the step
 routinely, or a practice where reception cannot do next-day follow-up.
+
+## D-2026-10-12-01 - PROPOSED, needs Carl's approval: the vault event types for a telehealth session
+
+**Date:** 12 October 2026. **Proposed by:** Claude, building TELEHEALTH-PLAN.md §8
+step 2. **Status: PROPOSED — needs Carl's approval.** Nothing ships without it:
+the feature is behind `TELEHEALTH_ENABLED` (default off), and core refuses to
+run it under `NODE_ENV=production` while `TELEHEALTH_VAULT_EVENTS_APPROVED` in
+`apps/core/src/telehealth/telehealth-evidence.ts` is false.
+
+**Why it needs a decision.** Additions to `VAULT_EVENT_TYPES` need human
+approval (the vault is a human-authored zone, CLAUDE.md §7c). Every telehealth
+write already hands its event to `TelehealthEvidence.record` inside its own
+transaction; on approval the sink becomes `enqueueVaultEvent` and the outbox
+does the rest (hard rule 11).
+
+**Already vaulted, no new type needed:** the practitioner's identity check on
+the call is `verification.staff_verified` (channel `telehealth`, identifier
+types joined, never values), through `VerificationService.recordStaffVerified`.
+
+**The proposed types.** Subject `TelehealthSession`. Payloads are ids, types,
+codes, counts and times only: never the 6-digit code, a contact, a name or the
+`other` note (`assertNoValues` refuses such keys).
+
+| Type | Actor | Payload |
+|---|---|---|
+| `telehealth.session_opened` | practitioner | patientId, practitionerId, affiliationId, verificationEventId, identifierTypeCount, consenterIsPatient, channel, contentVersion |
+| `telehealth.link_sent` | practitioner | channel, sendCount, codeExpiresAt |
+| `telehealth.code_checked` | system | attempts |
+| `telehealth.code_locked_out` | system | attempts, reviewTaskId |
+| `telehealth.consent_recorded` | system | consentKey, contentVersion, consenterIsPatient |
+| `telehealth.not_done` | practitioner | reason, reasonsVersion, hasNote, fromState, consultationAt, recordedAt |
+| `telehealth.did_not_proceed` | practitioner | fromState, consultationAt, recordedAt |
+
+**Also for Carl, decided provisionally in the build and easy to change:**
+- the code locks after 5 wrong attempts (the D-06 default the identity
+  challenge uses); the plan says "a few". Content: `telehealth.json`;
+- the page stays open 12 hours after the code (`pageHours`), so one page
+  covers a consultation day. No requirement names this number;
+- the telehealth email uses a neutral footer: the shared footer's tagline
+  ("Medicare assignment of benefit") and never-ask line ("a Medicare number")
+  are replaced for this message only, because of G10;
+- the telehealth page sits in the `practitioner_pages` surface, so a practice
+  on the `db4` profile does not see it. Telehealth may want its own surface;
+- the consent wording: "Yes, start my telehealth consultation with
+  {providerName}", and a carer form. TELEHEALTH-PLAN.md §9 leaves the wording
+  to Carl.
+
+**What would reopen it:** Carl choosing different event names or payloads, or
+the Department's answer to G10 changing what the step before the call records.
