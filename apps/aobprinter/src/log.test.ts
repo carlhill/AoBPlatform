@@ -14,6 +14,18 @@ import { looksLikeAnIdentifier, makeLogger, redact, redactError } from './log';
 import { Outbox } from './outbox';
 import { DEFAULT_TEMPLATE_VERSION, templateFor } from './template';
 import { processClaimedJob, watcherDirs } from './watcher';
+import { openStore, type AobPrinterStore } from './store';
+
+/** Every store a test opens, closed before its folder is removed — Windows will not delete an open database. */
+const opened: AobPrinterStore[] = [];
+function storeAt(dir: string): AobPrinterStore {
+  const store = openStore(dir);
+  opened.push(store);
+  return store;
+}
+function closeStores(): void {
+  for (const store of opened.splice(0)) store.close();
+}
 
 /** One queue, named the way a single-workstation install names it. */
 const QUEUE = { name: 'AOBPRINTER', spoolFile: 'unused-in-this-test', label: 'Front desk' };
@@ -30,7 +42,10 @@ describe('the_medicare_number_never_appears_in_a_log_or_a_filename', () => {
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'aobprinter-log-'));
   });
-  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+  afterEach(() => {
+    closeStores();
+    rmSync(dir, { recursive: true, force: true });
+  });
 
   it('never writes it to a log line, from any path through the program', async () => {
     const lines: string[] = [];
@@ -43,7 +58,7 @@ describe('the_medicare_number_never_appears_in_a_log_or_a_filename', () => {
 
     // The unhappy path as well as the happy one: a server that refuses the job
     // is where an unredacted body most plausibly reaches a log.
-    const outbox = new Outbox(dir, async () => ({ ok: false, status: 422, error: `rejected: ${CARD}` }), logger);
+    const outbox = new Outbox(storeAt(dir), async () => ({ ok: false, status: 422, error: `rejected: ${CARD}` }), logger);
     const { record } = processClaimedJob(claimed, template(), outbox, dirs, QUEUE, logger);
     await outbox.flush();
     await outbox.flush();
@@ -72,7 +87,8 @@ describe('the_medicare_number_never_appears_in_a_log_or_a_filename', () => {
     const claimed = join(dirs.jobs, '2026-09-17T04-00-00-000Z-ba9876543210.pdf');
     copyFileSync(FIXTURE, claimed);
 
-    const outbox = new Outbox(dir, async () => ({ ok: false, status: 0, error: 'unreachable' }), logger);
+    const store = storeAt(dir);
+    const outbox = new Outbox(store, async () => ({ ok: false, status: 0, error: 'unreachable' }), logger);
     processClaimedJob(claimed, template(), outbox, dirs, QUEUE, logger);
 
     for (const path of walk(dir)) {
@@ -81,8 +97,8 @@ describe('the_medicare_number_never_appears_in_a_log_or_a_filename', () => {
       expect(path).not.toContain('09911'); // nor the chart number
       expect(path).not.toContain('Fakesurname');
     }
-    // The queued job's filename is the source hash and nothing else.
-    expect(readdirSync(join(dir, 'outbox', 'pending'))).toEqual([expect.stringMatching(/^[0-9a-f]{64}\.json$/)]);
+    // The queued job is keyed by the source hash and nothing else (a row since 29 Sep 2026, not a file).
+    expect(store.shas('queued')).toEqual([expect.stringMatching(/^[0-9a-f]{64}$/)]);
   });
 
   it('redacts the card number wherever it turns up in a string', () => {

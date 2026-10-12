@@ -28,14 +28,18 @@
 import { Collector, type CollectionClient } from './collector';
 import { collectionEndpointsOf, makeHttpCollectionClient } from './collection-client';
 import { loadConfig, type AobPrinterConfig } from './config';
+import { Heartbeat, type HeartbeatClient } from './heartbeat';
+import { heartbeatUrlOf, makeHttpHeartbeatClient } from './heartbeat-client';
 import { acquireInstanceLock, type InstanceLock } from './instance-lock';
 import type { KeyWrapper } from './keystore';
 import { consoleLogger, redactError, type Logger } from './log';
 import { Outbox } from './outbox';
 import { makeHttpPoster } from './poster';
 import { DEFAULT_RECONCILE_INTERVAL_MS, Reconciler, powershellEventCountReader, type EventCountReader } from './print-service-log';
-import { buildRetentionDeps } from './retention';
-import { templateFor } from './template';
+import { PrintArchive } from './archive';
+import { buildRetentionDeps, loadCipher, type Cipher } from './retention';
+import { assertLocalDataDir, openStore, type AobPrinterStore, type DriveType } from './store';
+import { templateFor, type ParserTemplate } from './template';
 import { QueueWatcher, claimedJobs, processClaimedJob } from './watcher';
 import { readPackageVersion } from './version';
 
@@ -49,6 +53,13 @@ export interface RunHandles {
    * it did; a no-op when collection is switched off.
    */
   collect(): Promise<void>;
+  /** One reconciliation against the Print Service log. Exposed for the same reason as `collect`. */
+  reconcile(): Promise<void>;
+  /**
+   * One heartbeat (PRINTER-HEARTBEAT.md §2). Exposed for the same reason;
+   * never rejects, and a no-op when the heartbeat is switched off.
+   */
+  heartbeat(): Promise<void>;
   stop(): void;
 }
 
@@ -80,14 +91,27 @@ export interface StartDeps {
    * and the HTTP half is proved on its own, the way the poster's is.
    */
   readonly collectionClient?: CollectionClient;
+  /**
+   * Overrides the heartbeat client, and switches the heartbeat on the way
+   * `collectionClient` switches collection on. The HTTP half is proved on its
+   * own in `heartbeat-client.test.ts`.
+   */
+  readonly heartbeatClient?: HeartbeatClient;
+  /**
+   * Overrides the Windows drive-type check behind `assertLocalDataDir`. The
+   * real one asks PowerShell once per drive letter; a test proving the
+   * network-drive refusal should not need a network drive.
+   */
+  readonly driveTypeOf?: (letter: string) => DriveType;
 }
 
 /**
- * Start the program. THROWS SYNCHRONOUSLY, refusing to start, in four cases:
- * another instance is already running, an unbuilt parser template, an outbox
- * folder written by a newer build, or a retention key that is enabled in
- * configuration but cannot be unwrapped (`keystore.ts`). All four are
- * preferable to running in a state this program cannot honestly describe.
+ * Start the program. THROWS SYNCHRONOUSLY, refusing to start, in six cases:
+ * a data folder on a network drive (`store.ts`), another instance is already
+ * running, a database or folder outbox written by a newer build, an unbuilt
+ * parser template, or a retention key that is enabled in configuration but
+ * cannot be unwrapped (`keystore.ts`). All six are preferable to running in a
+ * state this program cannot honestly describe.
  */
 export function start(config: AobPrinterConfig, logger: Logger = consoleLogger, deps: StartDeps = {}): RunHandles {
   const version = readPackageVersion();
@@ -98,6 +122,25 @@ export function start(config: AobPrinterConfig, logger: Logger = consoleLogger, 
    * folders, the outbox, the retention key. Taking the lock afterwards would
    * leave a window in which two processes had both already started work.
    */
+  /*
+   * A TEMPLATE THIS BUILD DOES NOT CARRY IS REFUSED BEFORE ANYTHING IS TOUCHED
+   * — before the lock, the database or the audit trail — so a refused start
+   * leaves no `program.started` behind to look like a crash next time.
+   */
+  const template = templateFor(config.templateVersion);
+  if (!template) {
+    throw new Error(
+      `No parser template "${config.templateVersion}" is built into this program. Templates are versioned ` +
+        'content and ship with the build; a configuration naming one that does not exist would parse nothing.',
+    );
+  }
+
+  /*
+   * BEFORE THE LOCK, because the lock is a file in the data folder: a data
+   * folder on a network drive is refused before anything is written to it.
+   */
+  assertLocalDataDir(config.dataDir, deps.driveTypeOf);
+
   const lock = deps.instanceLock ?? acquireInstanceLock(config.dataDir, version, logger);
 
   /*
@@ -108,7 +151,43 @@ export function start(config: AobPrinterConfig, logger: Logger = consoleLogger, 
    * guard rail being broken, and it would be.
    */
   try {
-    return startLocked(config, logger, deps, version, lock);
+    /*
+     * THE KEY BEFORE THE DATABASE (D-2026-09-29-02): the database encrypts
+     * every file location it records, so it cannot open without the key. A
+     * key on disk that will not unwrap refuses to start, here.
+     */
+    const cipher = loadCipher(config.dataDir, logger, deps.keyWrapper);
+    /*
+     * Opened under the lock: the database belongs to exactly one running
+     * program. `program.started` is recorded the moment the schema is ready —
+     * BEFORE the folder import, the retention migration and the start-up
+     * sweep — so everything this start does sits after the marker that
+     * explains it (an unclean restart, an upgrade).
+     */
+    const store = openStore(config.dataDir, {
+      logger,
+      cipher,
+      printerVersion: version,
+      beforeImport: (s) =>
+        s.programStarted({
+          queues: config.queues.length,
+          retention: config.retention.enabled,
+          collecting: config.collection.enabled || deps.collectionClient !== undefined,
+        }),
+      afterImportFailed: (s) => s.programStartFailed(),
+    });
+    try {
+      return startLocked(config, logger, deps, version, lock, store, cipher, template);
+    } catch (err) {
+      // It recorded a start and then refused: say so, so the next start is not read as a crash.
+      try {
+        store.programStartFailed();
+      } catch (auditErr) {
+        logger.error('audit.start_failure_not_recorded', { error: redactError(auditErr) });
+      }
+      store.close();
+      throw err;
+    }
   } catch (err) {
     lock.release();
     throw err;
@@ -121,19 +200,15 @@ function startLocked(
   deps: StartDeps,
   version: string,
   lock: InstanceLock,
+  store: AobPrinterStore,
+  cipher: Cipher,
+  template: ParserTemplate,
 ): RunHandles {
-  const template = templateFor(config.templateVersion);
-  if (!template) {
-    throw new Error(
-      `No parser template "${config.templateVersion}" is built into this program. Templates are versioned ` +
-        'content and ship with the build; a configuration naming one that does not exist would parse nothing.',
-    );
-  }
-
-  const retention = buildRetentionDeps(config.dataDir, config.retention, logger, deps.keyWrapper);
-  const outbox = new Outbox(config.dataDir, makeHttpPoster(config, logger), logger, () => new Date(), retention, version);
+  const retention = buildRetentionDeps(config.retention, store, cipher);
+  const archive = new PrintArchive(config.dataDir, store, cipher, logger, config.retention.archiveDays);
+  const outbox = new Outbox(store, makeHttpPoster(config, logger), logger, () => new Date(), retention, version);
   const queueWatcher = new QueueWatcher(config.queues, config.dataDir, config.settleMs, logger);
-  const reconciler = new Reconciler(deps.eventCounts ?? powershellEventCountReader(), logger);
+  const reconciler = new Reconciler(deps.eventCounts ?? powershellEventCountReader(), logger, undefined, undefined, (gap) => store.printGap(gap));
   const queueNames = config.queues.map((q) => q.name);
 
   /*
@@ -149,7 +224,31 @@ function startLocked(
           config.collection.importFolder,
           logger,
           version,
+          () => new Date(),
+          store,
         )
+      : null;
+
+  /*
+   * THE HEARTBEAT, ON BY DEFAULT (decision 11). It writes nothing anywhere
+   * but a request to the platform, and never an audit event for itself.
+   */
+  const heartbeater =
+    config.heartbeat.enabled || deps.heartbeatClient
+      ? new Heartbeat({
+          store,
+          client: deps.heartbeatClient ?? makeHttpHeartbeatClient(config),
+          logger,
+          facts: {
+            printerVersion: version,
+            templateVersion: template.version,
+            intervalMs: config.heartbeat.intervalMs,
+            queueCount: config.queues.length,
+            collecting: collector !== null,
+            retentionEnabled: config.retention.enabled,
+            startedAt: new Date().toISOString(),
+          },
+        })
       : null;
 
   if (!/^https:/i.test(config.endpoint) && !/^http:\/\/(localhost|127\.0\.0\.1)/i.test(config.endpoint)) {
@@ -168,12 +267,49 @@ function startLocked(
    * OR WON'T KEEP RUNNING (hard rule 8, the same posture `tick()`'s catch-all
    * takes). The sweep is a safety net on top of the outbox's own guarantees,
    * not a precondition for them — a locked file or a permissions hiccup
-   * reading `pending/` or `poison/` is worth logging loudly, never worth
+   * reading the outbox is worth logging loudly, never worth
    * refusing to capture the next print over.
    */
+  let running = false;
+  let collecting = false;
+  let reconciling = false;
+  let heartbeating = false;
+  let stopped = false;
+  /*
+   * ABORTED BY `stop()`. Nothing is written before a reply arrives, so an
+   * aborted beat loses nothing; one whose reply has already arrived is still
+   * applied, and the database waits for it like it waits for a tick.
+   */
+  const heartbeatAbort = new AbortController();
+  let finished = false;
+
+  /*
+   * THE DATABASE IS CLOSED ONLY WHEN NOTHING IS USING IT. A stop that closed
+   * it under a post the server had just accepted would fail to record the
+   * acknowledgement — and the form would be posted again on the next start.
+   * So `stop()` finishes at once when idle, and otherwise the running tick,
+   * collection or reconciliation finishes it on its way out.
+   */
+  function finishStopIfIdle(): void {
+    if (!stopped || finished || running || collecting || reconciling || heartbeating) return;
+    finished = true;
+    try {
+      store.programStopped();
+    } catch (err) {
+      logger.error('audit.stop_not_recorded', { error: redactError(err) });
+    }
+    store.close();
+    // Last, so nothing is still running when the next instance is allowed in.
+    lock.release();
+    logger.info('aobprinter.stopped', {});
+  }
+
   function safeSweep(): { alarmed: number; expired: number } {
     try {
-      return outbox.sweep();
+      const swept = outbox.sweep();
+      // The archive's clock runs on the same sweep; it never throws.
+      archive.sweep();
+      return swept;
     } catch (err) {
       logger.error('sweep.failed', { error: redactError(err) });
       return { alarmed: 0, expired: 0 };
@@ -205,19 +341,49 @@ function startLocked(
    * nuisance; a consent never captured is the practice's problem.
    */
   async function safeCollect(): Promise<void> {
-    if (!collector) return;
+    // One at a time, like `tick`: two sweeps sharing one flag let a stop close the database under the slower.
+    if (!collector || stopped || collecting) return;
+    collecting = true;
     try {
       await collector.sweep();
     } catch (err) {
       logger.error('collect.sweep_failed', { error: redactError(err) });
+    } finally {
+      collecting = false;
+      finishStopIfIdle();
     }
   }
 
   async function safeReconcile(): Promise<void> {
+    // Tracked like a collection, so a gap found while stopping reaches the audit trail, not just the log.
+    if (stopped || reconciling) return;
+    reconciling = true;
     try {
       await reconciler.reconcile(queueNames);
     } catch (err) {
       logger.error('reconcile.failed', { error: redactError(err) });
+    } finally {
+      reconciling = false;
+      finishStopIfIdle();
+    }
+  }
+
+  /*
+   * THE SAME POSTURE AGAIN, FOR THE HEARTBEAT. `Heartbeat.beat` never throws
+   * and says a failure once; this is the belt to that braces. One at a time:
+   * a slow link must not stack beats, and a stop must not close the database
+   * under one whose reply is being applied.
+   */
+  async function safeHeartbeat(): Promise<void> {
+    if (!heartbeater || stopped || heartbeating) return;
+    heartbeating = true;
+    try {
+      await heartbeater.beat(heartbeatAbort.signal);
+    } catch (err) {
+      logger.error('heartbeat.failed', { error: redactError(err) });
+    } finally {
+      heartbeating = false;
+      finishStopIfIdle();
     }
   }
 
@@ -247,10 +413,9 @@ function startLocked(
      */
     collecting: collector !== null,
     collectFrom: collector ? collectionEndpointsOf(config).list : undefined,
+    heartbeatTo: heartbeater ? heartbeatUrlOf(config) : undefined,
   });
 
-  let running = false;
-  let stopped = false;
 
   async function tick(): Promise<void> {
     // Overlapping ticks would claim the same file twice. One at a time.
@@ -270,7 +435,7 @@ function startLocked(
        */
       for (const { queue, dirs } of queueWatcher.watched) {
         for (const path of claimedJobs(dirs)) {
-          processClaimedJob(path, template!, outbox, dirs, queue, logger);
+          processClaimedJob(path, template, outbox, dirs, queue, logger, undefined, { prints: store, archive });
         }
       }
       await outbox.flush();
@@ -290,6 +455,7 @@ function startLocked(
       logger.error('tick.failed', { error: redactError(err) });
     } finally {
       running = false;
+      finishStopIfIdle();
     }
   }
 
@@ -312,18 +478,30 @@ function startLocked(
   const collectTimer = collector ? setInterval(() => void safeCollect(), config.collection.pollMs) : null;
   collectTimer?.unref?.();
 
+  /*
+   * THE FIRST BEAT SOON AFTER START, THEN EVERY INTERVAL (decision 1). Both
+   * unref'd: a heartbeat timer must not be the reason a service will not stop.
+   */
+  const firstBeatTimer = heartbeater ? setTimeout(() => void safeHeartbeat(), config.heartbeat.firstDelayMs) : null;
+  firstBeatTimer?.unref?.();
+  const heartbeatTimer = heartbeater ? setInterval(() => void safeHeartbeat(), config.heartbeat.intervalMs) : null;
+  heartbeatTimer?.unref?.();
+
   return {
     tick,
     collect: safeCollect,
+    reconcile: safeReconcile,
+    heartbeat: safeHeartbeat,
     stop: () => {
       stopped = true;
+      if (firstBeatTimer) clearTimeout(firstBeatTimer);
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
+      heartbeatAbort.abort();
       clearInterval(timer);
       clearInterval(sweepTimer);
       clearInterval(reconcileTimer);
       if (collectTimer) clearInterval(collectTimer);
-      // Last, so nothing is still running when the next instance is allowed in.
-      lock.release();
-      logger.info('aobprinter.stopped', {});
+      finishStopIfIdle();
     },
   };
 }

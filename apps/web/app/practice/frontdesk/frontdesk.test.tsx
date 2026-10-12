@@ -1000,7 +1000,7 @@ describe('the patient panel — everything about them, on this page', () => {
     await choose(HERE.agreementId, HERE.patientName);
 
     expect(screen.getByTestId('frontdesk-chosen-record-number-practice').textContent)
-      .toBe('Patient ID XL-004821');
+      .toBe('PMS patient ID XL-004821');
 
     /*
      * AND OUR OWN RECORD ID UNDERNEATH (Carl, 12 September 2026: *"ok. In that
@@ -1019,7 +1019,7 @@ describe('the patient panel — everything about them, on this page', () => {
 
     // Said, not blank: an empty line under a name reads as a failed load.
     expect(screen.getByTestId('frontdesk-chosen-record-number-practice').textContent).toBe(
-      'No patient ID on this record',
+      'No PMS patient ID on this record',
     );
     // Ours always exists, so it needs no such twin and is still there.
     expect(screen.getByTestId('frontdesk-chosen-record-number-record').textContent)

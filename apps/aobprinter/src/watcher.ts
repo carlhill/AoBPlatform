@@ -44,8 +44,20 @@ import type { Db4PrintRecord } from './db4-record';
 import { redactError, type Logger } from './log';
 import { parseDb4 } from './parser';
 import { readPdfText } from './pdf-text';
+import type { PrintArchive } from './archive';
 import { Outbox, sha256Hex } from './outbox';
+import type { ParseReason, PrintsTrail } from './store';
 import type { ParserTemplate } from './template';
+
+/**
+ * Where a captured print is written down (D-2026-09-29-01) and kept
+ * (D-2026-09-29-03). Optional so a test of the parser's behaviour need not
+ * stand up a database; the program always passes it.
+ */
+export interface CaptureTrail {
+  readonly prints: PrintsTrail;
+  readonly archive?: PrintArchive;
+}
 
 /**
  * Is this a complete PDF?
@@ -275,6 +287,11 @@ export type ProcessOutcome = 'queued' | 'already_queued' | 'already_sent' | 'alr
  * nowhere. If the process dies between the two, the next start finds the PDF
  * still in `jobs/`, parses it again, and the outbox's hash key collapses the
  * duplicate.
+ *
+ * AND THE AUDIT COMES FIRST (D-2026-09-29-01). `received` is written before
+ * anything is decided about the page, then the encrypted archive, then the
+ * outcome — so a print that is later unreadable still has a row and a story,
+ * and a print received twice is recorded as a duplicate rather than dropped.
  */
 export function processClaimedJob(
   path: string,
@@ -284,24 +301,37 @@ export function processClaimedJob(
   queue: QueueConfig,
   logger: Logger,
   now: () => Date = () => new Date(),
+  trail?: CaptureTrail,
 ): { outcome: ProcessOutcome; record?: Db4PrintRecord } {
   const bytes = readFileSync(path);
   const name = path.split(/[\\/]/).pop() ?? '';
+  const sourceSha256 = sha256Hex(bytes);
+
+  if (trail) {
+    /*
+     * THE CLAIMED FILE'S NAME TELLS A RE-READ FROM A REPRINT. The same file
+     * read again (its delete failed, or a crash came before cleanup) is not
+     * the practice printing again, and writes nothing; the same bytes in a
+     * new claim are a real duplicate and are recorded.
+     */
+    trail.prints.printReceived({ sha: sourceSha256, claimFile: name, queueName: queue.name, queueLabel: queue.label, byteCount: bytes.byteLength });
+    // Idempotent: a print already archived is not archived again.
+    trail.archive?.keep(sourceSha256, bytes);
+  }
 
   if (!isCompletePdf(bytes)) {
     // Claimed too early, or the writer died. Parked, never parsed: half a form
     // read as a whole one is the failure that puts a wrong record in front of a
     // patient, and it is the one this program must not have.
-    park(path, dirs, logger, 'incomplete_pdf');
+    park(path, dirs, logger, 'incomplete_pdf', trail, sourceSha256);
     return { outcome: 'incomplete' };
   }
 
-  const sourceSha256 = sha256Hex(bytes);
   const text = readPdfText(bytes);
   if (!text) {
     // No text layer at all: an image-only or encrypted print. Not readable, and
     // saying so is the point — never "the form was blank".
-    park(path, dirs, logger, 'no_text_layer');
+    park(path, dirs, logger, 'no_text_layer', trail, sourceSha256);
     return { outcome: 'incomplete' };
   }
 
@@ -309,7 +339,7 @@ export function processClaimedJob(
   if (!parsed) {
     // Somebody printed something else to this queue. It happens, and it is not
     // an error — but nothing is posted for it.
-    park(path, dirs, logger, 'not_a_db4');
+    park(path, dirs, logger, 'not_a_db4', trail, sourceSha256);
     return { outcome: 'parked' };
   }
 
@@ -329,6 +359,9 @@ export function processClaimedJob(
     template: record.parserTemplateVersion,
     queue: queue.name,
     services: record.services?.length ?? 0,
+    // A count, never the lines themselves (D-2026-10-11-05): non-zero is a
+    // form core will refuse to send to a tablet.
+    unparsedServiceLines: record.unparsedServiceLines ?? 0,
     providers: record.providers?.length ?? 0,
     outcome,
   });
@@ -344,19 +377,28 @@ export function processClaimedJob(
   return { outcome, record };
 }
 
-function park(path: string, dirs: WatcherDirs, logger: Logger, reason: string): void {
+function park(path: string, dirs: WatcherDirs, logger: Logger, reason: ParseReason, trail?: CaptureTrail, sha?: string): void {
   const name = path.split(/[\\/]/).pop() ?? '';
   const target = join(dirs.unparsed, name);
   try {
+    /*
+     * CREATED HERE, NOT ASSUMED. The claimer makes this folder at start, but a
+     * folder somebody tidied away would leave the print in `jobs/`, re-read
+     * every tick — and, since the audit trail, a duplicate event every tick.
+     */
+    mkdirSync(dirs.unparsed, { recursive: true });
     renameSync(path, target);
     // A note beside it, so whoever looks does not have to guess. The reason is
     // a code, not a description of the page.
     writeFileSync(`${target}.reason.txt`, `${reason}\n`, 'utf8');
   } catch (err) {
     logger.error('job.park_failed', { job: name, reason, error: redactError(err) });
+    // Still an exception in the audit: the print was unreadable whether or not the move worked.
+    if (trail && sha) trail.prints.printParseException(sha, reason);
     return;
   }
   logger.warn('job.parked', { job: name, reason });
+  if (trail && sha) trail.prints.printParseException(sha, reason, target);
 }
 
 /** Everything already claimed and not yet parsed — what a restart finds. */

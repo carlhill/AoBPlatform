@@ -157,6 +157,23 @@ export class TabletSessionsController {
   }
 
   /**
+   * UNSIGNED FROM EARLIER DAYS (D-2026-10-10-01, option 1) — the agreements
+   * that fell off `pushable` at midnight, oldest first, each with what the
+   * platform observed about its service. Read only: nothing here changes an
+   * agreement, writes a vault event or blocks a push (hard rule 8).
+   *
+   * `{ total, rows }`: `total` is every qualifying agreement, `rows` at most
+   * `EARLIER_UNSIGNED_CAP` of them.
+   *
+   * BEFORE `tablet-sessions/:id/...` with the other fixed paths (wow.md §1).
+   */
+  @Get('tablet-sessions/unsigned-earlier')
+  @PracticeScoped()
+  unsignedEarlierDays(@Headers('x-practice-id') practiceId: string | undefined) {
+    return this.sessions.unsignedEarlierDays(requirePractice(practiceId));
+  }
+
+  /**
    * Take it back. Nothing on the agreement changes — the particulars stay
    * locked, the capture request stays open, and the patient can be handed the
    * tablet again in a minute or sign by any other channel (REQ-REC-04).

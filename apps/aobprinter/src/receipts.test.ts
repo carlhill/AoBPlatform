@@ -10,11 +10,12 @@
  * would pass even if `buildReceipt` started spreading the record; this does
  * not.
  */
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Db4PrintRecord } from './db4-record';
-import { appendReceipt, buildReceipt, makeFileReceiptsWriter, receiptsPath } from './receipts';
+import { buildReceipt } from './receipts';
+import { openStore, type AobPrinterStore } from './store';
 
 /** Every kind of PII this record type can carry, all obviously fake. */
 function aRecordFullOfPii(): Db4PrintRecord {
@@ -103,36 +104,52 @@ describe('a_receipt_holds_no_patient_data', () => {
   });
 });
 
+/*
+ * THE LEDGER IS A TABLE SINCE 29 SEPTEMBER 2026 (D-2026-09-28-04). The two
+ * promises are the ones `receipts.jsonl` made: append, never overwrite; and
+ * nothing a receipt holds names a patient — checked against every byte the
+ * database put on disk, not only against what it reads back.
+ */
 describe('the receipts ledger', () => {
   let dir: string;
+  let store: AobPrinterStore | undefined;
 
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'aobprinter-receipts-'));
   });
-  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+  afterEach(() => {
+    store?.close();
+    store = undefined;
+    rmSync(dir, { recursive: true, force: true });
+  });
 
-  it('appends one JSON line per receipt, never overwriting the last', () => {
-    const writer = makeFileReceiptsWriter(dir);
-    writer.record(buildReceipt(aRecordFullOfPii(), { postedAt: 't1', attempts: 1, byteCount: 1, state: 'sent', printerVersion: '9.9.9' }));
-    writer.record(
+  it('appends one row per receipt, never overwriting the last', () => {
+    store = openStore(dir);
+    store.record(buildReceipt(aRecordFullOfPii(), { postedAt: 't1', attempts: 1, byteCount: 1, state: 'sent', printerVersion: '9.9.9' }));
+    store.record(
       buildReceipt({ ...aRecordFullOfPii(), sourceSha256: 'c'.repeat(64) }, { postedAt: 't2', attempts: 1, byteCount: 2, state: 'sent', printerVersion: '9.9.9' }),
     );
 
-    expect(existsSync(receiptsPath(dir))).toBe(true);
-    const lines = readFileSync(receiptsPath(dir), 'utf8').trim().split('\n');
-    expect(lines).toHaveLength(2);
-    expect(JSON.parse(lines[0]).sourceSha256).toBe('b'.repeat(64));
-    expect(JSON.parse(lines[1]).sourceSha256).toBe('c'.repeat(64));
+    const rows = store.receipts();
+    expect(rows).toHaveLength(2);
+    expect(rows[0].sourceSha256).toBe('b'.repeat(64));
+    expect(rows[1].sourceSha256).toBe('c'.repeat(64));
 
-    // And the ledger file itself carries none of the PII either.
-    const wholeFile = readFileSync(receiptsPath(dir), 'utf8');
+    // And the database itself carries none of the PII either.
+    const onDisk = readdirSync(dir)
+      .filter((name) => name.startsWith('aobprinter.db'))
+      .map((name) => readFileSync(join(dir, name)).toString('latin1'))
+      .join('\n');
     for (const forbidden of FORBIDDEN) {
-      expect(wholeFile).not.toContain(forbidden);
+      expect(onDisk).not.toContain(forbidden);
     }
   });
 
-  it('creates the outbox directory on first use', () => {
-    appendReceipt(dir, buildReceipt(aRecordFullOfPii(), { postedAt: 't1', attempts: 1, byteCount: 1, state: 'sent', printerVersion: '9.9.9' }));
-    expect(existsSync(join(dir, 'outbox', 'receipts.jsonl'))).toBe(true);
+  it('works on a data folder that does not exist yet', () => {
+    const fresh = join(dir, 'not-yet-created');
+    store = openStore(fresh);
+    store.record(buildReceipt(aRecordFullOfPii(), { postedAt: 't1', attempts: 1, byteCount: 1, state: 'sent', printerVersion: '9.9.9' }));
+    expect(existsSync(join(fresh, 'aobprinter.db'))).toBe(true);
+    expect(store.receipts()).toHaveLength(1);
   });
 });

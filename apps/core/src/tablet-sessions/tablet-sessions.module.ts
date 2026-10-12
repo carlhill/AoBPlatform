@@ -7,6 +7,7 @@ import { CaptureModule } from '../capture/capture.module';
 import { VerificationModule } from '../verification/verification.module';
 import { DevicesModule } from '../devices/devices.module';
 import { ServiceDescriptionsModule } from '../service-descriptions/service-descriptions.module';
+import { ReconciliationModule } from '../reconciliation/reconciliation.module';
 
 /**
  * PUSH-TO-DEVICE CAPTURE — reception hands the patient a locked screen
@@ -51,6 +52,12 @@ import { ServiceDescriptionsModule } from '../service-descriptions/service-descr
      * the CURRENT versioned list (hard rule 14) and records who set it.
      */
     ServiceDescriptionsModule,
+    /*
+     * READ ONLY (D-2026-10-10-01). Whether an earlier day's unsigned agreement
+     * is on the Reconciliation queue is that module's answer; the tablet page's
+     * "Unsigned from earlier days" asks it rather than re-deriving it.
+     */
+    ReconciliationModule,
   ],
   controllers: [TabletSessionsController, KioskSessionController],
   providers: [TabletSessionsService],

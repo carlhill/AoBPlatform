@@ -218,6 +218,10 @@ export const PAGES: Readonly<Record<string, PageRule>> = {
     audiences: ['platform'],
     why: 'Every acting-as session there has ever been, with its reason. Asked about months later, so it is a search rather than a dashboard.',
   },
+  '/platform/aobprinter-hosts': {
+    audiences: ['platform'],
+    why: 'Every practice’s AOBPRINTER host, worst first (PRINTER-HEARTBEAT.md §4). Spans practices, so it is ours; counts, versions, times and status, never a practice’s records.',
+  },
   '/platform/templates': {
     audiences: ['platform'],
     why: 'Agreement wording practices have proposed, waiting to be read. A practice may not activate the words its own patients sign, so activation is ours — and this is the only page that performs it.',
@@ -316,6 +320,20 @@ export const PAGES: Readonly<Record<string, PageRule>> = {
   '/practice/devices': {
     audiences: ['practice_admin'],
     why: 'The practice’s paired tablets. Registering one issues the credential that opens the waiting list, and revoking one closes it — the administrator’s alone, and never done on the device.',
+  },
+
+  /*
+   * THE PRACTICE'S AOBPRINTER HOST (PRINTER-HEARTBEAT.md §4, D-2026-10-10-02
+   * decision 10). The administrator's, beside the tablets: it is the state of
+   * a machine the practice runs, not the day's work. Read-only for them —
+   * re-baselining a chain is the platform's act (decision 7), because a
+   * practice may not verify its own evidence. The platform's view of one
+   * practice's host is a twin under `/platform/practices`, covered by that
+   * entry's prefix.
+   */
+  '/practice/aobprinter-host': {
+    audiences: ['practice_admin'],
+    why: 'Whether the practice’s AOBPRINTER is reporting, what it holds at each stage, and whether its audit log still matches what the platform last saw. The administrator’s, like the tablets; re-baselining is ours.',
   },
 
   /*

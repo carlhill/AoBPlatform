@@ -27,10 +27,18 @@
  * the file has to be caught here, and is.
  *
  * AT-LEAST-ONCE, LIKE THE OUTBOX AT THE OTHER END. Die after writing and
- * before confirming and the row is still on the list next sweep: the same
- * bytes are written to the same path (a no-op) and the confirmation is made
- * again. The server answers the second one `written: false`. Nothing here
- * needs exactly-once and nothing here pretends to have it.
+ * before confirming and the row is still on the list next sweep: the bytes on
+ * disk are re-hashed and the confirmation is made again. Nothing here needs
+ * exactly-once and nothing here pretends to have it.
+ *
+ * ── EVERY STEP IS WRITTEN DOWN, AND A STEP THAT CANNOT BE IS NOT TAKEN ──
+ *
+ * Received, written (with where), filed, confirmed — or which exception and
+ * why — each goes to the audit trail as it happens (D-2026-09-29-01). The
+ * trail's writes are inside the same `try` as the work, so if the database
+ * cannot record that a form was filed, the platform is NOT told it was: the
+ * next sweep finds the file on disk, records it, and confirms then. A
+ * confirmation the local trail cannot account for would be a gap.
  *
  * ── WHAT IT REFUSES TO DO ──
  *
@@ -55,13 +63,15 @@
  * AND NOTHING IT LOGS NAMES A PATIENT. The chart number is the folder, the
  * form reference is the filename, and neither goes in a log line — the
  * agreement id and the first eight of the hash are enough to trace one, which
- * is the same discipline `receipts.ts` keeps (hard rule 9, REQ-LOG-08).
+ * is the same discipline `receipts.ts` keeps (hard rule 9, REQ-LOG-08). The
+ * audit trail does record where each file went, ENCRYPTED (`store.ts`).
  */
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { SignedFormForCollection, WriteBackManifest } from '@aobplatform/contracts';
 import { redactError, type Logger } from './log';
+import type { ReturnKey, ReturnsTrail } from './store';
 
 /**
  * WHAT MAY BE A PATH COMPONENT. Letters, digits, dot, dash, underscore, and
@@ -96,6 +106,18 @@ export interface CollectorResult {
 
 const sha256 = (bytes: Uint8Array): string => createHash('sha256').update(bytes).digest('hex');
 
+/** Records nothing. For a caller with no database; the program always passes the store. */
+const NO_TRAIL: ReturnsTrail = {
+  returnReceived: () => undefined,
+  returnReceivedException: () => undefined,
+  returnAlreadyOnDisk: () => undefined,
+  returnWritten: () => undefined,
+  returnFiled: () => undefined,
+  returnFilingException: () => undefined,
+  returnConfirmed: () => undefined,
+  returnConfirmFailed: () => undefined,
+};
+
 export class Collector {
   constructor(
     private readonly client: CollectionClient,
@@ -103,6 +125,8 @@ export class Collector {
     private readonly logger: Logger,
     private readonly printerVersion: string,
     private readonly now: () => Date = () => new Date(),
+    /** Where every step is written down on this host (D-2026-09-29-01). */
+    private readonly trail: ReturnsTrail = NO_TRAIL,
   ) {}
 
   /**
@@ -135,9 +159,38 @@ export class Collector {
     return { filed, skipped, failed };
   }
 
+  /** Record a confirmation, trying three times: a locked database is usually free a moment later. */
+  private recordConfirmed(key: ReturnKey): boolean {
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        this.trail.returnConfirmed(key);
+        return true;
+      } catch (err) {
+        this.logger.warn('collect.confirm_record_retry', { agreementId: key.agreementId, attempt, error: redactError(err) });
+      }
+    }
+    return false;
+  }
+
+  /** One trail write that must not throw out of a path already failing. Logged if it does. */
+  private noteQuietly(agreementId: string, write: () => void): void {
+    try {
+      write();
+    } catch (err) {
+      this.logger.error('collect.trail_failed', { agreementId, error: redactError(err) });
+    }
+  }
+
   private async file(row: SignedFormForCollection): Promise<'filed' | 'skipped' | 'failed'> {
     const folder = safeSegment(row.patientRecordNumber);
     const name = safeSegment(row.formReference);
+    /*
+     * THE FORM REFERENCE ONLY ONCE IT HAS PASSED `safeSegment`. A value
+     * refused as a filename is a value nobody has understood yet, and it is
+     * not written down as though it were one.
+     */
+    const key: ReturnKey = { agreementId: row.agreementId, sha256: row.sha256, artefactId: row.artefactId, formReference: name ?? undefined };
+
     if (!folder || !name) {
       /*
        * REFUSED, NOT REPAIRED, AND NOT CONFIRMED. The row stays on the
@@ -150,6 +203,7 @@ export class Collector {
         agreementId: row.agreementId,
         which: !folder ? 'folder' : 'filename',
       });
+      this.noteQuietly(row.agreementId, () => this.trail.returnReceivedException(key, 'unsafe_name'));
       return 'failed';
     }
 
@@ -180,8 +234,17 @@ export class Collector {
         onDisk = null;
       }
 
-      if (!onDisk) {
-        const downloaded = await this.client.download(row.artefactId);
+      if (onDisk) {
+        this.trail.returnAlreadyOnDisk(key, pdfPath);
+      } else {
+        let downloaded: Uint8Array;
+        try {
+          downloaded = await this.client.download(row.artefactId);
+        } catch (err) {
+          this.logger.warn('collect.download_failed', { agreementId: row.agreementId, error: redactError(err) });
+          this.noteQuietly(row.agreementId, () => this.trail.returnReceivedException(key, 'download_failed'));
+          return 'failed';
+        }
         if (sha256(downloaded) !== row.sha256) {
           /*
            * HARD RULE 13. What is filed must be the bytes the platform
@@ -189,10 +252,19 @@ export class Collector {
            * is written, nothing is confirmed, and the row stays on the list.
            */
           this.logger.error('collect.hash_mismatch', { agreementId: row.agreementId });
+          this.noteQuietly(row.agreementId, () => this.trail.returnReceivedException(key, 'hash_mismatch'));
           return 'failed';
         }
-        mkdirSync(directory, { recursive: true });
-        writeAtomic(pdfPath, Buffer.from(downloaded));
+        this.trail.returnReceived(key);
+        try {
+          mkdirSync(directory, { recursive: true });
+          writeAtomic(pdfPath, Buffer.from(downloaded));
+        } catch (err) {
+          this.logger.warn('collect.write_failed', { agreementId: row.agreementId, error: redactError(err) });
+          this.noteQuietly(row.agreementId, () => this.trail.returnFilingException(key, 'write_failed'));
+          return 'failed';
+        }
+        this.trail.returnWritten(key, 'pdf', pdfPath);
         onDisk = Buffer.from(downloaded);
       }
 
@@ -208,8 +280,15 @@ export class Collector {
         collectedAt: this.now().toISOString(),
         printerVersion: this.printerVersion,
       };
-      mkdirSync(directory, { recursive: true });
-      writeAtomic(manifestPath, Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`, 'utf8'));
+      try {
+        mkdirSync(directory, { recursive: true });
+        writeAtomic(manifestPath, Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`, 'utf8'));
+      } catch (err) {
+        this.logger.warn('collect.write_failed', { agreementId: row.agreementId, error: redactError(err) });
+        this.noteQuietly(row.agreementId, () => this.trail.returnFilingException(key, 'write_failed'));
+        return 'failed';
+      }
+      this.trail.returnWritten(key, 'manifest', manifestPath);
 
       /*
        * THE HASH OF WHAT IS ON DISK, RE-READ, NOT OF WHAT ARRIVED. This is
@@ -220,10 +299,37 @@ export class Collector {
       const written = sha256(readFileSync(pdfPath));
       if (written !== row.sha256) {
         this.logger.error('collect.write_verify_failed', { agreementId: row.agreementId });
+        this.noteQuietly(row.agreementId, () => this.trail.returnFilingException(key, 'write_verify_failed'));
         return 'failed';
       }
+      // Recorded BEFORE the platform is told: a confirmation the trail cannot account for is a gap.
+      this.trail.returnFiled(key, pdfPath, manifestPath);
 
-      await this.client.confirm(row.agreementId, { artefactSha256: written, pmsDocumentKey });
+      try {
+        await this.client.confirm(row.agreementId, { artefactSha256: written, pmsDocumentKey });
+      } catch (err) {
+        /*
+         * FILED, NOT CONFIRMED — A STATE, NOT AN EXCEPTION. The file is in
+         * the practice's folder; the platform does not know yet. The row
+         * stays published and the next sweep confirms.
+         */
+        this.logger.warn('collect.failed', { agreementId: row.agreementId, error: redactError(err) });
+        this.noteQuietly(row.agreementId, () => this.trail.returnConfirmFailed(key));
+        return 'failed';
+      }
+      /*
+       * THE ONE STEP A LATER SWEEP CANNOT REPAIR. Once confirmed, the platform
+       * stops listing this form, so nothing will bring it back here. The
+       * write is retried; if it still fails, that is said at error level, in
+       * words a support engineer can search for.
+       */
+      if (!this.recordConfirmed(key)) {
+        this.logger.error('collect.confirmed_not_recorded', {
+          agreementId: row.agreementId,
+          note: 'the platform was told this form is filed; this host could not record the confirmation, and its trail will show it filed but not confirmed',
+        });
+        return 'filed';
+      }
       this.logger.info('collect.filed', {
         agreementId: row.agreementId,
         sha: row.sha256.slice(0, 8),
@@ -232,10 +338,10 @@ export class Collector {
       return 'filed';
     } catch (err) {
       /*
-       * A FAILURE HERE IS A RETRY, NEVER A LOSS. The row stays published
-       * until it is confirmed, so an unreachable server, a folder that is not
-       * mounted or a disk that is full means this sweep does less — and the
-       * next one picks it up. Nothing is discarded and nothing is claimed.
+       * A FAILURE HERE IS A RETRY, NEVER A LOSS — including a failure to
+       * write the audit trail itself, which lands here before the platform
+       * is told anything. The row stays published until it is confirmed, so
+       * the next sweep picks it up. Nothing is discarded and nothing is claimed.
        */
       this.logger.warn('collect.failed', { agreementId: row.agreementId, error: redactError(err) });
       return 'failed';

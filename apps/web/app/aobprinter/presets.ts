@@ -20,6 +20,12 @@
  * platform never parses, sums, rounds or reformats one (hard rule 4,
  * D-2026-09-14-02), and the ragged presets exist precisely to prove the screen
  * does not either.
+ *
+ * THE `$` IS PART OF THE STRING SINCE 10 OCTOBER 2026 (D-2026-10-10-08). A real
+ * PracSoft DB4 prints `$45.05`, and AOBPRINTER's template
+ * `pracsoft3-db4-2026-10-1` now carries it that way, so this tool, which stands
+ * in for AOBPRINTER, sends `$45.05` too. The -09-1 template stripped the
+ * symbol; the ragged preset keeps one row in that older shape.
  */
 
 export interface ServiceRow {
@@ -35,6 +41,37 @@ export interface ProviderRow {
   role: 'servicing' | 'payee';
   name: string;
   providerNumber: string;
+}
+
+/**
+ * ONE STATEMENT PRINTED UNDER THE PRIVACY NOTICE, as AOBPRINTER reads it
+ * (`assignment.statements` in `pracsoft3-db4-2026-10-1`). `inScope: false` is
+ * the pathology offer — s 65C(4) items 1-4, out of scope (CLAUDE.md §8) —
+ * carried as data and never drawn for a patient (`statementsOf` in
+ * `db4-form-view.ts`). The two flags are optional because a template may not
+ * read them, and a reprint has to send back exactly what came in.
+ */
+export interface AssignmentStatement {
+  key: string;
+  text: string;
+  ticked?: boolean;
+  inScope?: boolean;
+}
+
+/**
+ * THE PRIVACY NOTICE AND THE ASSIGNMENT STATEMENTS ARE PRINTED-FORM DATA, NOT
+ * VERSIONED CONTENT. AOBPRINTER reads them off the page into `assignment`, and
+ * `buildDb4FormView` draws the tablet's legal page (2C) from there. Until 11
+ * October 2026 this tool could not send them at all, so no form it composed
+ * had a privacy notice on 2C — and a form with no privacy notice cannot show
+ * how long 2C really is.
+ */
+export interface PrintedAssignment {
+  /** One entry per printed paragraph, in order. */
+  privacyNotice: string[];
+  /** The word printed between the two statements. */
+  statementsJoinedBy?: string;
+  statements: AssignmentStatement[];
 }
 
 export interface Draft {
@@ -73,6 +110,11 @@ export interface Draft {
   locationPostcode: string;
   providers: ProviderRow[];
   services: ServiceRow[];
+  /**
+   * NULL SENDS NO `assignment` BLOCK, which is what every preset except
+   * `long-form` does, so their 2C shows the affirmations and no notice.
+   */
+  assignment: PrintedAssignment | null;
   queueName: string;
   queueLabel: string;
   parserTemplateVersion: string;
@@ -127,12 +169,52 @@ export const BLANK: Draft = {
   locationState: 'NSW',
   locationPostcode: '2999',
   providers: [{ ...SERVICING }, { ...PAYEE }],
-  services: [row('23', 'Level B Surgery', '45.05')],
+  services: [row('23', 'Level B Surgery', '$45.05')],
+  assignment: null,
   queueName: 'default',
   queueLabel: 'Front desk printer',
-  parserTemplateVersion: 'pracsoft3-db4-v1',
+  // What AOBPRINTER stamps by default (DEFAULT_TEMPLATE_VERSION in apps/aobprinter/src/template.ts).
+  parserTemplateVersion: 'pracsoft3-db4-2026-10-1',
   capturedAt: '',
 };
+
+/**
+ * THE PRIVACY NOTICE AND STATEMENTS A PRACSOFT DB4 PRINTS, word for word as
+ * `DB4-print.example.json` records them off the scanned form. The government's
+ * wording on the government's page, reproduced, not ours (D-2026-09-14-02).
+ */
+export const PRINTED_ASSIGNMENT: PrintedAssignment = {
+  privacyNotice: [
+    'Privacy Notice: Your personal information is protected by law, including the Privacy Act 1988, and is collected by Services Australia for the assessment and administration of payments and services. This information is required to process your application or claim.',
+    'Your information may be used by the agency or given to other parties for the purposes of research, investigation or where you have agreed or it is required or authorised by law.',
+    'You can get more information about the way in which the Services Australia will manage your personal information, including our privacy policy at servicesaustralia.gov.au/privacy or by requesting a copy from the agency.',
+    'Information about medical/dental expenses for people under the age of 18 may also be disclosed to adults on the same Medicare card, through taxation statements.',
+    'To be completed by the person assigning benefits for the services stated on this form.',
+  ],
+  statementsJoinedBy: 'or',
+  statements: [
+    {
+      key: 'assign_to_health_professional',
+      text: 'I assign my right to benefits to the health professional who rendered the services.',
+      ticked: true,
+      inScope: true,
+    },
+    {
+      key: 'offer_to_assign_to_pathology_practitioner',
+      text: 'I offer to assign my right to benefits to the Approved Pathology Practitioner who will render the requested pathology services.',
+      ticked: true,
+      inScope: false,
+    },
+  ],
+};
+
+/**
+ * THE LONGEST SERVICE DESCRIPTION ON FILE — PracSoft's own wording for 75870
+ * off the scanned form in `DB4-print.example.json`. A row this long wraps to
+ * several lines in the 2B table.
+ */
+const LONGEST_DESCRIPTION =
+  'Professional attendance (the attendance service) by a general practitioner, a medical practitioner or a prescribed medical practitioner, at which a general practice support service is provided';
 
 export interface Preset {
   readonly key: string;
@@ -142,6 +224,29 @@ export interface Preset {
   readonly apply: (base: Draft) => Draft;
 }
 
+/**
+ * WHAT A PRESET STARTS FROM: the blank draft, plus the patient the tester is
+ * pointing at.
+ *
+ * THE NAME TRAVELS WITH THE CHART NUMBER (11 October 2026). It used to be the
+ * chart number alone, so picking a preset blanked the Given names and Family
+ * name the tester had typed — and a DB4 with no printed name makes
+ * `buildDb4FormView` return no form at all (its guard wants a name and a
+ * service row), so the tablet fell back to the plain particulars, which name
+ * the patient from the MATCHED RECORD. A name typed before picking a preset
+ * then appeared nowhere on the tablet. The chart number and the name are one
+ * patient on the page; a preset keeps both.
+ */
+export function startFromPreset(preset: Preset, current: Draft): Draft {
+  return preset.apply({
+    ...BLANK,
+    practiceId: current.practiceId,
+    patientRecordNumber: current.patientRecordNumber,
+    givenNames: current.givenNames,
+    familyName: current.familyName,
+  });
+}
+
 export const PRESETS: readonly Preset[] = [
   {
     key: 'clean',
@@ -149,7 +254,7 @@ export const PRESETS: readonly Preset[] = [
     why: 'Everything read. Places, and sends to a tablet with no band at all.',
     apply: (d) => ({
       ...d,
-      services: [row('23', 'Level B Surgery', '45.05'), row('10990', 'Bulk billing incentive', '7.15')],
+      services: [row('23', 'Level B Surgery', '$45.05'), row('10990', 'Bulk billing incentive', '$7.15')],
     }),
   },
   {
@@ -190,15 +295,15 @@ export const PRESETS: readonly Preset[] = [
   {
     key: 'ragged-amounts',
     label: 'Ragged amounts',
-    why: 'Whole dollars, a symbol, one decimal, a grouping comma and a zero — reproduced exactly, aligned on the point.',
+    why: 'Whole dollars, no symbol (the -09-1 shape), one decimal, a grouping comma and a zero — reproduced exactly, aligned on the point.',
     apply: (d) => ({
       ...d,
       services: [
-        row('23', 'Level B, whole dollars', '45'),
-        row('36', 'Level C, with a symbol', '$45.05'),
-        row('75870', 'Attendance, one decimal', '1234.5'),
-        row('14206', 'Iron infusion, grouped', '1,234.55'),
-        row('10990', 'Incentive, nothing charged', '0.00'),
+        row('23', 'Level B, whole dollars', '$45'),
+        row('36', 'Level C, printed without a symbol', '45.05'),
+        row('75870', 'Attendance, one decimal', '$1234.5'),
+        row('14206', 'Iron infusion, grouped', '$1,234.55'),
+        row('10990', 'Incentive, nothing charged', '$0.00'),
       ],
     }),
   },
@@ -223,8 +328,48 @@ export const PRESETS: readonly Preset[] = [
     }),
   },
   {
+    key: 'long-form',
+    label: 'The longest form: twelve rows and the privacy notice',
+    why: 'Reproduces the overflow (D-2026-10-10-10): a long place of practice and patient address on 2A, two long provider names and twelve rows, one wrapping, on 2B, the full printed privacy notice on 2C. No box may scroll; every page must still fit.',
+    apply: (d) => ({
+      ...d,
+      // The tester's name wins; a blank one gets a long fake.
+      givenNames: d.givenNames || 'Maximiliana Seraphina Josephine',
+      familyName: d.familyName || 'Fictitious-Placeholderington',
+      address: 'Unit 1207, Level 12, The Imaginary Towers, 1432-1440 Nowhere Boulevard, Fakevale Heights North NSW 2999',
+      locationName: 'Fakevale Heights and District Family Medical Practice and Skin Cancer Clinic',
+      locationAddressLines: [
+        'SUITE 14, LEVEL 3, FAKEVALE MEDICAL AND PROFESSIONAL CENTRE',
+        'CORNER OF NOWHERE STREET AND IMAGINARY PARADE',
+        'ENTRY VIA SHOP 2-4, PLACEHOLDER ARCADE',
+      ].join('\n'),
+      locationSuburb: 'Fakevale Heights North',
+      providers: [
+        // The NUMBER is the dev practice's anchor and must stay; names are never checked (D-2026-09-28-01).
+        { ...SERVICING, name: 'Dr Ficticia Annabella Nonperson-Placeholderington' },
+        { ...PAYEE, name: 'Dr Madeup Bartholomew Notreal-Imaginarius' },
+      ],
+      // Plausible items in PracSoft's style with FAKE amounts — not a fee schedule.
+      services: [
+        row('23', 'Level B Surgery', '$45.05'),
+        row('10990', 'Bulk billing incentive', '$7.15'),
+        row('75870', LONGEST_DESCRIPTION, '$22.40'),
+        row('11700', 'Twelve-lead electrocardiography, tracing and report', '$34.40'),
+        row('30071', 'Diagnostic biopsy of skin or mucous membrane', '$55.10'),
+        row('30026', 'Repair of wound on face or neck, superficial, not more than 7 cm long', '$70.35'),
+        row('10997', 'Chronic disease service by a practice nurse on behalf of a medical practitioner', '$14.25'),
+        row('73806', 'Pregnancy test by one or more immunochemical methods', '$10.15'),
+        row('16500', 'Antenatal attendance', '$46.20'),
+        row('14206', 'Hormone or living tissue implant, insertion by cannula', '$41.75'),
+        row('2713', 'GP mental health treatment consultation, at least 20 minutes', '$78.95'),
+        row('30216', 'Aspiration of haematoma', '$24.20'),
+      ],
+      assignment: PRINTED_ASSIGNMENT,
+    }),
+  },
+  {
     key: 'refused-no-chart',
-    label: 'Refused at the door: no chart number',
+    label: 'Refused at the door: no PMS patient ID',
     why: 'Never becomes an agreement. The job row records `no_chart_number` and nothing reaches the desk.',
     apply: (d) => ({ ...d, patientRecordNumber: '' }),
   },

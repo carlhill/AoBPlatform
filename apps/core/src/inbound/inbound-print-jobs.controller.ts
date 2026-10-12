@@ -1,11 +1,13 @@
-import { BadRequestException, Body, Controller, Get, Headers, HttpCode, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Header, Headers, HttpCode, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
 import { Type } from 'class-transformer';
-import { IsArray, IsBoolean, IsIn, IsISO8601, IsOptional, IsString, Matches, MaxLength, ValidateNested } from 'class-validator';
-import type { CollectedConfirmation, PrintJobEnvelope } from '@aobplatform/contracts';
+import { IsArray, IsBoolean, IsIn, IsInt, IsISO8601, IsOptional, IsString, Matches, Max, MaxLength, Min, ValidateNested } from 'class-validator';
+import type { AobPrinterHeartbeat, CollectedConfirmation, PrintJobEnvelope } from '@aobplatform/contracts';
 import { PRINT_DOCUMENT_TYPES } from '@aobplatform/domain';
 import { PracticeScoped } from '../auth/practice-scope.decorator';
 import { InboundPrintJobsService } from './inbound-print-jobs.service';
 import { WriteBackCollectionService } from './write-back-collection.service';
+import { AobPrinterHeartbeatService } from './aobprinter-heartbeat.service';
+import { AobPrinterHeartbeatDto } from './aobprinter-heartbeat.dto';
 
 /*
  * THE DOOR IS WHERE DATA MINIMISATION IS ENFORCED. These DTOs name exactly the
@@ -186,6 +188,15 @@ export class PrintJobEnvelopeDto {
   /** Which print queue produced the form. Attribution, never PII (D-2026-09-17-02). */
   @IsOptional() @IsString() @MaxLength(100) queueName?: string;
   @IsOptional() @IsString() @MaxLength(100) queueLabel?: string;
+  /**
+   * How many service lines AOBPRINTER's template did not read (D-2026-10-11-05).
+   * A COUNT, never content — no PII and no amount can ride on it. Without this
+   * line the whitelist would strip it at the door and the Send-to-tablet check
+   * could never see it. Absent from a desktop that predates it. The ceiling is
+   * a sanity bound, not a rule: a one-page form has a few dozen lines, so a
+   * count in the thousands is a broken desktop and is refused at the door.
+   */
+  @IsOptional() @IsInt() @Min(0) @Max(1000) unparsedServiceLines?: number;
   @IsOptional() @ValidateNested() @Type(() => Db4HeadingDto) heading?: Db4HeadingDto;
   @IsOptional() @ValidateNested() @Type(() => Db4FormDto) form?: Db4FormDto;
   @IsOptional() @ValidateNested() @Type(() => Db4ServicingLocationDto) servicingLocation?: Db4ServicingLocationDto;
@@ -234,6 +245,7 @@ export class InboundPrintJobsController {
   constructor(
     private readonly jobs: InboundPrintJobsService,
     private readonly collection: WriteBackCollectionService,
+    private readonly heartbeats: AobPrinterHeartbeatService,
   ) {}
 
   @Post()
@@ -241,6 +253,27 @@ export class InboundPrintJobsController {
   @PracticeScoped()
   ingest(@Headers('x-practice-id') practiceId: string | undefined, @Body() dto: PrintJobEnvelopeDto) {
     return this.jobs.ingest(requirePractice(practiceId), dto as unknown as PrintJobEnvelope, { kind: 'practice' });
+  }
+
+  /**
+   * THE AOBPRINTER HEARTBEAT (PRINTER-HEARTBEAT.md §3, D-2026-10-10-02).
+   * Every minute the host posts counts, versions and its audit chain head;
+   * the platform records the host, judges the chain, and answers what it knows
+   * of the prints and returns the host asked about.
+   *
+   * ON THIS PREFIX, so it inherits the `db4` surface and the same
+   * `x-practice-id` transport as ingest until mTLS lands (decision 12). ABOVE
+   * EVERY `:id` ROUTE in the file, like `metrics`, `recent` and `signed`.
+   *
+   * 200, not 202: the chain is judged by the time this returns, and the body
+   * says how. `no-store`, because a cached answer about evidence is wrong.
+   */
+  @Post('heartbeat')
+  @HttpCode(200)
+  @Header('Cache-Control', 'no-store')
+  @PracticeScoped()
+  heartbeat(@Headers('x-practice-id') practiceId: string | undefined, @Body() dto: AobPrinterHeartbeatDto) {
+    return this.heartbeats.receive(requirePractice(practiceId), dto as unknown as AobPrinterHeartbeat);
   }
 
   @Get('metrics')

@@ -17,6 +17,18 @@ import type { Db4PrintRecord } from './db4-record';
 import type { Receipt } from './receipts';
 import type { QueueConfig } from './config';
 import { QueueWatcher, SpoolClaimer, claimedJobs, isCompletePdf, processClaimedJob, watcherDirs } from './watcher';
+import { openStore, type AobPrinterStore } from './store';
+
+/** Every store a test opens, closed before its folder is removed — Windows will not delete an open database. */
+const opened: AobPrinterStore[] = [];
+function storeAt(dir: string): AobPrinterStore {
+  const store = openStore(dir);
+  opened.push(store);
+  return store;
+}
+function closeStores(): void {
+  for (const store of opened.splice(0)) store.close();
+}
 
 const FIXTURE = join(__dirname, '..', 'test-fixtures', 'pracsoft3-db4-probe.pdf');
 const template = templateFor(DEFAULT_TEMPLATE_VERSION)!;
@@ -36,7 +48,10 @@ describe('claiming a job off a one-slot port', () => {
     spool = join(dir, 'spool', 'aobprinter-out.pdf');
     lines.length = 0;
   });
-  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+  afterEach(() => {
+    closeStores();
+    rmSync(dir, { recursive: true, force: true });
+  });
 
   it('a_half_written_spool_file_is_never_parsed', () => {
     const dirs = watcherDirs(dir, QUEUE.name);
@@ -73,7 +88,7 @@ describe('claiming a job off a one-slot port', () => {
     expect(isCompletePdf(whole)).toBe(true);
 
     const posted: string[] = [];
-    const outbox = new Outbox(dir, async (r) => {
+    const outbox = new Outbox(storeAt(dir), async (r) => {
       posted.push(r.sourceSha256);
       return { ok: true, status: 202 };
     }, logger);
@@ -125,7 +140,7 @@ describe('claiming a job off a one-slot port', () => {
     const claimed = join(dirs.jobs, '2026-09-17T02-00-00-000Z-abcdef012345.pdf');
     copyFileSync(FIXTURE, claimed);
 
-    const outbox = new Outbox(dir, async () => ({ ok: true, status: 202 }), logger);
+    const outbox = new Outbox(storeAt(dir), async () => ({ ok: true, status: 202 }), logger);
     const { outcome, record } = processClaimedJob(claimed, template, outbox, dirs, QUEUE, logger);
 
     expect(outcome).toBe('queued');
@@ -138,7 +153,7 @@ describe('claiming a job off a one-slot port', () => {
     // What a crash between "record queued" and "source deleted" leaves behind.
     const dirs = watcherDirs(dir, QUEUE.name);
     mkdirSync(dirs.jobs, { recursive: true });
-    const outbox = new Outbox(dir, async () => ({ ok: true, status: 202 }), logger);
+    const outbox = new Outbox(storeAt(dir), async () => ({ ok: true, status: 202 }), logger);
 
     for (const name of ['a.pdf', 'b.pdf']) {
       const path = join(dirs.jobs, name);
@@ -157,7 +172,7 @@ describe('claiming a job off a one-slot port', () => {
     // re-render, so a minimal hand-built PDF stands in for "some other page".
     writeFileSync(path, Buffer.from(MINIMAL_PDF, 'latin1'));
 
-    const outbox = new Outbox(dir, async () => ({ ok: true, status: 202 }), logger);
+    const outbox = new Outbox(storeAt(dir), async () => ({ ok: true, status: 202 }), logger);
     expect(processClaimedJob(path, template, outbox, dirs, QUEUE, logger).outcome).not.toBe('queued');
     expect(outbox.depth()).toBe(0);
   });
@@ -182,7 +197,10 @@ describe('several queues on one host', () => {
     mkdirSync(join(dir, 'spool'), { recursive: true });
     lines.length = 0;
   });
-  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+  afterEach(() => {
+    closeStores();
+    rmSync(dir, { recursive: true, force: true });
+  });
 
   function twoQueues(): QueueConfig[] {
     return [
@@ -234,7 +252,7 @@ describe('several queues on one host', () => {
     const posted: Db4PrintRecord[] = [];
     const receipts: Receipt[] = [];
     const outbox = new Outbox(
-      dir,
+      storeAt(dir),
       async (record) => {
         posted.push(record);
         return { ok: true, status: 202 };

@@ -214,4 +214,29 @@ describe('a_password_never_appears_in_a_log_an_event_or_an_error', () => {
     });
     spy.mockRestore();
   });
+
+  it('an_unrecorded_sign_in_method_is_refused_and_not_called_a_password', async () => {
+    // A passkey session from a realm with no amr mapper: the token says nothing about how it signed in.
+    const { guard, context } = guardRefusing({
+      sub: 's10',
+      principalType: 'staff',
+      roles: [],
+      authTime: Math.floor(Date.now() / 1000),
+      raw: {},
+    });
+    const spy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    let thrown: unknown;
+    try {
+      await guard.canActivate(context);
+    } catch (err) {
+      thrown = err;
+    } finally {
+      spy.mockRestore();
+    }
+    expect(thrown).toBeInstanceOf(ForbiddenException);
+    const body = (thrown as ForbiddenException).getResponse() as { reasonCode: string; message: string };
+    expect(body.reasonCode).toBe('sign_in_method_unrecorded');
+    expect(body.message.toLowerCase()).not.toContain('password');
+    expect(body.message).not.toMatch(/sign in again/i);
+  });
 });

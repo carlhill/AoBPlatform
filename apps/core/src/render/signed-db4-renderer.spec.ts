@@ -377,6 +377,37 @@ describe('the_signed_db4_prints_the_medicare_number_and_the_cost', () => {
     expect(page).not.toContain('67.45');
   });
 
+  it('db4_amount_keeps_the_dollar_exactly_as_printed', async () => {
+    /*
+     * CARL, 10 OCTOBER 2026 (D-2026-10-10-08): "go ahead and keep the $".
+     * Template pracsoft3-db4-2026-10-1 carries `$45.05` as PracSoft printed it,
+     * and the Signed-DB4 draws that string and nothing else: no second symbol
+     * of ours, no parsing, no total (hard rule 4 as narrowed by D-2026-09-14-02).
+     */
+    const renderer = new SignedDb4Renderer(artefacts);
+    const record = printRecord();
+    const withSymbol = documentFor({
+      printRecord: {
+        ...record,
+        parserTemplateVersion: 'pracsoft3-db4-2026-10-1',
+        services: [
+          { ...record.services![0], benefitAssigned: '$45.05' },
+          { ...record.services![1], benefitAssigned: '$1,045.05' },
+        ],
+      },
+    });
+    const first = await renderer.render(asPayload(withSymbol), ['en']);
+    const page = pageTextOf(first.bytes);
+
+    expect(page).toContain('$45.05');
+    expect(page).toContain('$1,045.05');
+    expect(page).not.toContain('$$');
+    expect(page).not.toContain('1090.10');
+    expect(page).not.toContain('1,090.10');
+    // Rule 13 holds with the symbol too: the same input, the same bytes.
+    expect((await renderer.render(asPayload(withSymbol), ['en'])).sha256).toBe(first.sha256);
+  });
+
   it('draws the whole form — location, both providers, items, privacy notice, referral', async () => {
     const renderer = new SignedDb4Renderer(artefacts);
     const { bytes } = await renderer.render(asPayload(documentFor()), ['en']);

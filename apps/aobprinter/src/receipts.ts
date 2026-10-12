@@ -2,16 +2,16 @@
  * Receipts, not records: an append-only ledger that answers "did this form
  * get through, and when" forever, without holding the form.
  *
- * THIS IS WHAT MAKES DELETION SAFE. Once `sent/<sha>.json` (a whole DB4 Print
- * Record, Medicare number and all) is gone, the only trace of that form is
- * whatever this file wrote about it. So the fields here are named
+ * THIS IS WHAT MAKES DELETION SAFE. Once a delivered job's row (a whole DB4
+ * Print Record, Medicare number and all) is gone, the only trace of that form
+ * is its receipt. Receipts live in the `receipts` table (`store.ts`) since 29
+ * September 2026; before that, in `outbox/receipts.jsonl`, which the store
+ * imports on first start. So the fields here are named
  * exhaustively, never spread from the record, and never grown by adding a
  * field to `Db4PrintRecord` without a matching decision here — a receipt
  * that quietly started holding one more field than it does today is the
  * failure this whole feature exists to prevent.
  */
-import { appendFileSync, mkdirSync } from 'node:fs';
-import { join } from 'node:path';
 import type { Db4PrintRecord } from './db4-record';
 
 export type ReceiptState = 'sent' | 'poisoned';
@@ -80,20 +80,10 @@ export function buildReceipt(record: Db4PrintRecord, outcome: ReceiptOutcome): R
   };
 }
 
-export function receiptsPath(dataDir: string): string {
-  return join(dataDir, 'outbox', 'receipts.jsonl');
-}
-
-export function appendReceipt(dataDir: string, receipt: Receipt): void {
-  mkdirSync(join(dataDir, 'outbox'), { recursive: true });
-  appendFileSync(receiptsPath(dataDir), `${JSON.stringify(receipt)}\n`, 'utf8');
-}
-
-/** Where the outbox sends a finished job's receipt. Injectable so a test can read what was written. */
+/**
+ * Where the outbox sends a finished job's receipt: the database in the
+ * program, and whatever a test wants to read back in a test.
+ */
 export interface ReceiptsWriter {
   record(receipt: Receipt): void;
-}
-
-export function makeFileReceiptsWriter(dataDir: string): ReceiptsWriter {
-  return { record: (receipt) => appendReceipt(dataDir, receipt) };
 }

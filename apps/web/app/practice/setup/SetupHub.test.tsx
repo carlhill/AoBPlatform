@@ -248,3 +248,42 @@ describe('the Tablets card, and the Kiosk row it must never disagree with', () =
     expect(messagesCard.querySelector('[data-testid="hub-to-tablet"]')).toBeNull();
   });
 });
+
+/**
+ * THE AOBPRINTER CARD (PRINTER-HEARTBEAT.md §4). The administrator's, on the
+ * `db4` surface, gated by the same `canOpen` the page applies — so somebody
+ * the page would refuse is never shown the card — and leading to the
+ * read-only twin for an operator.
+ */
+describe('the AOBPRINTER card', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('opens_the_host_page_for_the_administrator_and_the_twin_for_an_operator', async () => {
+    session = { roles: [], practiceId: PRACTICE, consoleRole: 'admin' };
+    stubFetch(baseHub('unpaired', true), 'ok', []);
+    const { unmount } = render(<SetupHub practiceId={PRACTICE} />);
+
+    const link = (await screen.findByTestId('hub-to-aobprinter-host')) as HTMLAnchorElement;
+    expect(link.getAttribute('href')).toBe('/practice/aobprinter-host');
+    expect(link.textContent).toContain(strings.aobprinterHost.hubOpen);
+    unmount();
+
+    session = { roles: ['platform_admin'], practiceId: null };
+    stubFetch(baseHub('unpaired', true), 'ok', []);
+    render(<SetupHub practiceId={PRACTICE} viewOnly />);
+    const twin = (await screen.findByTestId('hub-to-aobprinter-host')) as HTMLAnchorElement;
+    expect(twin.getAttribute('href')).toBe(`/platform/practices/${PRACTICE}/aobprinter-host`);
+  });
+
+  it('is_not_offered_to_reception_whom_the_page_would_refuse', async () => {
+    session = { roles: [], practiceId: PRACTICE, consoleRole: 'reception' };
+    stubFetch(baseHub('unpaired', true), 'ok', []);
+    render(<SetupHub practiceId={PRACTICE} />);
+
+    // Wait for the hub's own data, then check the card is absent.
+    await screen.findByTestId('card-tablets');
+    expect(screen.queryByTestId('card-aobprinter-host')).toBeNull();
+  });
+});

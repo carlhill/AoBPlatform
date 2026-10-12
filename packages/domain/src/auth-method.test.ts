@@ -76,6 +76,21 @@ describe('a_high_stakes_act_asks_for_the_second_factor_again', () => {
     expect(decision.reason).toBe('second_factor_required');
   });
 
+  it('an_unrecorded_sign_in_method_is_refused_and_not_called_a_password', () => {
+    /*
+     * The main realm issued no amr claim, so a passkey session reached core as
+     * "unknown" and was told it had signed in with a password. Still refused -
+     * "we cannot tell" is never "yes" - but under its own code, because the
+     * password sentence describes a sign-in nobody did.
+     */
+    const decision = mayPerformHighStakesAct({ method: 'unknown', authTimeSeconds: NOW, nowSeconds: NOW });
+    expect(decision.allowed).toBe(false);
+    expect(decision.reason).toBe('sign_in_method_unrecorded');
+    expect(mayPerformHighStakesAct({ method: authMethodFromAmr(undefined), authTimeSeconds: NOW, nowSeconds: NOW }).reason).toBe(
+      'sign_in_method_unrecorded',
+    );
+  });
+
   it('refuses a session that cannot say when it authenticated', () => {
     expect(mayPerformHighStakesAct({ method: 'password+otp', nowSeconds: NOW }).reason).toBe('reauthentication_required');
     expect(mayPerformHighStakesAct({ method: 'password+otp', authTimeSeconds: null, nowSeconds: NOW }).reason).toBe(

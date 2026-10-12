@@ -346,6 +346,95 @@ describe('the DB4 form view', () => {
       expect(none).toEqual(['print_record_benefit_missing']);
     });
 
+    /* ---------------------------------------------------------------------
+     * A SERVICE LINE AOBPRINTER COULD NOT READ (Opus review, 10 Oct 2026;
+     * D-2026-10-11-05). The amount check above asks whether ANY row has an
+     * amount, so a form with one row lost among several passed it and the
+     * patient was shown a copy missing a service. AOBPRINTER now counts the
+     * date-led lines its row pattern rejected, and a non-zero count is
+     * refused at the desk.
+     * ------------------------------------------------------------------ */
+    it('a_print_record_with_unparsed_service_lines_is_refused', () => {
+      // Every row it DID read is complete — the refusal is about the one it did not.
+      expect(checks({ unparsedServiceLines: 1 })).toEqual(['print_record_service_lines_unread']);
+      expect(checks({ unparsedServiceLines: 3 })).toEqual(['print_record_service_lines_unread']);
+    });
+
+    it('zero_unparsed_service_lines_passes_and_an_absent_count_is_not_refused', () => {
+      expect(checks({ unparsedServiceLines: 0 })).toEqual([]);
+      /*
+       * ABSENT IS A DESKTOP THAT PREDATES THE COUNT, not a page with a lost
+       * row. Refusing it would stop every push from every AOBPRINTER not yet
+       * upgraded over a fault nobody observed (hard rule 8); the DECISIONS
+       * entry says plainly that those records cannot be checked this way.
+       */
+      expect(checks()).toEqual([]);
+      // A count in any shape but a number is not a count, and is not read as one.
+      expect(checks({ unparsedServiceLines: '2' })).toEqual([]);
+    });
+
+    /* ---------------------------------------------------------------------
+     * THE PRINTED NAME AND THE PATIENT ON RECORD DISAGREE (Carl, 11 October
+     * 2026; D-2026-10-11-06). A DB4 is matched to a patient on the PMS
+     * patient ID alone (hard rule 1), so a form printing "Fern2 Dummyfield"
+     * against the ID of Emin Dummyfield placed an agreement for Emin — and
+     * the tablet would have shown the patient a form in another name.
+     * ------------------------------------------------------------------ */
+    it('printed_name_that_differs_from_the_patient_on_record_is_refused', () => {
+      const differs = checkDb4PrintRecord(envelope(), { givenNames: 'Emin', familyName: 'Fakename' });
+      expect(differs).toEqual(['print_record_patient_name_differs']);
+    });
+
+    it('printed_name_uses_the_desk_warnings_rule_and_ignores_only_how_it_was_rendered', () => {
+      // The same name, printed in capitals with a doubled space: not a difference.
+      expect(checkDb4PrintRecord(envelope(), { givenNames: ' testy ', familyName: 'FAKENAME' })).toEqual([]);
+      /*
+       * THE DESK WARNING'S RULE, SHARED (Carl, 11 October 2026; D-2026-10-11-06
+       * amending D-2026-10-10-11), so the band and this refusal can never
+       * disagree. The template splits a printed name at its LAST space, so a
+       * two-word family name comes off the page as given "Mary Anne Smith",
+       * family "Jones". Against a record of "Mary Anne" / "Smith Jones" that is
+       * the same whole name, and is NOT refused: neither remedy could fix it.
+       */
+      expect(
+        checkDb4PrintRecord(envelope({ patient: { givenNames: 'Mary Anne Smith', familyName: 'Jones', patientRecordNumber: '00001' } }), {
+          givenNames: 'Mary Anne',
+          familyName: 'Smith Jones',
+        }),
+      ).toEqual([]);
+      // Only a part that was PRINTED is compared: a form that printed no given
+      // names is not refused over them.
+      expect(
+        checkDb4PrintRecord(envelope({ patient: { familyName: 'Fakename', patientRecordNumber: '00001' } }), {
+          givenNames: 'Anyone',
+          familyName: 'Fakename',
+        }),
+      ).toEqual([]);
+      // A middle name on one side and not the other IS a difference — reception decides.
+      expect(checkDb4PrintRecord(envelope(), { givenNames: 'Testy Middle', familyName: 'Fakename' })).toEqual([
+        'print_record_patient_name_differs',
+      ]);
+    });
+
+    it('an_empty_recorded_name_is_compared_exactly_as_the_desk_band_compares_it', () => {
+      // '' on the record is a name that differs from a printed one, on both paths.
+      expect(checkDb4PrintRecord(envelope(), { givenNames: '', familyName: 'Fakename' })).toEqual([
+        'print_record_patient_name_differs',
+      ]);
+    });
+
+    it('printed_name_is_not_compared_when_either_side_has_none', () => {
+      // No patient on record passed in: the check is not asked (a caller that cannot say).
+      expect(checkDb4PrintRecord(envelope())).toEqual([]);
+      // No name printed: `print_record_patient_unidentified` and the view's fallback own that case.
+      expect(
+        checkDb4PrintRecord(envelope({ patient: { patientRecordNumber: '00001' } }), {
+          givenNames: 'Emin',
+          familyName: 'Fakename',
+        }),
+      ).toEqual([]);
+    });
+
     it('one_row_with_an_amount_is_enough_for_the_whole_record', () => {
       // A form may legitimately list a row the practice claims no benefit on.
       // Refusing a push over one blank cell would be stricter than the ruling.
@@ -597,16 +686,24 @@ describe('the DB4 form view', () => {
         'print_record_service_date_missing',
         'print_record_benefit_missing',
       ]);
-      // AND WITH A CARD NUMBER READ, ALL SEVEN — the conditional one joins the
-      // list in its declared position rather than being appended to the end.
+      // AND WITH A CARD NUMBER READ AND A SERVICE LINE UNREAD, ALL EIGHT — the
+      // two conditional ones join the list in their declared positions. The
+      // unread-line count is conditional too (D-2026-10-11-05): an empty
+      // record carries no count, so it cannot fire on `ruined` above.
       const alsoHalfRead = checkDb4PrintRecord({
         form: {},
         // eslint-disable-next-line no-restricted-syntax -- the fixture's own field, invalid by construction.
         patient: { medicareCardNumber: FAKE_MEDICARE },
         providers: [],
         services: [],
+        unparsedServiceLines: 2,
       } as unknown as PrintJobEnvelope);
-      expect(alsoHalfRead).toEqual([...DB4_PRINT_RECORD_CHECKS]);
+      /*
+       * EVERY CHECK BUT ONE, AND THAT ONE CANNOT JOIN. `print_record_patient_name_differs`
+       * needs a PRINTED name to compare, and `print_record_patient_unidentified` fires only
+       * when there is none — the two exclude each other by construction (D-2026-10-11-06).
+       */
+      expect(alsoHalfRead).toEqual(DB4_PRINT_RECORD_CHECKS.filter((c) => c !== 'print_record_patient_name_differs'));
       // AND IN THE DECLARED ORDER, always. A list that reshuffles itself
       // between two presses of Send is a list nobody trusts.
       for (const list of [ruined, alsoHalfRead]) {
@@ -695,6 +792,11 @@ describe('the DB4 form view', () => {
       // downstream requires it, so this check is the only thing standing
       // there (Carl, 27 September 2026).
       expect(DB4_PRINT_RECORD_CHECK_GATED_AT_INGEST.print_record_irn_missing).toBeNull();
+      // AND THE UNREAD SERVICE LINE (D-2026-10-11-05): ingest places an
+      // agreement from the rows it has and never looks at the count.
+      expect(DB4_PRINT_RECORD_CHECK_GATED_AT_INGEST.print_record_service_lines_unread).toBeNull();
+      // AND THE NAME: ingest matches on the PMS patient ID alone and never compares names.
+      expect(DB4_PRINT_RECORD_CHECK_GATED_AT_INGEST.print_record_patient_name_differs).toBeNull();
       // The map is exhaustive: a check added without a decision about whether
       // ingest already covers it is a check nobody classified.
       expect(Object.keys(DB4_PRINT_RECORD_CHECK_GATED_AT_INGEST).sort()).toEqual(
