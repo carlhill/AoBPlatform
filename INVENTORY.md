@@ -17,18 +17,18 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 | | Count |
 |---|---|
-| Exported symbols indexed | 2509 |
-| Files scanned for exports | 583 |
-| Files scanned for imports | 626 |
+| Exported symbols indexed | 2511 |
+| Files scanned for exports | 584 |
+| Files scanned for imports | 627 |
 | Exports with no comment of their own | 1019 |
-| Exports imported nowhere else | 1038 |
+| Exports imported nowhere else | 1037 |
 
 ## Sections
 
-- [Web components](#web-components) — 241
+- [Web components](#web-components) — 242
 - [Web hooks](#web-hooks) — 16
 - [Web helpers and constants](#web-helpers-and-constants) — 319
-- [Web types](#web-types) — 122
+- [Web types](#web-types) — 123
 - [Domain functions](#domain-functions) — 405
 - [Domain constants and content](#domain-constants-and-content) — 265
 - [Domain types](#domain-types) — 299
@@ -40,7 +40,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Web components
 
-241 exports.
+242 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -54,7 +54,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `SelectInput` | web:ui/index.tsx |  | **23** · web:apply/ApplyForm.tsx, web:platform/practices/[practiceId]/aobprinter-host/RebaselinePanel.tsx, web:practice/ActingAs.tsx, +20 more |
 | `ViewOnly` | web:platform/practices/[practiceId]/ViewOnly.tsx | (file) A practice page opened as the platform: readable, and genuinely inert. | **17** · web:platform/practices/[practiceId]/affiliations/page.tsx, web:platform/practices/[practiceId]/aobprinter-host/AobPrinterHostTwin.tsx, web:platform/practices/[practiceId]/application/page.tsx, +14 more |
 | `PracticeGate` | web:practice/PracticeGate.tsx | (file) "Which practice" resolved, with the two states that answer can be in. | **16** · web:practice/affiliations/page.tsx, web:practice/aobprinter-host/page.tsx, web:practice/channels/page.tsx, +13 more |
-| `Screen` | web:kiosk/components/Chrome.tsx | Header, content and footer. | **12** · web:kiosk/screens/AssignorScreen.tsx, web:kiosk/screens/CheckDetailsScreen.tsx, web:kiosk/screens/CompleteScreen.tsx, +9 more |
+| `Screen` | web:kiosk/components/Chrome.tsx | Header, content and footer. | **13** · web:kiosk/screens/AssignorScreen.tsx, web:kiosk/screens/CheckDetailsScreen.tsx, web:kiosk/screens/CompleteScreen.tsx, +10 more |
 | `Blueprint` | web:kiosk/components/Chrome.tsx |  | **11** · web:kiosk/screens/AssignorScreen.tsx, web:kiosk/screens/CheckDetailsScreen.tsx, web:kiosk/screens/HandoverScreen.tsx, +8 more |
 | `Section` | web:ui/index.tsx |  | **11** · web:apply/ApplyForm.tsx, web:platform/practices/[practiceId]/aobprinter-host/RebaselinePanel.tsx, web:practice/aobprinter-host/AobPrinterHostView.tsx, +8 more |
 | `Card` | web:patient/portal/portal-ui.tsx |  | **9** · web:patient/portal/cards/AgreementsCard.tsx, web:patient/portal/cards/DataCard.tsx, web:patient/portal/cards/DetailsCard.tsx, +6 more |
@@ -63,9 +63,9 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `PracticeOverride` | web:practice/usePractice.tsx |  | **7** · web:platform/practices/[practiceId]/application/page.tsx, web:platform/practices/[practiceId]/correspondence/page.tsx, web:platform/practices/[practiceId]/queue/page.tsx, +4 more |
 | `GuardedButton` | web:kiosk/components/Buttons.tsx |  | **6** · web:kiosk/components/SignatureControl.tsx, web:kiosk/screens/AssignorScreen.tsx, web:kiosk/screens/CheckDetailsScreen.tsx, +3 more |
 | `PortalButton` | web:patient/portal/portal-ui.tsx | A BUTTON WITH A 44px TARGET, which is why this is not `Button` from `app/ui`. | **6** · web:patient/portal/PortalView.tsx, web:patient/portal/activate/[token]/ActivateView.tsx, web:patient/portal/cards/DetailsCard.tsx, +3 more |
+| `PrimaryButton` | web:kiosk/components/Buttons.tsx |  | **6** · web:kiosk/screens/CompleteScreen.tsx, web:kiosk/screens/HandoverScreen.tsx, web:kiosk/screens/IdleScreen.tsx, +3 more |
 | `RecordId` | web:ui/index.tsx |  | **6** · web:practice/patients/NewAgreementPanel.tsx, web:practice/patients/PatientWorkView.tsx, web:practice/patients/PatientsQueueView.tsx, +3 more |
 | `SecondaryButton` | web:kiosk/components/Buttons.tsx |  | **6** · web:kiosk/screens/AssignorScreen.tsx, web:kiosk/screens/CompleteScreen.tsx, web:kiosk/screens/IdleScreen.tsx, +3 more |
-| `PrimaryButton` | web:kiosk/components/Buttons.tsx |  | **5** · web:kiosk/screens/CompleteScreen.tsx, web:kiosk/screens/HandoverScreen.tsx, web:kiosk/screens/IdleScreen.tsx, +2 more |
 | `CeremonyHeading` | web:kiosk/components/Chrome.tsx | THE TWO LINES ON TOP OF EVERY PAGE OF THE CEREMONY (Carl, 7 Sep 2026, from testing the pushed flow: "on top of each page of this workflow it should say 'Agree to bulk billing'; on the next line it should say by who — Name of Person"). | **4** · web:kiosk/screens/CheckDetailsScreen.tsx, web:kiosk/screens/HandoverScreen.tsx, web:kiosk/screens/ParticularsScreen.tsx, +1 more |
 | `ConfirmDialog` | web:patient/portal/portal-ui.tsx | ARE YOU SURE — for the three acts on this page that reach the server and change something: asking for a correction, ending an enduring agreement, and withdrawing somebody's authority. | **4** · web:patient/portal/cards/DetailsCard.tsx, web:patient/portal/cards/EnduringCard.tsx, web:patient/portal/cards/PasskeysCard.tsx, +1 more |
 | `CorrectOutcomeNotice` | web:practice/tablet/pushDesk.tsx | The outcome of the last correction or resolution on this session, if any. | **4** · web:practice/frontdesk/FrontDeskView.tsx, web:practice/frontdesksmall/SmallDeskView.tsx, web:practice/patients/PatientWorkView.tsx, +1 more |
@@ -100,6 +100,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `LocationsView` | web:practice/locations/LocationsView.tsx | (file) The places a practice works from. | **2** · web:platform/practices/[practiceId]/locations/page.tsx, web:practice/locations/page.tsx |
 | `NewAgreementPanel` | web:practice/patients/NewAgreementPanel.tsx | (file) RECEPTION TYPES AN AGREEMENT BY HAND (Carl, 7 Sep 2026; PMS_to_AoB_Workflow.md case 4, row W2). | **2** · web:practice/patients/PatientWorkView.tsx, web:practice/patients/PatientsQueueView.tsx |
 | `NotFoundView` | web:NotFoundView.tsx | (file) A page that does not exist, said plainly and then left behind. | **2** · web:aobprinter/page.tsx, web:not-found.tsx |
+| `ParticularsScreen` | web:kiosk/screens/ParticularsScreen.tsx | (file) K-3 — the locked particulars, and the screen the REQ-REG-06 rule is really about. | **2** · web:kiosk/Ceremony.tsx, web:patient/agree/[token]/Db4LinkSigning.tsx |
 | `PatientWorkView` | web:practice/patients/PatientWorkView.tsx | (file) ONE PATIENT, EVERYTHING OPEN, ONE PAGE (TODO.md "Reception-centric: the patient work page", Carl 4 Sep 2026). | **2** · web:platform/practices/[practiceId]/patients/[patientId]/page.tsx, web:practice/patients/[patientId]/page.tsx |
 | `PatientsQueueView` | web:practice/patients/PatientsQueueView.tsx | (file) PATIENTS — reception's queue, one row per person (TODO.md "Reception-centric: the patient work page", Carl 4 Sep 2026). | **2** · web:platform/practices/[practiceId]/patients/page.tsx, web:practice/patients/page.tsx |
 | `PracticePicker` | web:practice/PracticePicker.tsx | (file) "Which practice?" — for screens a platform operator can reach without one. | **2** · web:practice/reviews/ReviewsView.tsx, web:practice/users/UsersView.tsx |
@@ -110,6 +111,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `SelectField` | web:kiosk/components/Field.tsx |  | **2** · web:kiosk/screens/AssignorScreen.tsx, web:kiosk/screens/VerifyScreen.tsx |
 | `SendSteps` | web:practice/tablet/pushDesk.tsx | THE THREE STEPS, NUMBERED, WITH THE CONTROL EACH ONE NAMES DIRECTLY BENEATH IT (Carl, 10 Sep 2026, from a mock-up: "Who is signing over the Who is signing button, Choose a tablet over the select, Send over Send, an arrow between them"). | **2** · web:practice/frontdesk/FrontDeskView.tsx, web:practice/frontdesksmall/SmallDeskView.tsx |
 | `SetupHub` | web:practice/setup/SetupHub.tsx | (file) The practice setup hub. | **2** · web:platform/practices/[practiceId]/page.tsx, web:practice/setup/page.tsx |
+| `SignatureScreen` | web:kiosk/screens/SignatureScreen.tsx | (file) K-4 — signing. | **2** · web:kiosk/Ceremony.tsx, web:patient/agree/[token]/Db4LinkSigning.tsx |
 | `SummaryView` | web:practice/queue/SummaryView.tsx | (file) Queue totals — by practice, or by site and department. | **2** · web:practice/queuebyOrg/page.tsx, web:practice/queuebyOrgLocDepartment/page.tsx |
 | `TabletView` | web:practice/tablet/TabletView.tsx | (file) SEND TO THE TABLET — reception's half of the push (TODO.md "Two front doors", Carl 4 Sep 2026). | **2** · web:platform/practices/[practiceId]/tablet/page.tsx, web:practice/tablet/page.tsx |
 | `Tag` | web:kiosk/components/Chrome.tsx |  | **2** · web:kiosk/screens/IdleScreen.tsx, web:kiosk/screens/ParticularsScreen.tsx |
@@ -145,6 +147,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `CorrectView` | web:status/[token]/correct/CorrectView.tsx |  | **1** · web:status/[token]/correct/page.tsx |
 | `DataCard` | web:patient/portal/cards/DataCard.tsx | (file) WHAT HAPPENS TO MY DATA — the card Carl asked for by name (4 Sep 2026: "a patient will want to know what we do with all their data"). | **1** · web:patient/portal/PortalView.tsx |
 | `DayView` | web:practice/day/DayView.tsx | (file) `/practice/day` — WHO CAME IN, ON ONE DAY (Carl, 12 September 2026, on `/practice/frontdesk`: *"Add a button here with a link to show all Patients seen at this practice today. | **1** · web:practice/day/page.tsx |
+| `Db4LinkSigning` | web:patient/agree/[token]/Db4LinkSigning.tsx | (file) A DB4 ON THE PATIENT'S PHONE — THE TABLET'S OWN K-3 AND K-4, NOT A COPY (TELEHEALTH-PLAN §8 step 1, 12 Oct 2026). | **1** · web:patient/agree/[token]/AgreeView.tsx |
 | `DetailsCard` | web:patient/portal/cards/DetailsCard.tsx | (file) MY DETAILS — what each practice holds, and how to get it corrected. | **1** · web:patient/portal/PortalView.tsx |
 | `DossierView` | web:review/[id]/DossierView.tsx | (file) The reviewer's dossier — everything gate 3 needs, on one screen. | **1** · web:review/[id]/page.tsx |
 | `EarlierUnsigned` | web:practice/tablet/EarlierUnsigned.tsx | (file) "UNSIGNED FROM EARLIER DAYS: N" — the line under today's list on the tablet page (D-2026-10-10-01, option 1). | **1** · web:practice/tablet/TabletView.tsx |
@@ -166,7 +169,6 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `OutOfUseScreen` | web:kiosk/screens/OutOfUseScreen.tsx | (file) THE SCREEN FOR "RECEPTION HAS TAKEN THIS TABLET OFF THE FLOOR" (Carl, 4–5 Sep 2026; TODO.md "Tablets: make one inactive from the send-to-tablet page"). | **1** · web:kiosk/Ceremony.tsx |
 | `OutageScreen` | web:kiosk/screens/OutageScreen.tsx | (file) THE SCREEN FOR "CORE STOPPED ANSWERING" (TODO.md "Outage screen on the tablet", Carl 4 Sep 2026: "When the server is down, hide everything and say, Please contact reception."). | **1** · web:kiosk/Ceremony.tsx |
 | `PairingScreen` | web:kiosk/screens/PairingScreen.tsx | (file) K-0 — PAIRING. | **1** · web:kiosk/Ceremony.tsx |
-| `ParticularsScreen` | web:kiosk/screens/ParticularsScreen.tsx | (file) K-3 — the locked particulars, and the screen the REQ-REG-06 rule is really about. | **1** · web:kiosk/Ceremony.tsx |
 | `PasskeysCard` | web:patient/portal/cards/PasskeysCard.tsx | (file) SIGN-IN AND SECURITY — FR-8.2's passkey half, on the patient's own page (Carl, 4 September 2026: "Implement"; D-2026-09-04-02). | **1** · web:patient/portal/PortalView.tsx |
 | `PatientMessagesView` | web:patient/messages/[token]/PatientMessagesView.tsx | (file) P-1, Messages tab — the same log from the other side (design handoff). | **1** · web:patient/messages/[token]/page.tsx |
 | `PeopleCard` | web:patient/portal/cards/PeopleCard.tsx | (file) PEOPLE WHO ACT FOR ME, AND PEOPLE I ACT FOR (REQ-PORT-07, FR-1.19/-1.23). | **1** · web:patient/portal/PortalView.tsx |
@@ -185,7 +187,6 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `ServiceDescriptionsNeeded` | web:practice/reconciliation/ServiceDescriptionsNeeded.tsx | (file) D6a, ON A STAFF SURFACE — the drafts that cannot be completed until somebody chooses the basic description of the service. | **1** · web:practice/reconciliation/ReconciliationView.tsx |
 | `SignatureControl` | web:kiosk/components/SignatureControl.tsx | (file) THE REQ-REG-06 CONTROL. | **1** · web:kiosk/screens/SignatureScreen.tsx |
 | `SignaturePad` | web:kiosk/components/SignaturePad.tsx | (file) Signing on glass — a `<canvas>` and pointer events, no drawing library and no new runtime dependency. | **1** · web:kiosk/screens/SignatureScreen.tsx |
-| `SignatureScreen` | web:kiosk/screens/SignatureScreen.tsx | (file) K-4 — signing. | **1** · web:kiosk/Ceremony.tsx |
 | `SmallDeskView` | web:practice/frontdesksmall/SmallDeskView.tsx | (file) THE FRONT DESK ON A SMALL SCREEN — one list, not five rails. | **1** · web:practice/frontdesksmall/page.tsx |
 | `StatusView` | web:status/[token]/StatusView.tsx |  | **1** · web:status/[token]/page.tsx |
 | `StopEmailChangeView` | web:practice/stop-email-change/StopEmailChangeView.tsx | (file) "Stop this change" — the page the warning links to. | **1** · web:practice/stop-email-change/page.tsx |
@@ -315,7 +316,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
-| `strings` | web:strings.ts | (file) String table (REQ-LANG-01): every user-facing string lives here, none inline in components. | **138** · web:AccessGuard.tsx, web:AuthGate.tsx, web:BackLink.tsx, +135 more |
+| `strings` | web:strings.ts | (file) String table (REQ-LANG-01): every user-facing string lives here, none inline in components. | **139** · web:AccessGuard.tsx, web:AuthGate.tsx, web:BackLink.tsx, +136 more |
 | `apiHeaders` | web:auth.ts | Headers for a core API call: bearer when signed in, dev practice header otherwise. | **54** · web:ConsoleDashboard.tsx, web:HistoryDisclosure.tsx, web:OrgConsole.tsx, +51 more |
 | `currentSession` | web:auth.ts |  | **36** · web:AccessGuard.tsx, web:AuthGate.tsx, web:BackLink.tsx, +33 more |
 | `strings` | web:kiosk/strings.ts | (file) The kiosk's view of the one string table (REQ-LANG-01). | **23** · web:kiosk/Ceremony.tsx, web:kiosk/components/Chrome.tsx, web:kiosk/components/InactivityWarning.tsx, +20 more |
@@ -342,14 +343,17 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `silentRestoreInFlight` | web:auth.ts | IS A SILENT RESTORE ACTUALLY RUNNING RIGHT NOW? | **3** · web:AccessGuard.tsx, web:AuthGate.tsx, web:SessionControl.tsx |
 | `subjectForPatient` | web:practice/tablet/pushDesk.tsx | A patient with nothing on a tablet -- a correction with no dispute to close. | **3** · web:practice/frontdesk/FrontDeskView.tsx, web:practice/frontdesksmall/SmallDeskView.tsx, web:practice/patients/PatientWorkView.tsx |
 | `yearOptions` | web:kiosk/rules/verify-fields.ts |  | **3** · web:kiosk/screens/VerifyScreen.tsx, web:patient/portal/activate/[token]/ActivateView.tsx, web:practice/patients/NewAgreementPanel.tsx |
+| `FIRST_DB4_PAGE` | web:kiosk/rules/db4-pages.ts | Where a patient arriving at the step starts, and where Back out of it resets to. | **2** · web:kiosk/Ceremony.tsx, web:patient/agree/[token]/Db4LinkSigning.tsx |
 | `PortalApiError` | web:patient/portal/api.ts | Thrown for any non-2xx. | **2** · web:patient/portal/activate/[token]/ActivateView.tsx, web:patient/portal/fixtures.ts |
 | `aobPrinterHostRank` | web:practice/aobprinter-host/hostStates.ts | The worst state's place in `AOBPRINTER_HOST_STATES` — lower is worse. | **2** · web:platform/aobprinter-hosts/AobPrinterHostsOverviewView.tsx, web:practice/aobprinter-host/AobPrinterHostView.tsx |
 | `aobPrinterHostStates` | web:practice/aobprinter-host/hostStates.ts | Every state that applies, worst first. | **2** · web:platform/aobprinter-hosts/AobPrinterHostsOverviewView.tsx, web:practice/aobprinter-host/AobPrinterHostView.tsx |
 | `clearSession` | web:auth.ts | `reason` defaults to `'signed-out'` — the caller for whom that is wrong (the failed-refresh path below) says so explicitly. | **2** · web:AuthGate.tsx, web:ConsoleDashboard.tsx |
 | `composeDateOfBirth` | web:kiosk/rules/verify-fields.ts | ISO `YYYY-MM-DD`, because that is what the server compares against: it takes the first ten characters of the stated value and matches them against the date it holds. | **2** · web:patient/portal/activate/[token]/ActivateView.tsx, web:practice/patients/NewAgreementPanel.tsx |
+| `composeSignRequest` | web:kiosk/rules/signature-payload.ts | Returns null when a drawn signature has nothing to send — no ink, or a canvas that could not rasterise itself. | **2** · web:kiosk/Ceremony.tsx, web:patient/agree/[token]/Db4LinkSigning.tsx |
 | `dayRails` | web:practice/frontdesk/dayRails.ts | THE DAY'S ROWS, IN GROUPS THAT ACCOUNT FOR ALL OF THEM. | **2** · web:practice/frontdesk/FrontDeskView.tsx, web:practice/frontdesksmall/deskLines.ts |
 | `deviceActivityLine` | web:practice/deviceActivity.ts | The line itself, or `null` where there is honestly nothing to say. | **2** · web:practice/devices/DevicesView.tsx, web:practice/tablet/TabletView.tsx |
 | `deviceSeenAgo` | web:practice/deviceActivity.ts | "4 s", "3 min", "2 hours", "over a day" — deliberately coarse. | **2** · web:platform/aobprinter-hosts/AobPrinterHostsOverviewView.tsx, web:practice/aobprinter-host/AobPrinterHostView.tsx |
+| `evaluateSignatureGate` | web:kiosk/rules/signature-gate.ts | The only sanctioned way any surface may decide whether the signature control enables. | **2** · web:kiosk/Ceremony.tsx, web:patient/agree/[token]/Db4LinkSigning.tsx |
 | `fetchKioskMe` | web:kiosk/api.ts | Who this tablet is: the practice name and state for the header, the label somebody gave the device, and whether this tab is below the build floor. | **2** · web:kiosk/Ceremony.tsx, web:kiosk/components/Chrome.tsx |
 | `forgetActingAs` | web:effectivePractice.ts | Dropped when a session starts or ends, so the next read is honest. | **2** · web:platform/acting-as/ActingAsRegister.tsx, web:practice/PracticeList.tsx |
 | `hash8` | web:practice/aobprinter-host/hostStates.ts | The first 8 characters of a hash — what every screen shows of one (decision 13). | **2** · web:platform/practices/[practiceId]/aobprinter-host/RebaselinePanel.tsx, web:practice/aobprinter-host/AobPrinterHostView.tsx |
@@ -369,7 +373,6 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `EMPTY_CHOICE` | web:kiosk/rules/assignor.ts |  | **1** · web:kiosk/Ceremony.tsx |
 | `EMPTY_PARTS` | web:kiosk/rules/verify-fields.ts |  | **1** · web:kiosk/screens/VerifyScreen.tsx |
 | `EMPTY_WHO` | web:practice/tablet/pushDesk.tsx |  | **1** · web:practice/patients/NewAgreementPanel.tsx |
-| `FIRST_DB4_PAGE` | web:kiosk/rules/db4-pages.ts | Where a patient arriving at the step starts, and where Back out of it resets to. | **1** · web:kiosk/Ceremony.tsx |
 | `KIOSK_MAX_ATTEMPTS` | web:kiosk/rules/verification.ts | Attempts allowed at the tablet before it hands over to the desk. | **1** · web:kiosk/screens/VerifyScreen.tsx |
 | `LAST_DB4_PAGE` | web:kiosk/rules/db4-pages.ts | The page the sign-off is on, and the home of any statement not placed below. | **1** · web:kiosk/screens/ParticularsScreen.tsx |
 | `POLL_MS` | web:practice/tablet/pushDesk.tsx | THREE SECONDS. | **1** · web:practice/patients/PatientsQueueView.tsx |
@@ -401,7 +404,6 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `completeLogin` | web:auth.ts |  | **1** · web:callback/page.tsx |
 | `composeIdentifier` | web:kiosk/rules/verify-fields.ts | The composed value for one identifier type, or null when this type is not a composite. | **1** · web:kiosk/screens/VerifyScreen.tsx |
 | `composeName` | web:kiosk/rules/verify-fields.ts | GIVEN NAME FIRST, then family name — which is the order a person says it and the order the server's `nameMatches` is indifferent to. | **1** · web:patient/portal/activate/[token]/ActivateView.tsx |
-| `composeSignRequest` | web:kiosk/rules/signature-payload.ts | Returns null when a drawn signature has nothing to send — no ink, or a canvas that could not rasterise itself. | **1** · web:kiosk/Ceremony.tsx |
 | `confirmSessionDetails` | web:kiosk/api.ts | THE TICKS AND THE CROSSES — TYPES ONLY, NEVER VALUES (REQ-VER-04, hard rule 9). | **1** · web:kiosk/Ceremony.tsx |
 | `coreBaseUrl` | web:kiosk/session.ts |  | **1** · web:kiosk/api.ts |
 | `db4BlockSection` | web:kiosk/rules/db4-pages.ts | WHICH SECTION A BLOCK IS READ IN, from its id. | **1** · web:kiosk/screens/ParticularsScreen.tsx |
@@ -416,7 +418,6 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `draftFromEnvelope` | web:aobprinter/envelope.ts | A STORED RECORD, TURNED BACK INTO THE DRAFT ON THE SCREEN (Carl, 28 September 2026: *"we need a drop down of the list of test cases we have already used. | **1** · web:aobprinter/AobPrinterTool.tsx |
 | `envelopeWithHash` | web:aobprinter/envelope.ts | The envelope plus its own hash — what the tool actually posts. | **1** · web:aobprinter/AobPrinterTool.tsx |
 | `evaluateAssignorGate` | web:kiosk/rules/assignor.ts |  | **1** · web:kiosk/Ceremony.tsx |
-| `evaluateSignatureGate` | web:kiosk/rules/signature-gate.ts | The only sanctioned way any surface may decide whether the signature control enables. | **1** · web:kiosk/Ceremony.tsx |
 | `everyServiceResolved` | web:practice/frontdesk/visitChecklist.ts | IS EVERY SERVICE ON THIS PATIENT'S LIST RESOLVED? | **1** · web:practice/frontdesk/dayRails.ts |
 | `fetchAccessLog` | web:patient/portal/api.ts |  | **1** · web:patient/portal/PortalView.tsx |
 | `fetchActingAs` | web:effectivePractice.ts |  | **1** · web:practice/PracticeList.tsx |
@@ -637,7 +638,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Web types
 
-122 exports.
+123 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -648,6 +649,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `Session` | web:auth.ts |  | **4** · web:AuthGate.tsx, web:ConsoleDashboard.tsx, web:SessionControl.tsx, +1 more |
 | `SignatureValidation` | web:kiosk/rules/signature-gate.ts |  | **4** · web:kiosk/Ceremony.tsx, web:kiosk/components/SignatureControl.tsx, web:kiosk/screens/ParticularsScreen.tsx, +1 more |
 | `SigningParties` | web:kiosk/rules/who-is-signing.ts | The four facts a screen needs to say who is signing. | **4** · web:kiosk/Ceremony.tsx, web:kiosk/components/Chrome.tsx, web:kiosk/screens/CheckDetailsScreen.tsx, +1 more |
+| `Db4Page` | web:kiosk/rules/db4-pages.ts |  | **3** · web:kiosk/Ceremony.tsx, web:kiosk/screens/ParticularsScreen.tsx, web:patient/agree/[token]/Db4LinkSigning.tsx |
 | `IdentifierField` | web:kiosk/rules/identifiers.ts |  | **3** · web:kiosk/Ceremony.tsx, web:kiosk/screens/VerifyScreen.tsx, web:patient/portal/activate/[token]/ActivateView.tsx |
 | `PortalAccessEntry` | web:patient/portal/api.ts | `GET /portal/access-log` — every look, from the vault's own events (FR-8.2). | **3** · web:patient/portal/PortalView.tsx, web:patient/portal/cards/DataCard.tsx, web:patient/portal/fixtures.ts |
 | `PortalAgreement` | web:patient/portal/api.ts | `GET /portal/agreements`. | **3** · web:patient/portal/PortalView.tsx, web:patient/portal/cards/AgreementsCard.tsx, web:patient/portal/fixtures.ts |
@@ -659,19 +661,19 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `PortalPasskey` | web:patient/portal/api.ts | ONE CREDENTIAL, AS THE "SIGN-IN AND SECURITY" CARD LISTS IT. | **3** · web:patient/portal/PortalView.tsx, web:patient/portal/cards/PasskeysCard.tsx, web:patient/portal/fixtures.ts |
 | `PortalVisit` | web:patient/portal/api.ts | `GET /portal/visits` — where an agreement was made. | **3** · web:patient/portal/PortalView.tsx, web:patient/portal/cards/VisitsCard.tsx, web:patient/portal/fixtures.ts |
 | `PushDesk` | web:practice/tablet/pushDesk.tsx | (file) THE PUSH DESK — the one implementation of reception's tablet controls, rendered by two pages (Carl, 4 Sep 2026). | **3** · web:practice/frontdesk/FrontDeskView.tsx, web:practice/frontdesksmall/SmallDeskView.tsx, web:practice/tablet/EarlierUnsigned.tsx |
+| `SignaturePadHandle` | web:kiosk/components/SignaturePad.tsx |  | **3** · web:kiosk/Ceremony.tsx, web:kiosk/screens/SignatureScreen.tsx, web:patient/agree/[token]/Db4LinkSigning.tsx |
 | `AobPrinterHostState` | web:practice/aobprinter-host/hostStates.ts |  | **2** · web:platform/aobprinter-hosts/AobPrinterHostsOverviewView.tsx, web:practice/aobprinter-host/AobPrinterHostView.tsx |
 | `AssignorChoice` | web:kiosk/rules/assignor.ts |  | **2** · web:kiosk/Ceremony.tsx, web:kiosk/screens/AssignorScreen.tsx |
 | `AssignorGate` | web:kiosk/rules/assignor.ts | THE LIVE GATE FOR THE "SOMEONE ELSE" BRANCH — the single source of truth behind both the `GuardedButton` on K-5 (which must be disabled, with a reason, before anybody presses Continue — CLAUDE.md §6: blocked states are unreachable, not merely inert) and `decideAssignor`'s final allow/refuse call below, so the two can never drift apart on what counts as blocked. | **2** · web:kiosk/Ceremony.tsx, web:kiosk/screens/AssignorScreen.tsx |
 | `DateOfBirthParts` | web:kiosk/rules/verify-fields.ts |  | **2** · web:patient/portal/activate/[token]/ActivateView.tsx, web:practice/patients/NewAgreementPanel.tsx |
-| `Db4Page` | web:kiosk/rules/db4-pages.ts |  | **2** · web:kiosk/Ceremony.tsx, web:kiosk/screens/ParticularsScreen.tsx |
 | `DetailAnswer` | web:kiosk/rules/pushed-details.ts | A TICK OR A CROSS, AND THERE IS NO THIRD ANSWER (Carl, 4 Sep 2026). | **2** · web:kiosk/Ceremony.tsx, web:kiosk/screens/CheckDetailsScreen.tsx |
 | `DetailAnswers` | web:kiosk/rules/pushed-details.ts |  | **2** · web:kiosk/Ceremony.tsx, web:kiosk/screens/CheckDetailsScreen.tsx |
 | `Draft` | web:aobprinter/presets.ts |  | **2** · web:aobprinter/AobPrinterTool.tsx, web:aobprinter/envelope.ts |
+| `ParticularsView` | web:kiosk/screens/ParticularsScreen.tsx |  | **2** · web:kiosk/Ceremony.tsx, web:patient/agree/[token]/Db4LinkSigning.tsx |
 | `PatientDetails` | web:practice/tablet/pushDesk.tsx | The six correctable details, as the server hands them back. | **2** · web:practice/patients/NewAgreementPanel.tsx, web:practice/patients/PatientWorkView.tsx |
 | `PortalActivationChallenge` | web:patient/portal/api.ts | `GET /portal/activate/:token/challenge` — which boxes the activation page should draw (FR-1.14). | **2** · web:patient/portal/activate/[token]/ActivateView.tsx, web:patient/portal/fixtures.ts |
 | `PortalLink` | web:patient/portal/api.ts | One practice this account is linked to. | **2** · web:patient/portal/PortalView.tsx, web:patient/portal/cards/PracticeFilter.tsx |
 | `PortalTermination` | web:patient/portal/api.ts | `POST /portal/enduring/:id/terminate` — the written notice, and when it bites. | **2** · web:patient/portal/cards/EnduringCard.tsx, web:patient/portal/fixtures.ts |
-| `SignaturePadHandle` | web:kiosk/components/SignaturePad.tsx |  | **2** · web:kiosk/Ceremony.tsx, web:kiosk/screens/SignatureScreen.tsx |
 | `TemplateBody` | web:practice/templates/templateEditing.ts | Exactly the four fields `POST /agreement-templates` reads out of `body`. | **2** · web:practice/templates/TemplateForm.tsx, web:practice/templates/TemplatesView.tsx |
 | `VerificationState` | web:kiosk/rules/verification.ts |  | **2** · web:kiosk/Ceremony.tsx, web:kiosk/screens/VerifyScreen.tsx |
 | `AgreementResponse` | web:kiosk/api.ts | `GET /agreements/:id` — only the fields the ceremony reads. | **1** · web:kiosk/Ceremony.tsx |
@@ -683,6 +685,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `CoveredServiceRow` | web:practice/tablet/pushDesk.tsx | A VISIT THAT NEEDED NO SECOND SIGNATURE — a history line on the desk, never a Send (Carl, 11 Sep 2026, step 4). | **1** · web:practice/frontdesk/visitChecklist.ts |
 | `DayRailRow` | web:practice/frontdesk/dayRails.ts | ONE LINE ON THE RAIL. | **1** · web:practice/frontdesksmall/deskLines.ts |
 | `Db4Block` | web:kiosk/rules/db4-pages.ts | One block of the form, in reading order: its id and the section it is read in. | **1** · web:kiosk/screens/ParticularsScreen.tsx |
+| `Db4LinkRead` | web:patient/agree/[token]/Db4LinkSigning.tsx | The parts of `GET /agree/:token` this screen reads. | **1** · web:patient/agree/[token]/AgreeView.tsx |
 | `Db4Sheet` | web:kiosk/rules/db4-pages.ts | One screenful: a section, the blocks drawn on it, and whether it closes the section. | **1** · web:kiosk/screens/ParticularsScreen.tsx |
 | `DeskLine` | web:practice/frontdesksmall/deskLines.ts | ONE LINE OF THE LIST. | **1** · web:practice/frontdesksmall/SmallDeskView.tsx |
 | `DeskState` | web:practice/frontdesksmall/deskLines.ts | THE SIX MARKERS A LINE CAN CARRY, and the first five are the chips. | **1** · web:practice/frontdesksmall/SmallDeskView.tsx |
@@ -693,7 +696,6 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `MoveSummary` | web:practice/practitioner/waiting/MovePanel.tsx |  | **1** · web:practice/practitioner/waiting/WaitingView.tsx |
 | `PairedOutcome` | web:kiosk/screens/PairingScreen.tsx |  | **1** · web:kiosk/Ceremony.tsx |
 | `PairingFailure` | web:kiosk/screens/PairingScreen.tsx | What happened to the last attempt. | **1** · web:kiosk/Ceremony.tsx |
-| `ParticularsView` | web:kiosk/screens/ParticularsScreen.tsx |  | **1** · web:kiosk/Ceremony.tsx |
 | `PortalSession` | web:patient/portal/api.ts | `GET /portal/session`. | **1** · web:patient/portal/fixtures.ts |
 | `PrintedAssignment` | web:aobprinter/presets.ts | THE PRIVACY NOTICE AND THE ASSIGNMENT STATEMENTS ARE PRINTED-FORM DATA, NOT VERSIONED CONTENT. | **1** · web:aobprinter/envelope.ts |
 | `ProviderRow` | web:aobprinter/presets.ts |  | **1** · web:aobprinter/AobPrinterTool.tsx |
@@ -778,6 +780,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `landingPath` | domain:landing.ts |  | **5** · web:AccessGuard.tsx, web:MainMenu.tsx, web:NotFoundView.tsx, +2 more |
 | `assertValidIdentifierSet` | domain:identifiers.ts | Validates a practice's configured identifier challenge set. | **4** · core:portal/portal.service.ts, core:practices/practices.service.ts, core:verification/verification.service.ts, +1 more |
 | `attemptAllowed` | domain:chase.ts |  | **4** · core:chase-attempts/chase-attempts.service.ts, core:reconciliation/reconciliation.service.ts, domain:chase-attempt.ts, +1 more |
+| `canTransition` | domain:lifecycle.ts |  | **4** · core:agreements/agreements.service.ts, core:capture/capture.service.ts, core:retention/retention-sweep.service.ts, +1 more |
 | `daysRemainingInLodgementWindow` | domain:chase.ts |  | **4** · core:arrivals/post-service-chase.sweep.ts, core:auto-capture/auto-capture.service.ts, core:chase-attempts/chase-attempts.service.ts, +1 more |
 | `detailTypeForPatientField` | domain:tablet-session.ts |  | **4** · core:arrivals/arrivals.service.ts, core:patients/patients.service.ts, core:tablet-sessions/tablet-sessions.service.ts, +1 more |
 | `isValidAhpraNumberFormat` | domain:enrolment-ceremony.ts |  | **4** · core:affiliations/affiliations.service.ts, core:organisations/organisations.service.ts, web:practice/practitioners/PractitionersView.tsx, +1 more |
@@ -792,7 +795,6 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `authorityBasisFor` | domain:assignor-relationships.ts | The basis for a chosen relationship, and the note that goes with it. | **3** · web:kiosk/rules/assignor.ts, web:practice/patients/NewAgreementPanel.tsx, web:practice/tablet/pushDesk.tsx |
 | `basicServiceDescriptionOf` | domain:service-descriptions.ts | D6a, READ THE SAME WAY EVERYWHERE IT MATTERS — ONE COPY (Carl flagged the gap live, 4 Sep 2026, over `supersedeForCorrection` losing it; unified 7 Sep 2026 after a review found the helper byte-identical in two services). | **3** · core:agreements/agreements.service.ts, core:kiosk/kiosk.service.ts, core:tablet-sessions/tablet-sessions.service.ts |
 | `buildMessageLog` | domain:correspondence-log.ts | The log, from the dispatches that happened and the sends that were suppressed before they could. | **3** · web:patient/messages/[token]/PatientMessagesView.tsx, web:practice/correspondence/CorrespondenceView.tsx, web:practitioner/messages/MessagesView.tsx |
-| `canTransition` | domain:lifecycle.ts |  | **3** · core:agreements/agreements.service.ts, core:retention/retention-sweep.service.ts, domain:pre-agreement-association.ts |
 | `contactClash` | domain:contacts.ts | Which channel, if any, the two contacts share. | **3** · web:apply/ApplyForm.tsx, web:status/[token]/correct/CorrectView.tsx, domain:review.ts |
 | `isBillingRole` | domain:billing-roles.ts |  | **3** · core:affiliations/affiliations.service.ts, core:arrivals/arrivals.service.ts, core:practices/practices.service.ts |
 | `isCorrectablePatientField` | domain:tablet-session.ts |  | **3** · core:patients/patients.service.ts, core:tablet-sessions/tablet-sessions.service.ts, web:practice/tablet/pushDesk.tsx |
@@ -1454,21 +1456,21 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
-| `AgreementType` | domain:agreement.ts |  | **13** · core:patients/patients.service.ts, core:tablet-sessions/tablet-sessions.service.ts, web:kiosk/Ceremony.tsx, +10 more |
+| `AgreementType` | domain:agreement.ts |  | **14** · core:patients/patients.service.ts, core:tablet-sessions/tablet-sessions.service.ts, web:kiosk/Ceremony.tsx, +11 more |
 | `Audience` | domain:page-access.ts |  | **10** · web:BackLink.tsx, web:MainMenu.tsx, web:practice/channels/ChannelsView.tsx, +7 more |
 | `IsoTimestamp` | domain:ids.ts | ISO-8601 UTC timestamp string (server-authoritative time — REQ-VAULT-03). | **10** · core:inbound/inbound-print-jobs.service.ts, vault:chain/chain-store.ts, vault:chain/immudb-chain-store.ts, +7 more |
+| `AgreementStatus` | domain:agreement.ts | REQ-REC-02 + design decisions §7, incl. | **7** · core:agreements/agreements.service.ts, core:capture/capture.service.ts, core:retention/retention-sweep.service.ts, +4 more |
 | `ConfirmableDetailType` | domain:tablet-session.ts |  | **7** · core:arrivals/arrivals.service.ts, core:patients/patients.service.ts, core:tablet-sessions/tablet-sessions.service.ts, +4 more |
 | `DeviceRow` | domain:devices.ts | A device as the console lists it. | **7** · core:devices/devices.service.ts, web:practice/channels/ChannelsView.tsx, web:practice/deviceActivity.ts, +4 more |
 | `IsoDate` | domain:ids.ts | Calendar date, `YYYY-MM-DD`, in the practice's timezone. | **7** · connector:mock-adapter.ts, core:auto-capture/auto-capture.controller.ts, core:auto-capture/auto-capture.service.ts, +4 more |
 | `KioskScreen` | domain:kiosk.ts |  | **7** · core:devices/devices.service.ts, core:kiosk/kiosk.controller.ts, core:kiosk/kiosk.service.ts, +4 more |
-| `AgreementStatus` | domain:agreement.ts | REQ-REC-02 + design decisions §7, incl. | **6** · core:agreements/agreements.service.ts, core:retention/retention-sweep.service.ts, domain:assignor.ts, +3 more |
+| `DrawnSignatureCapture` | domain:signature.ts | What the tablet sends with a `drawn` signature. | **5** · core:agree/agree.service.ts, core:agreements/agreements.service.ts, web:kiosk/components/SignaturePad.tsx, +2 more |
 | `EnduringPathway` | domain:agreement.ts |  | **5** · core:agreements/agreements.service.ts, core:enduring/enduring.service.ts, core:notices/notices.service.ts, +2 more |
 | `KioskCommand` | domain:kiosk.ts |  | **5** · core:devices/devices.service.ts, core:kiosk/kiosk.service.ts, web:kiosk/Ceremony.tsx, +2 more |
 | `KioskWaitingRow` | domain:kiosk.ts |  | **5** · core:kiosk/kiosk.service.ts, web:kiosk/Ceremony.tsx, web:kiosk/api.ts, +2 more |
 | `AobPrinterChainPoint` | domain:aobprinter-host.ts | A position in a host's audit chain: a seq and the hash stored there (null where there is none). | **4** · aobprinter:heartbeat.ts, core:aobprinter-hosts/aobprinter-hosts.service.ts, web:practice/aobprinter-host/AobPrinterHostView.tsx, +1 more |
 | `ApprovedIdentifierType` | domain:identifiers.ts |  | **4** · core:kiosk/kiosk.service.ts, core:verification/identifier-matching.ts, core:verification/verification.service.ts, +1 more |
 | `DisputeResolutionOutcome` | domain:tablet-session.ts |  | **4** · core:patients/patients.service.ts, core:tablet-sessions/dispute-resolution.dto.ts, core:tablet-sessions/tablet-sessions.service.ts, +1 more |
-| `DrawnSignatureCapture` | domain:signature.ts | What the tablet sends with a `drawn` signature. | **4** · core:agreements/agreements.service.ts, web:kiosk/components/SignaturePad.tsx, web:kiosk/rules/signature-payload.ts, +1 more |
 | `ProviderType` | domain:parties.ts | Drives Basic Service Description categories and the enduring GP-only rule (REQ-END-01a). | **4** · core:agreements/agreements.service.ts, core:enduring/enduring.service.ts, domain:billing-roles.ts, +1 more |
 | `PushBlockedReason` | domain:tablet-session.ts |  | **4** · core:tablet-sessions/push-refusal.ts, core:tablet-sessions/tablet-sessions.service.ts, web:practice/tablet/pushDesk.tsx, +1 more |
 | `TabletSessionPayload` | domain:tablet-session.ts | THE ONE PAYLOAD `GET /kiosk/session` RETURNS. | **4** · core:tablet-sessions/tablet-sessions.service.ts, web:kiosk/Ceremony.tsx, web:kiosk/api.ts, +1 more |
@@ -1766,11 +1768,11 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `AobPrinterHeartbeat` | contracts:aobprinter-heartbeat.ts | What the host posts every beat. | **5** · aobprinter:heartbeat-client.ts, aobprinter:heartbeat.ts, core:aobprinter-hosts/aobprinter-hosts.service.ts, +2 more |
 | `ArrivalProviderChoice` | contracts:arrivals.ts | A SERVICING PRACTITIONER, AT A LOCATION, reception may choose instead. | **5** · core:arrivals/arrivals.service.ts, web:practice/patients/NewAgreementPanel.tsx, web:practice/patients/PatientsQueueView.tsx, +2 more |
 | `DayRegisterRow` | contracts:arrivals.ts | WHO CAME IN, WHEN, TO SEE WHOM, AND WHAT HAPPENED ABOUT THEIR AGREEMENT (Carl, 12 September 2026, on `/practice/frontdesk`: *"Add a button here with a link to show all Patients seen at this practice today. | **5** · core:arrivals/arrivals.service.ts, web:practice/day/DayView.tsx, web:practice/frontdesk/FrontDeskView.tsx, +2 more |
+| `Db4FormView` | contracts:db4-form-view.ts | The block the lock response carries for a session that came from a DB4 Print Record. | **5** · core:agreements/agreements.service.ts, core:agreements/db4-form-view.ts, web:kiosk/api.ts, +2 more |
 | `Db4PrintRecordIdentity` | contracts:db4-print-record-check.ts | WHICH PRINT RECORD THE REFUSAL IS ABOUT (Carl, 27 September 2026, at the desk: *"message needs to say what data is missing on the print and also some unique id to identify the print and the location of the file"*, and then — correctly — *"we must have some unique ref from AOBPrinter which we must be storing for audit"*). | **5** · core:agreements/agreements.service.ts, core:inbound/print-records.service.ts, core:tablet-sessions/push-refusal.ts, +2 more |
 | `PmsAdapter` | contracts:pms-adapter.ts | The adapter contract. | **5** · connector:mock-adapter.ts, core:auto-capture/auto-capture.service.ts, core:pms/pms-sync.service.ts, +2 more |
 | `RuleResult` | contracts:rules-engine.ts |  | **5** · core:service-descriptions/service-descriptions.service.ts, rules:rules/rule-set-2026-08.draft.ts, rules:rules/rule-set.contract.ts, +2 more |
 | `DayRegister` | contracts:arrivals.ts | ONE PRACTICE'S DAY. | **4** · core:arrivals/arrivals.service.ts, web:practice/day/DayView.tsx, web:practice/frontdesk/FrontDeskView.tsx, +1 more |
-| `Db4FormView` | contracts:db4-form-view.ts | The block the lock response carries for a session that came from a DB4 Print Record. | **4** · core:agreements/agreements.service.ts, core:agreements/db4-form-view.ts, web:kiosk/api.ts, +1 more |
 | `Db4PlacementReason` | contracts:print-capture.ts |  | **4** · core:inbound/db4-assignment.handler.ts, core:inbound/inbound-print-jobs.service.ts, contracts:aobprinter-heartbeat.ts, +1 more |
 | `Db4PrintRecordCheck` | contracts:db4-print-record-check.ts | One failed check. | **4** · core:agreements/agreements.service.ts, core:agreements/db4-form-view.ts, core:tablet-sessions/push-refusal.ts, +1 more |
 | `ExpectedAppointment` | contracts:arrivals.ts | SOMEBODY BOOKED FOR TODAY WHO HAS NOT WALKED IN YET (Carl, 12 Sep 2026; FRONT-DESK-PAGE.md §12.4). | **4** · core:arrivals/arrivals.service.ts, web:practice/frontdesk/FrontDeskView.tsx, web:practice/frontdesksmall/deskLines.ts, +1 more |
@@ -1957,6 +1959,8 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `ActingAsService` | core:acting-as/acting-as.service.ts | Acting as a practice. | **4** · core:acting-as/acting-as.controller.ts, core:acting-as/acting-as.interceptor.ts, core:acting-as/acting-as.module.ts, +1 more |
 | `AppModule` | core:app.module.ts |  | **4** · core:main.ts, rules:main.ts, vault:main.ts, +1 more |
 | `ArrivalsService` | core:arrivals/arrivals.service.ts | "THIS PATIENT HAS JUST ARRIVED AT RECEPTION TO SEE THIS PROVIDER" (Carl, 4 Sep 2026; TODO.md "Reception-centric: the patient work page" §2). | **4** · core:arrivals/arrivals.controller.ts, core:arrivals/arrivals.module.ts, core:inbound/db4-assignment.handler.ts, +1 more |
+| `AutoCaptureModule` | core:auto-capture/auto-capture.module.ts |  | **4** · core:app.module.ts, core:arrivals/arrivals.module.ts, core:inbound/inbound.module.ts, +1 more |
+| `CaptureLinkDispatcher` | core:auto-capture/capture-link.dispatcher.ts | Sends the patient the link that lets them approve an agreement. | **4** · core:arrivals/post-service-chase.sweep.ts, core:auto-capture/auto-capture.module.ts, core:auto-capture/auto-capture.service.ts, +1 more |
 | `EnduringModule` | core:enduring/enduring.module.ts |  | **4** · core:app.module.ts, core:arrivals/arrivals.module.ts, core:auto-capture/auto-capture.module.ts, +1 more |
 | `IdentityModule` | core:identity/identity.module.ts |  | **4** · core:affiliations/affiliations.module.ts, core:app.module.ts, core:organisations/organisations.module.ts, +1 more |
 | `InboundPrintJobsService` | core:inbound/inbound-print-jobs.service.ts |  | **4** · core:inbound/aobprinter-heartbeat.service.ts, core:inbound/inbound-lane.worker.ts, core:inbound/inbound-print-jobs.controller.ts, +1 more |
@@ -1965,9 +1969,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `AgreementCopyService` | core:agreement-copy/agreement-copy.service.ts | W6 — "SEND ME A COPY". | **3** · core:agreement-copy/agreement-copy-kiosk.controller.ts, core:agreement-copy/agreement-copy.controller.ts, core:agreement-copy/agreement-copy.module.ts |
 | `AobPrinterHostsService` | core:aobprinter-hosts/aobprinter-hosts.service.ts | THE AOBPRINTER HOSTS (PRINTER-HEARTBEAT.md §3, D-2026-10-10-02). | **3** · core:aobprinter-hosts/aobprinter-hosts.controller.ts, core:aobprinter-hosts/aobprinter-hosts.module.ts, core:inbound/aobprinter-heartbeat.service.ts |
 | `ArrivalsModule` | core:arrivals/arrivals.module.ts |  | **3** · core:app.module.ts, core:inbound/inbound.module.ts, core:practitioner-queue/practitioner-queue.module.ts |
-| `AutoCaptureModule` | core:auto-capture/auto-capture.module.ts |  | **3** · core:app.module.ts, core:arrivals/arrivals.module.ts, core:inbound/inbound.module.ts |
 | `AutoCaptureService` | core:auto-capture/auto-capture.service.ts | The capture cascade, run by the platform with nobody at the practice deciding first — CONSULTATION-CAPTURE-PLAN.md Parts 2 and 3. | **3** · core:auto-capture/auto-capture.controller.ts, core:auto-capture/auto-capture.module.ts, core:inbound/inbound-print-jobs.processor.ts |
-| `CaptureLinkDispatcher` | core:auto-capture/capture-link.dispatcher.ts | Sends the patient the link that lets them approve an agreement. | **3** · core:arrivals/post-service-chase.sweep.ts, core:auto-capture/auto-capture.module.ts, core:auto-capture/auto-capture.service.ts |
 | `ChangeAssignorDto` | core:agreements/agreements.dto.ts | `POST /agreements/:id/assignor` — somebody other than the patient is signing, or the patient is after all. | **3** · core:agreements/agreements.controller.ts, core:agreements/agreements.service.ts, core:arrivals/arrivals.service.ts |
 | `ChecksService` | core:organisations/checks.service.ts | The validation checklist (IDENTITY-STRENGTH-DESIGN.md §3). | **3** · core:organisations/organisations.controller.ts, core:organisations/organisations.module.ts, core:organisations/organisations.service.ts |
 | `HealthController` | core:health/health.controller.ts | Liveness/readiness endpoint. | **3** · core:health/health.module.ts, rules:health/health.module.ts, vault:health/health.module.ts |
@@ -2081,6 +2083,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `DeviceOutOfUseDto` | core:tablet-sessions/tablet-sessions.dto.ts | `POST /devices/:deviceId/out-of-use` — reception taking a tablet off the floor, and putting it back (Carl, 4–5 Sep 2026). | **1** · core:tablet-sessions/tablet-sessions.controller.ts |
 | `DevicesController` | core:devices/devices.controller.ts | A PRACTICE'S TABLETS — registered, paired, revoked and rotated from the CONSOLE, never from the device (TODO.md "Zero-footprint kiosk"). | **1** · core:devices/devices.module.ts |
 | `DomainExceptionFilter` | core:common/domain-exception.filter.ts | Maps domain rule violations to 400, globally. | **1** · core:app.module.ts |
+| `DrawnSignatureDto` | core:agreements/agreements.dto.ts | The drawn mark itself (REQ-SIG-01: vector + raster). | **1** · core:agree/agree.controller.ts |
 | `EnduringController` | core:enduring/enduring.controller.ts |  | **1** · core:enduring/enduring.module.ts |
 | `EnduringRulesNotAuthoredError` | core:agreements/agreements.service.ts | THE RULE SET WAS ASKED ABOUT AN ENDURING AGREEMENT AND DID NOT ANSWER (Carl, 4 Sep 2026; GA-PLAN B5). | **1** · core:tablet-sessions/tablet-sessions.service.ts |
 | `FilesystemArtefactStore` | core:artefacts/artefact-store.ts | Filesystem-backed store for local development. | **1** · core:artefacts/artefacts.module.ts |
@@ -2170,7 +2173,6 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `DeregisterDto` | core:affiliations/affiliations.controller.ts |  | 0 |
 | `DeviceSettingsDto` | core:devices/devices.controller.ts |  | 0 |
 | `DeviceWalkUpsDto` | core:devices/devices.controller.ts | The body of `PATCH /devices/:id/walk-ups` — one boolean, required. | 0 |
-| `DrawnSignatureDto` | core:agreements/agreements.dto.ts | The drawn mark itself (REQ-SIG-01: vector + raster). | 0 |
 | `ExternalNoticeDto` | core:affiliations/affiliations.controller.ts | Notice given outside AoBPlatform, for a departure that has already happened. | 0 |
 | `GiveNoticeDto` | core:affiliations/affiliations.controller.ts |  | 0 |
 | `GnafAddressValidator` | core:organisations/address-validator.ts | Validation against a locally-ingested G-NAF extract. | 0 |
@@ -2239,7 +2241,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `ResolvedDevice` | core:devices/devices.service.ts | What the guard needs to know about the caller, and nothing more. | **8** · core:agreement-copy/agreement-copy-kiosk.controller.ts, core:devices/device.decorator.ts, core:devices/device.guard.ts, +5 more |
 | `MessagingGateway` | core:messaging/gateway.ts |  | **7** · core:identity/practice-admin.service.ts, core:identity/practitioner-email.service.ts, core:messaging/composer.service.ts, +4 more |
 | `RequireRoles` | core:auth/roles.decorator.ts | Requires one of these realm roles on the bearer token. | **7** · core:acting-as/acting-as.controller.ts, core:affiliations/affiliations.controller.ts, core:aobprinter-hosts/aobprinter-hosts.controller.ts, +4 more |
-| `anchorForAgreement` | core:affiliations/agreement-anchor.ts | WHO THIS AGREEMENT NAMES. | **6** · core:agreements/agreements.service.ts, core:arrivals/post-service-chase.sweep.ts, core:enduring/enduring.service.ts, +3 more |
+| `anchorForAgreement` | core:affiliations/agreement-anchor.ts | WHO THIS AGREEMENT NAMES. | **7** · core:agreements/agreements.service.ts, core:arrivals/post-service-chase.sweep.ts, core:enduring/enduring.service.ts, +4 more |
 | `anchorsForAgreements` | core:affiliations/agreement-anchor.ts | The same answer for a list, which is what every queue screen wants: two queries for the anchored rows and one legacy lookup each for the rest, rather than a join per line. | **6** · core:arrivals/arrivals.service.ts, core:kiosk/kiosk.service.ts, core:portal/portal-reads.service.ts, +3 more |
 | `KEYCLOAK_ADMIN` | core:identity/identity.tokens.ts |  | **5** · core:identity/identity.module.ts, core:identity/identity.service.ts, core:identity/practice-admin.service.ts, +2 more |
 | `PMS_ADAPTER` | core:pms/pms.tokens.ts |  | **5** · core:auto-capture/auto-capture.service.ts, core:pms/pms-sync.service.ts, core:pms/pms.module.ts, +2 more |

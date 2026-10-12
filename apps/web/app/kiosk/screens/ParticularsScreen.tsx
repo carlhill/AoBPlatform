@@ -368,7 +368,15 @@ export function ParticularsScreen({
    * screens know nobody yet and pass nothing. See `Chrome.tsx`'s `Screen`.
    */
   patientId?: string | null;
-  onSeeReception: () => void;
+  /**
+   * THE WAY OUT TO RECEPTION. Every tablet passes it. OPTIONAL SINCE 12 OCT
+   * 2026 for one caller only: the patient's link page (TELEHEALTH-PLAN §8
+   * step 1) draws this same screen on a phone, where there is no reception a
+   * metre away — omitted, the header draws no leave control (`Screen` draws
+   * one only when handed a handler), and the phone's own back and close are
+   * the way out. Nothing about the tablet changes.
+   */
+  onSeeReception?: () => void;
 }): ReactNode {
   /*
    * ONE PRIMARY, WHEREVER THE COLUMN ENDS UP. Composed once and placed either
