@@ -271,13 +271,16 @@ export function telehealthConsentStatement(input: {
 
 /**
  * THE NAME SOMEONE ACTING FOR THE PATIENT TYPES (D-2026-10-12-03 item 12).
- * A full name as they would sign it: two to 100 characters with a letter in
- * it, and nothing that looks like a number or an address, so a contact or an
- * identifier cannot be typed into the name box by mistake.
+ * A full name as they would sign it: at least two names, one of them three
+ * letters or more ("J Ada" passes, "J A" does not; Carl, 12 Oct 2026), no
+ * more than 100 characters, and nothing that looks like a number or an
+ * address, so a contact or an identifier cannot be typed into the name box.
  */
 export function isPlausibleConsenterName(value: string): boolean {
   const name = value.trim();
-  return name.length >= 2 && name.length <= 100 && /\p{L}/u.test(name) && !/[\d@]/.test(name);
+  if (name.length > 100 || /[\d@]/.test(name)) return false;
+  const names = name.split(/\s+/).filter((part) => /\p{L}/u.test(part));
+  return names.length >= 2 && names.some((part) => (part.match(/\p{L}/gu) ?? []).length >= 3);
 }
 
 /* -------------------------------------------------------------------------

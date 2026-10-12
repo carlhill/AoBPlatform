@@ -276,8 +276,13 @@ export function TelehealthPatientView({ token }: { token: string }) {
              */}
             {!page.consenterIsPatient && (
               <>
-                <p>{t.consenterIntro}</p>
-                <Field label={t.consenterNameLabel}>
+                <p data-testid="telehealth-consenter-intro">
+                  {t.consenterIntro(
+                    TELEHEALTH_CONTENT.consent.relationshipPhrases[page.consenterRelationship ?? ''] ?? TELEHEALTH_CONTENT.consent.relationshipPhrases.other,
+                    page.patientGivenNames ?? '',
+                  )}
+                </p>
+                <Field label={t.consenterNameLabel} hint={t.consenterNameHint}>
                   {({ id, describedBy }) => (
                     <TextInput
                       id={id}

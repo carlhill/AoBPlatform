@@ -5691,12 +5691,14 @@ export const strings = {
           : outcome === 'did_not_proceed'
             ? 'Your practitioner has recorded that this consultation did not go ahead. There is nothing more to do here. Please close this page. If that is not right, contact your practice.'
             : 'Your practitioner has already recorded this consultation. There is nothing more to do here. Please close this page.',
-      consenterIntro: 'You are acting for the patient. Type your full name and your mobile number, then tick the box.',
+      consenterIntro: (relationshipPhrase: string, patientGivenNames: string) =>
+        `You are the ${relationshipPhrase} ${patientGivenNames}. Type your full name and your mobile number, then tick the box.`,
       consenterNameLabel: 'Your full name',
+      consenterNameHint: 'At least two names, e.g. Jane Citizen.',
       consenterMobileLabel: 'Your mobile number',
       consenterMobileHint: 'The practice may need to reach you, especially in an emergency.',
       consenterNameSlot: '[your full name]',
-      consenterNameNeeded: 'Type your full name, as you would sign it.',
+      consenterNameNeeded: 'Type your full name: at least two names, one of them three letters or more, e.g. Jane Citizen.',
       consenterMobileNeeded: 'Type a mobile number starting 04, so the practice can reach you.',
       invalidTitle: 'This link does not open anything',
       invalidBody: 'Check that the whole link was copied. If it still does not open, ask your practice for a new one.',

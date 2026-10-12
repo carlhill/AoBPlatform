@@ -135,6 +135,9 @@ export interface TelehealthPageView {
   readonly consultationId: string;
   /** False when someone acting for the patient agrees: the page then asks their full name and mobile (D-2026-10-12-03 item 12). */
   readonly consenterIsPatient: boolean;
+  /** For someone acting for the patient: the relationship key the provider chose, and the patient's given names, for "You are the carer for Juno". Null for the patient. */
+  readonly consenterRelationship: string | null;
+  readonly patientGivenNames: string | null;
   /** The one statement, from versioned content, as it will be recorded. */
   readonly statement: string;
   readonly consentKey: string;

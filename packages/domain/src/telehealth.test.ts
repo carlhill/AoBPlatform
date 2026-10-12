@@ -84,6 +84,9 @@ describe('the telehealth consent wording is versioned and neutral', () => {
     for (const key of ASSIGNOR_RELATIONSHIP_KEYS) expect(TELEHEALTH_CONTENT.consent.relationshipPhrases[key]).toBeTruthy();
     expect(isPlausibleConsenterName('Jane Citizen')).toBe(true);
     expect(isPlausibleConsenterName('J')).toBe(false);
+    expect(isPlausibleConsenterName('J Ada')).toBe(true);
+    expect(isPlausibleConsenterName('J A')).toBe(false);
+    expect(isPlausibleConsenterName('Jane')).toBe(false);
     expect(isPlausibleConsenterName('0412 345 678')).toBe(false);
     expect(isPlausibleConsenterName('jane@example.invalid')).toBe(false);
   });

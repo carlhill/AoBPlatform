@@ -30,6 +30,8 @@ const page = (state: string) => ({
   ahpraNumber: null,
   consultationId: 'TH-AB12-CD34',
   consenterIsPatient: true,
+  consenterRelationship: null,
+  patientGivenNames: null,
   statement: STATEMENT,
   consentKey: 'telehealth_consult_v3',
   contentVersion: 'telehealth-test',
@@ -93,7 +95,10 @@ describe('TelehealthPatientView', () => {
       if (url.endsWith(`/telehealth/link/${TOKEN}`)) return { status: 200, body: { state: 'open', practiceName: 'Sample Practice' } };
       if (url.endsWith('/code')) return { status: 201, body: { pageKey: PAGE_KEY } };
       if (url.endsWith('/page/agree')) return { status: 201, body: { ...page('agreed'), consenterIsPatient: false } };
-      return { status: 200, body: { ...page('code_checked'), consenterIsPatient: false, statement: carerStatement } };
+      return {
+        status: 200,
+        body: { ...page('code_checked'), consenterIsPatient: false, consenterRelationship: 'carer', patientGivenNames: 'Testy', statement: carerStatement },
+      };
     });
     render(<TelehealthPatientView token={TOKEN} />);
     fireEvent.change(await screen.findByLabelText(t.codeLabel), { target: { value: '123456' } });
@@ -103,6 +108,12 @@ describe('TelehealthPatientView', () => {
     // Before anything is typed the tick waits, and the statement shows where the name will go.
     expect(tick.hasAttribute('disabled')).toBe(true);
     expect(screen.getByText(/\[your full name\], carer for Testy/)).toBeTruthy();
+    // Said as their relationship, not "acting for the patient" (Carl, 12 Oct 2026).
+    expect(screen.getByTestId('telehealth-consenter-intro').textContent).toContain('You are the carer for Testy.');
+    // One name is not enough: the tick waits for two (D-2026-10-12-03 item 12).
+    fireEvent.change(screen.getByTestId('telehealth-consenter-name'), { target: { value: 'Jane' } });
+    fireEvent.change(screen.getByTestId('telehealth-consenter-mobile'), { target: { value: '0400 000 999' } });
+    expect(tick.hasAttribute('disabled')).toBe(true);
 
     fireEvent.change(screen.getByTestId('telehealth-consenter-name'), { target: { value: 'Jane Citizen' } });
     fireEvent.change(screen.getByTestId('telehealth-consenter-mobile'), { target: { value: '0400 000 999' } });

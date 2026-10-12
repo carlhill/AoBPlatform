@@ -748,7 +748,10 @@ export class TelehealthService {
     const consenterName = carer ? (consenter.name ?? '').trim().replace(/\s+/g, ' ') : null;
     const consenterMobile = carer ? normalisePhone(consenter.mobile ?? '') : null;
     if (carer && !isPlausibleConsenterName(consenterName ?? '')) {
-      throw new BadRequestException({ code: 'consenter_name_needed', message: 'Type your full name.' });
+      throw new BadRequestException({
+        code: 'consenter_name_needed',
+        message: 'Type your full name: at least two names, one of them three letters or more.',
+      });
     }
     if (carer && !isWellFormedMobile(consenterMobile ?? '')) {
       throw new BadRequestException({
@@ -921,6 +924,8 @@ export class TelehealthService {
       consentKey: TELEHEALTH_CONTENT.consent.key,
       contentVersion: TELEHEALTH_CONTENT_VERSION,
       consenterIsPatient,
+      consenterRelationship: consenterIsPatient ? null : session.consenterRelationship,
+      patientGivenNames: consenterIsPatient ? null : (patient?.givenNames ?? null),
       agreedAt: session.agreedAt?.toISOString() ?? null,
     };
   }
