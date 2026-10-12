@@ -5742,7 +5742,7 @@ export const strings = {
       dateOfBirth: (dob: string) => `Born ${dob}`,
       checkHeading: '2. Which details did you check on the call?',
       checkHint:
-        'Ask the person to tell you each detail, then compare it with the record shown here. Do not read the record out: they have not been checked yet. Tick each detail that matched, at least three. Only the kinds you ticked are kept, never the details.',
+        'Ask them to say each detail and compare it with the record. Do not read the record out. Tick at least three that matched; only the kinds are kept.',
       recordNone: 'not on the record',
       searchPlaceholder: 'Start typing a name or record number',
       recordNumber: (n: string) => `Record ${n}`,
@@ -5762,8 +5762,7 @@ export const strings = {
       relationshipChoose: 'Choose…',
       attested18: 'They have told me they are 18 or over',
       contactHeading: '4. Check the contact on file',
-      askContact:
-        'Ask: “What mobile number and email address should we send the link to?” Compare with the record. If it is wrong, correct it in the practice management system; it syncs through.',
+      askContact: 'Ask for their mobile and email and compare. If wrong, correct it in the practice management system.',
       mobileFull: (value: string) => `Mobile ${value}`,
       emailFull: (value: string) => `Email ${value}`,
       readBack: (where: string) => `Ask: “Is your ${where}?” If it is wrong, correct it in the practice management system; it syncs through.`,

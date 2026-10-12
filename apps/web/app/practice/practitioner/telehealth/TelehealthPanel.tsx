@@ -456,13 +456,16 @@ export function TelehealthPanel() {
 
           <section aria-labelledby="th-who">
             <h2 id="th-who">{p.whoHeading}</h2>
-            <Checkbox label={p.whoPatient} checked={isPatient === true} onCheckedChange={(on) => setIsPatient(on ? true : null)} testId="telehealth-who-patient" />
-            <Checkbox
-              label={p.whoSomeoneElse}
-              checked={isPatient === false}
-              onCheckedChange={(on) => setIsPatient(on ? false : null)}
-              testId="telehealth-who-someone-else"
-            />
+            {/* Side by side: one line, not two (Carl, 12 Oct 2026: "squeeze it"). */}
+            <div className={th.inline}>
+              <Checkbox label={p.whoPatient} checked={isPatient === true} onCheckedChange={(on) => setIsPatient(on ? true : null)} testId="telehealth-who-patient" />
+              <Checkbox
+                label={p.whoSomeoneElse}
+                checked={isPatient === false}
+                onCheckedChange={(on) => setIsPatient(on ? false : null)}
+                testId="telehealth-who-someone-else"
+              />
+            </div>
             {isPatient === false && (
               <>
                 <Field label={p.relationshipLabel}>
@@ -502,6 +505,8 @@ export function TelehealthPanel() {
                       {p.emailFull(contact.record.email)}
                     </p>
                   )}
+                  {/* Send by and Send on one row. */}
+                  <div className={th.sendRow}>
                   <Field label={p.channelLabel}>
                     {({ id, describedBy }) => (
                       <SelectInput id={id} describedBy={describedBy} value={channel} onChange={(e) => setChannel(e.target.value)} data-testid="telehealth-channel">
@@ -521,6 +526,7 @@ export function TelehealthPanel() {
                       {busy ? p.sending : p.send}
                     </Button>
                   )}
+                  </div>
                 </>
               )
             )}

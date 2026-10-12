@@ -229,3 +229,49 @@
   font-weight: 600;
   overflow-wrap: anywhere;
 }
+
+/* SQUEEZED (Carl, 12 Oct 2026): tighter steps, ticks closer together, rows instead of stacks. */
+.main {
+  gap: var(--s4);
+}
+
+.main section h2 {
+  margin: 0 0 var(--s2);
+  font-size: var(--text-lg);
+}
+
+.main section p {
+  margin: 0 0 var(--s2);
+}
+
+.checkRow {
+  padding: 2px 0;
+}
+
+.checkRow > div,
+.inline > div {
+  margin-bottom: 0;
+}
+
+.inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2) var(--s6);
+  margin-bottom: var(--s2);
+}
+
+.sendRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s3);
+  align-items: flex-end;
+}
+
+.sendRow > div {
+  margin-bottom: 0;
+  min-width: 14rem;
+}
+
+.sendRow > p {
+  margin: 0;
+}
