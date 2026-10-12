@@ -952,6 +952,43 @@ export const VAULT_EVENT_TYPES = [
   'aobprinter.chain_anchored',
   'aobprinter.chain_regressed',
   'aobprinter.chain_rebaselined',
+  /*
+   * A TELEHEALTH SESSION, FROM THE PROVIDER'S SEND TO ITS OUTCOME
+   * (TELEHEALTH-PLAN.md §6 item 8; approved by Carl, 12 Oct 2026,
+   * D-2026-10-12-02). Subject `TelehealthSession`. The exact payload shapes
+   * are `TelehealthVaultEvent` in apps/core/src/telehealth/telehealth-evidence.ts:
+   *
+   * `telehealth.session_opened` (practitioner) — patientId, practitionerId,
+   * affiliationId, verificationEventId, identifierTypeCount,
+   * consenterIsPatient, channel, contentVersion. The identity check itself
+   * is the existing `verification.staff_verified`; this names it by id.
+   *
+   * `telehealth.link_sent` (practitioner) — channel, sendCount, codeExpiresAt.
+   *
+   * `telehealth.code_checked` (system) — attempts.
+   *
+   * `telehealth.code_locked_out` (system) — attempts, reviewTaskId.
+   *
+   * `telehealth.consent_recorded` (system) — consentKey, contentVersion,
+   * consenterIsPatient.
+   *
+   * `telehealth.not_done` (practitioner) — reason, reasonsVersion, hasNote,
+   * fromState, consultationAt, recordedAt.
+   *
+   * `telehealth.did_not_proceed` (practitioner) — fromState, consultationAt,
+   * recordedAt.
+   *
+   * IDS, TYPES, CODES, COUNTS AND TIMES ONLY. Never the 6-digit code, a
+   * contact, a name or the `other` note — only whether there was one
+   * (hard rule 9, REQ-LOG-08).
+   */
+  'telehealth.session_opened',
+  'telehealth.link_sent',
+  'telehealth.code_checked',
+  'telehealth.code_locked_out',
+  'telehealth.consent_recorded',
+  'telehealth.not_done',
+  'telehealth.did_not_proceed',
 ] as const;
 
 export type VaultEventType = (typeof VAULT_EVENT_TYPES)[number];

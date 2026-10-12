@@ -19,7 +19,7 @@ import { TELEHEALTH_CONTENT, TELEHEALTH_NEUTRAL_WORDING_FORBIDDEN } from '@aobpl
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { TelehealthService } from '../src/telehealth/telehealth.service';
-import { TelehealthEvidence, type TelehealthEvidenceEntry } from '../src/telehealth/telehealth-evidence';
+import { TelehealthEvidence, outboxSink, type TelehealthEvidenceEntry } from '../src/telehealth/telehealth-evidence';
 import type { Actor } from '../src/auth/actor.decorator';
 import { parseCaptureToken } from '../src/capture/capture-token';
 import { createServicingProvider, deleteSeededAnchors } from './anchor';
@@ -69,7 +69,9 @@ describe('telehealth sessions (e2e, real Postgres)', () => {
     await app.init();
     prisma = app.get(PrismaService);
     telehealth = app.get(TelehealthService);
-    app.get(TelehealthEvidence).sink = async (_tx, entry) => {
+    // Capture each entry AND call through to the real outbox, on the write's own tx.
+    app.get(TelehealthEvidence).sink = async (tx, entry) => {
+      await outboxSink(tx, entry);
       recorded.push(entry);
     };
 
@@ -201,7 +203,7 @@ describe('telehealth sessions (e2e, real Postgres)', () => {
     const after = await telehealth.list(asPractitioner(gp.practitionerId), practiceId);
     expect(after.find((s) => s.id === sent.session.id)?.state).toBe('agreed');
 
-    // Every write handed its proposed event over, types and ids only.
+    // Every write handed its event over, types and ids only.
     expect(recorded.map((e) => e.event.type)).toEqual([
       'telehealth.session_opened',
       'telehealth.link_sent',
@@ -209,6 +211,29 @@ describe('telehealth sessions (e2e, real Postgres)', () => {
       'telehealth.consent_recorded',
     ]);
     for (const entry of recorded) expect(Object.values(entry.event.payload)).not.toContain(sent.code);
+
+    // And they reached the vault outbox, committed with their writes (hard rule 11): one row each, and
+    // exactly one consent although agree was pressed twice. (Sorted: two rows in one transaction can share
+    // an occurredAt, and the table has no sequence.)
+    const outbox = await prisma.vaultOutbox.findMany({
+      where: { subjectType: 'TelehealthSession', subjectId: sent.session.id },
+    });
+    expect(outbox.map((r) => r.type).sort()).toEqual(
+      ['telehealth.session_opened', 'telehealth.link_sent', 'telehealth.code_checked', 'telehealth.consent_recorded'].sort(),
+    );
+    const consent = outbox.filter((r) => r.type === 'telehealth.consent_recorded');
+    expect(consent).toHaveLength(1);
+    const consentPayload = consent[0]!.payload as Record<string, unknown>;
+    expect(Object.keys(consentPayload).sort()).toEqual(['consentKey', 'consenterIsPatient', 'contentVersion']);
+    // No value keys and no values on any row (hard rule 9): not the code, not the contact, not a name.
+    const valueKey = /^(code|note|mobile|email|phone|contact|destination|name|givenNames|familyName|dateOfBirth|address|ihi|medicare.*|token|pageKey)$/i;
+    for (const row of outbox) {
+      const payload = row.payload as Record<string, unknown>;
+      expect(Object.keys(payload).filter((k) => valueKey.test(k))).toEqual([]);
+      for (const value of [sent.code, '0400 000 412', 'testy@example.invalid', 'Telehealthson', 'Testy', pageKey]) {
+        expect(Object.values(payload)).not.toContain(value);
+      }
+    }
   });
 
   it('telehealth_identifier_types_never_values', async () => {
@@ -548,12 +573,27 @@ describe('telehealth sessions (e2e, real Postgres)', () => {
         tx.telehealthSession.findFirstOrThrow({ where: { id: sessionId } }),
       );
       const consents = recorded.filter((e) => e.subject.id === sessionId && e.event.type === 'telehealth.consent_recorded');
+      // The committed outbox follows the committed state: whichever write lost left no vault event behind.
+      const outboxTypes = (
+        await prisma.vaultOutbox.findMany({ where: { subjectType: 'TelehealthSession', subjectId: sessionId } })
+      ).map((r) => r.type);
+      const count = (type: string) => outboxTypes.filter((t) => t === type).length;
       if (row.state === 'not_done') {
         expect({ round, agreedAt: row.agreedAt, consents: consents.length }).toEqual({ round, agreedAt: null, consents: 0 });
+        expect({ round, consent: count('telehealth.consent_recorded'), notDone: count('telehealth.not_done') }).toEqual({
+          round,
+          consent: 0,
+          notDone: 1,
+        });
       } else {
         expect(row.state).toBe('agreed');
         expect(consents).toHaveLength(1);
         expect(marked).toMatch(/already agreed/);
+        expect({ round, consent: count('telehealth.consent_recorded'), notDone: count('telehealth.not_done') }).toEqual({
+          round,
+          consent: 1,
+          notDone: 0,
+        });
       }
     }
   });
@@ -591,15 +631,15 @@ describe('telehealth sessions (e2e, real Postgres)', () => {
     }
   });
 
-  it('fails closed outside development and test while the vault events are unapproved', async () => {
+  it('with the vault events approved, TELEHEALTH_ENABLED alone gates it, whatever NODE_ENV says', async () => {
+    // Requirement change, not a weakening: the NODE_ENV restriction existed only while the events had no
+    // vault type. Carl approved them on 12 Oct 2026 (D-2026-10-12-02), and every write now enqueues its event.
     const was = process.env.NODE_ENV;
     try {
-      for (const env of ['production', 'staging', '']) {
+      for (const env of ['production', 'staging', '', 'development', 'test']) {
         process.env.NODE_ENV = env;
-        expect({ env, enabled: telehealth.enabled() }).toEqual({ env, enabled: false });
+        expect({ env, enabled: telehealth.enabled() }).toEqual({ env, enabled: true });
       }
-      process.env.NODE_ENV = 'development';
-      expect(telehealth.enabled()).toBe(true);
     } finally {
       process.env.NODE_ENV = was;
     }

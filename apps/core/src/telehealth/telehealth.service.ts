@@ -99,21 +99,17 @@ export class TelehealthService {
    * ------------------------------------------------------------------ */
 
   /**
-   * OFF BY DEFAULT (`TELEHEALTH_ENABLED`), AND OFF EVERYWHERE BUT DEVELOPMENT
-   * AND TEST until the vault event types are approved: a domain write with no
-   * vault event must not run anywhere real (hard rule 11).
+   * OFF BY DEFAULT: `TELEHEALTH_ENABLED` alone gates it. Every write's vault
+   * event goes to the outbox in the write's own transaction (hard rule 11), so
+   * the old NODE_ENV restriction, which existed only while the event types
+   * awaited approval, is gone (Carl, 12 Oct 2026, D-2026-10-12-02).
+   *
+   * STILL FAILS CLOSED if the approval constant is ever turned back off: then
+   * nothing runs anywhere, rather than writes running without their events.
    */
   enabled(): boolean {
-    if (this.config.get<string>('TELEHEALTH_ENABLED', 'false') !== 'true') return false;
-    if (TELEHEALTH_VAULT_EVENTS_APPROVED) return true;
-    /*
-     * FAILS CLOSED. Until the vault event types are approved, writes without
-     * vault events are allowed ONLY where NODE_ENV says development or test.
-     * Staging, an unset NODE_ENV and anything else are refused (hard rule 11;
-     * review, 12 Oct 2026).
-     */
-    const env = this.config.get<string>('NODE_ENV') ?? '';
-    return env === 'development' || env === 'test';
+    if (!TELEHEALTH_VAULT_EVENTS_APPROVED) return false;
+    return this.config.get<string>('TELEHEALTH_ENABLED', 'false') === 'true';
   }
 
   private assertEnabled(): void {
