@@ -44,6 +44,17 @@ export interface TelehealthPatientRecord {
   readonly email: string | null;
 }
 
+/**
+ * ONE SESSION IN FULL, FOR A CALL-BACK (Carl, 12 Oct 2026): the session, the
+ * patient's record and contact read NOW from the PMS mirror (null if the record
+ * has gone), and the relationship of whoever agreed for the patient.
+ */
+export interface TelehealthSessionDetail {
+  readonly session: TelehealthSessionView;
+  readonly record: TelehealthPatientRecord | null;
+  readonly consenterRelationship: string | null;
+}
+
 /** The contact on the record. A null masked value means none is held for that transport. */
 export interface TelehealthMaskedContact {
   readonly patientId: string;
@@ -158,6 +169,7 @@ export const TELEHEALTH_ROUTES = {
   recordNotDone: 'POST /telehealth/not-done',
   markDidNotProceed: 'POST /telehealth/sessions/:id/did-not-proceed',
   markWentAhead: 'POST /telehealth/sessions/:id/went-ahead',
+  sessionDetail: 'GET /telehealth/sessions/:id',
   /** Patient page (public; the token or page key is the only credential). */
   landing: 'GET /telehealth/link/:token',
   enterCode: 'POST /telehealth/link/:token/code',

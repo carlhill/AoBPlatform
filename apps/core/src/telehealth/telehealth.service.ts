@@ -41,7 +41,9 @@ import type {
   TelehealthLinkLanding,
   TelehealthMaskedContact,
   TelehealthPageView,
+  TelehealthPatientRecord,
   TelehealthSendResult,
+  TelehealthSessionDetail,
   TelehealthSessionView,
 } from '@aobplatform/contracts';
 import { PrismaService } from '../prisma/prisma.service';
@@ -87,6 +89,45 @@ const NOTE_LOOKS_LIKE_A_VALUE = /\d{6,}|\S+@\S+\.\S+/;
  * NO IDENTIFIER VALUE, CONTACT VALUE OR CODE IS LOGGED, STORED OR RETURNED TO
  * THE PATIENT'S PAGE. The code is returned once, to the provider.
  */
+const PATIENT_RECORD_SELECT = {
+  id: true,
+  givenNames: true,
+  familyName: true,
+  dateOfBirth: true,
+  genderAsIdentified: true,
+  address: true,
+  patientRecordNumber: true,
+  ihi: true,
+  mobile: true,
+  email: true,
+} as const;
+
+/** The record as the provider's panel shows it, in full (D-2026-10-12-03 item 1). Shown, never stored. */
+function recordOf(patient: {
+  givenNames: string;
+  familyName: string;
+  dateOfBirth: Date;
+  genderAsIdentified: string | null;
+  address: string | null;
+  patientRecordNumber: string | null;
+  ihi: string | null;
+  mobile: string | null;
+  email: string | null;
+}): TelehealthPatientRecord {
+  return {
+    givenNames: patient.givenNames,
+    familyName: patient.familyName,
+    dateOfBirth: patient.dateOfBirth.toISOString().slice(0, 10),
+    gender: patient.genderAsIdentified,
+    address: patient.address,
+    patientRecordNumber: patient.patientRecordNumber,
+    ihi: patient.ihi,
+    // Only what would be sent to: a value the masker rejects is not a usable contact.
+    mobile: maskMobile(patient.mobile) ? patient.mobile : null,
+    email: maskEmail(patient.email) ? patient.email : null,
+  };
+}
+
 /** The states a practitioner records that close the link: the page says which (Carl, 12 Oct 2026). */
 const TELEHEALTH_OUTCOME_STATES: readonly string[] = ['went_ahead', 'did_not_proceed', 'not_done'];
 
@@ -209,40 +250,37 @@ export class TelehealthService {
   ): Promise<TelehealthMaskedContact> {
     const { practiceId } = await this.scope(actor, headerPracticeId);
     const patient = await this.prisma.withPractice(practiceId, (tx) =>
-      tx.patient.findFirst({
-        where: { id: patientId },
-        select: {
-          id: true,
-          givenNames: true,
-          familyName: true,
-          dateOfBirth: true,
-          genderAsIdentified: true,
-          address: true,
-          patientRecordNumber: true,
-          ihi: true,
-          mobile: true,
-          email: true,
-        },
-      }),
+      tx.patient.findFirst({ where: { id: patientId }, select: PATIENT_RECORD_SELECT }),
     );
     if (!patient) throw new NotFoundException('That patient is not on this practice’s records.');
     return {
       patientId: patient.id,
       maskedMobile: maskMobile(patient.mobile),
       maskedEmail: maskEmail(patient.email),
-      record: {
-        givenNames: patient.givenNames,
-        familyName: patient.familyName,
-        dateOfBirth: patient.dateOfBirth.toISOString().slice(0, 10),
-        gender: patient.genderAsIdentified,
-        address: patient.address,
-        patientRecordNumber: patient.patientRecordNumber,
-        ihi: patient.ihi,
-        // Only what would be sent to: a value the masker rejects is not a usable contact.
-        mobile: maskMobile(patient.mobile) ? patient.mobile : null,
-        email: maskEmail(patient.email) ? patient.email : null,
-      },
+      record: recordOf(patient),
     };
+  }
+
+  /**
+   * ONE OF MY SESSIONS, IN FULL, FOR A CALL-BACK (Carl, 12 Oct 2026): the
+   * patient's record and contact READ NOW from the PMS mirror (so a call-back
+   * uses today's number, not a copy), which kinds of detail were checked, who
+   * was on the call, and the carer's name and mobile. The practitioner's own
+   * sessions only; RLS keeps it to this practice. Nothing is written.
+   */
+  async detail(actor: Actor | undefined, headerPracticeId: string | undefined, sessionId: string): Promise<TelehealthSessionDetail> {
+    const { practiceId, practitionerId } = await this.scope(actor, headerPracticeId);
+    return this.prisma.withPractice(practiceId, async (tx) => {
+      const row = await tx.telehealthSession.findFirst({ where: { id: sessionId, practitionerId } });
+      if (!row) throw new NotFoundException('There is no telehealth session of yours with that id at this practice.');
+      const patient = await tx.patient.findFirst({ where: { id: row.patientId }, select: PATIENT_RECORD_SELECT });
+      const [session] = await this.views(tx, [row]);
+      return {
+        session: session!,
+        record: patient ? recordOf(patient) : null,
+        consenterRelationship: row.consenterIsPatient === false ? row.consenterRelationship : null,
+      };
+    });
   }
 
   /** This practitioner's sessions from the last day, newest first — what the live status polls. */

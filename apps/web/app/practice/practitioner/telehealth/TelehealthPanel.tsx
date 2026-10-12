@@ -31,7 +31,12 @@ import {
   TELEHEALTH_NOT_DONE_REASONS,
   TELEHEALTH_NOT_DONE_NOTE_MAX,
 } from '@aobplatform/domain';
-import type { TelehealthMaskedContact, TelehealthSendResult, TelehealthSessionView } from '@aobplatform/contracts';
+import type {
+  TelehealthMaskedContact,
+  TelehealthSendResult,
+  TelehealthSessionDetail,
+  TelehealthSessionView,
+} from '@aobplatform/contracts';
 import { Button, Checkbox, Chip, Field, Notice, SelectInput, Shell, TextInput } from '../../../ui';
 import { SessionControl } from '../../../SessionControl';
 import { strings } from '../../../strings';
@@ -143,6 +148,8 @@ export function TelehealthPanel() {
   const [sessions, setSessions] = useState<TelehealthSessionView[]>([]);
   /** The patient chosen last. A contact answer for anybody else arrived late and is dropped. */
   const latestChoice = useRef<string | null>(null);
+  /** Which session in the side panel is expanded to its details. */
+  const [openSession, setOpenSession] = useState<string | null>(null);
   /** Which not-done form is open: a session id, or 'new' for the chosen patient with no session. */
   const [notDoneFor, setNotDoneFor] = useState<string | null>(null);
 
@@ -315,6 +322,8 @@ export function TelehealthPanel() {
       const result = (await res.json()) as TelehealthSendResult | TelehealthSessionView;
       if ('code' in result) setSent(result);
       setNotDoneFor(null);
+      // AN OUTCOME ENDS THE CALL, SO THE FORM GOES BLANK (Carl, 12 Oct 2026). The session stays in the panel.
+      if (/(^|\/)(went-ahead|did-not-proceed|not-done)$/.test(path)) startNew();
       await loadSessions();
     } finally {
       setBusy(false);
@@ -565,7 +574,17 @@ export function TelehealthPanel() {
         <ul className={th.sessions}>
           {sessions.map((s) => (
             <li key={s.id} className={th.session} data-testid={`telehealth-session-${s.id}`}>
-              <strong>{s.patientName}</strong>
+              {/* Click the name for everything a call-back needs (Carl, 12 Oct 2026), without leaving the page. */}
+              <button
+                type="button"
+                className={th.sessionName}
+                aria-expanded={openSession === s.id}
+                onClick={() => setOpenSession(openSession === s.id ? null : s.id)}
+                data-testid={`telehealth-open-${s.id}`}
+              >
+                {s.patientName}
+              </button>
+              {openSession === s.id && <SessionDetails sessionId={s.id} headers={headers} />}
               <span className={th.reference} data-testid={`telehealth-id-${s.id}`}>
                 {p.consultationId(s.consultationId)}
               </span>
@@ -694,5 +713,75 @@ export function NotDoneForm({
         {p.cancel}
       </Button>
     </div>
+  );
+}
+
+/**
+ * ONE SESSION, EXPANDED IN THE SIDE PANEL (Carl, 12 Oct 2026): what a doctor
+ * needs to call back, in an emergency above all, without leaving the page.
+ * The patient's record and contact are read NOW from the practice's records
+ * (so a call-back uses today's number), with the kinds of detail checked on
+ * the call and who was on it. Read only; fetched each time it is opened.
+ */
+export function SessionDetails({ sessionId, headers }: { sessionId: string; headers: () => Record<string, string> }) {
+  const [detail, setDetail] = useState<TelehealthSessionDetail | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    void (async () => {
+      const res = await fetch(`${CORE_URL}/telehealth/sessions/${sessionId}`, { headers: headers() }).catch(() => null);
+      if (!live) return;
+      if (!res) return setFailed(strings.status.unreachable);
+      if (!res.ok) return setFailed(await refusal(res));
+      setDetail((await res.json()) as TelehealthSessionDetail);
+    })();
+    return () => {
+      live = false;
+    };
+  }, [sessionId, headers]);
+
+  if (failed) return <Notice tone="warn">{failed}</Notice>;
+  if (!detail) return <p className={styles.cardBody}>{p.detailLoading}</p>;
+  const { session, record } = detail;
+  const row = (label: string, value: string | null, testId?: string) => (
+    <>
+      <dt>{label}</dt>
+      <dd data-testid={testId} className={value ? undefined : th.recordNone}>
+        {value ?? p.recordNone}
+      </dd>
+    </>
+  );
+  return (
+    <dl className={th.details} data-testid={`telehealth-detail-${sessionId}`}>
+      {row(p.consultationIdLabel, session.consultationId)}
+      {record ? (
+        <>
+          {row(p.identifierType.name, `${record.givenNames} ${record.familyName}`)}
+          {row(p.identifierType.date_of_birth, record.dateOfBirth)}
+          {row(p.identifierType.gender, record.gender)}
+          {row(p.identifierType.address, record.address)}
+          {row(p.identifierType.patient_record_number, record.patientRecordNumber)}
+          {row(p.mobileLabel, record.mobile, `telehealth-detail-mobile-${sessionId}`)}
+          {row(p.emailLabel, record.email)}
+        </>
+      ) : (
+        row(p.recordLabel, null)
+      )}
+      {row(p.checkedLabel, session.identifierTypes.map((type) => p.identifierType[type] ?? type).join(', ') || null)}
+      {row(
+        p.whoLabel,
+        session.consenterIsPatient === false
+          ? p.whoSomeoneElseWas(
+              strings.kiosk.assignor.relationshipNames[detail.consenterRelationship ?? ''] ?? detail.consenterRelationship ?? '',
+              session.consenterName,
+            )
+          : session.consenterIsPatient
+            ? p.whoPatient
+            : null,
+      )}
+      {session.consenterIsPatient === false && row(p.consenterMobileLabel, session.consenterMobile, `telehealth-detail-carer-mobile-${sessionId}`)}
+      {row(p.sentByLabel, session.channel ? (p.channel[session.channel] ?? session.channel) : null)}
+    </dl>
   );
 }

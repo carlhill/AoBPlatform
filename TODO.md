@@ -48,6 +48,24 @@ container is recreated, and the token will expire again.
 
 ---
 
+## The Telehealth register: every telehealth consultation, with search and details (12 Oct 2026) - DO FRIDAY 16 OCT
+
+**Agreed by Carl, 12 Oct 2026** (D-2026-10-12-03 item 7). A page listing every
+telehealth consultation at the practice, with search (patient name or record
+number, consultation ID, doctor, date, status), and the SAME detail view as the
+side panel's expanded session: the patient's record and contact read now from
+the PMS mirror, the kinds of detail checked on the call, who was on the call,
+and the carer's name and mobile, because in an emergency the doctor may need to
+call back. A link to it from the doctor's telehealth page. Who sees it: a new
+role grant for the register (reception and the practice manager hold it); a
+doctor sees their own sessions only, enforced by the server. Reuse
+`SessionDetails` and `GET /telehealth/sessions/:id` (built 12 Oct for the side
+panel). Full brief: `TELEHEALTH-REGISTER-BRIEF.md` piece 2.
+
+**Why deferred:** a new role and page; Carl chose Friday.
+
+---
+
 ## Size both telehealth pages for a mobile phone (12 Oct 2026)
 
 **Agreed by Carl, 12 Oct 2026.** The patient's page

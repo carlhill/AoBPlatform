@@ -41,7 +41,13 @@ patient's page. Open: whether "complete" should also follow `not_done`.
   (`docker compose up -d --build vault`), and see TODO.md for the vault
   state-folder issue that a rebuild re-triggers.
 
-## Piece 2: the Telehealth register page (item 7)
+## Piece 2: the Telehealth register page (item 7) - FRIDAY 16 OCT (TODO.md)
+Carl, 12 Oct 2026, added: each row opens the same detail view as the doctor's
+side panel (`SessionDetails` in `TelehealthPanel.tsx`, `GET /telehealth/sessions/:id`,
+both built 12 Oct): record and contact read now, kinds checked, who was on the
+call, carer name and mobile; for a call-back in an emergency. The register's
+version of that endpoint must widen past "my own sessions" only for the role
+that grants the register. Link to the register from the doctor's telehealth page.
 - A new role grant for "Telehealth register" (follow ROLES.md); reception and
   practice manager hold it; a practitioner sees their own sessions only,
   enforced server-side, not by hiding rows.

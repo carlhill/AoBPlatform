@@ -17,7 +17,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 | | Count |
 |---|---|
-| Exported symbols indexed | 2594 |
+| Exported symbols indexed | 2596 |
 | Files scanned for exports | 597 |
 | Files scanned for imports | 640 |
 | Exports with no comment of their own | 1050 |
@@ -25,14 +25,14 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Sections
 
-- [Web components](#web-components) — 247
+- [Web components](#web-components) — 248
 - [Web hooks](#web-hooks) — 16
 - [Web helpers and constants](#web-helpers-and-constants) — 325
 - [Web types](#web-types) — 123
 - [Domain functions](#domain-functions) — 414
 - [Domain constants and content](#domain-constants-and-content) — 281
 - [Domain types](#domain-types) — 304
-- [Contracts types](#contracts-types) — 131
+- [Contracts types](#contracts-types) — 132
 - [Contracts functions and constants](#contracts-functions-and-constants) — 38
 - [Core services, controllers and modules](#core-services-controllers-and-modules) — 302
 - [Core helpers, constants and types](#core-helpers-constants-and-types) — 250
@@ -40,7 +40,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Web components
 
-247 exports.
+248 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -263,6 +263,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `ReviewQueuePage` | web:review/page.tsx |  | 0 |
 | `ReviewsPage` | web:practice/reviews/page.tsx |  | 0 |
 | `RootLayout` | web:layout.tsx |  | 0 |
+| `SessionDetails` | web:practice/practitioner/telehealth/TelehealthPanel.tsx | ONE SESSION, EXPANDED IN THE SIDE PANEL (Carl, 12 Oct 2026): what a doctor needs to call back, in an emergency above all, without leaving the page. | 0 |
 | `SetupPage` | web:practice/setup/page.tsx |  | 0 |
 | `StatusPage` | web:status/[token]/page.tsx |  | 0 |
 | `StopEmailChangePage` | web:practice/stop-email-change/page.tsx |  | 0 |
@@ -1799,7 +1800,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 
 ## Contracts types
 
-131 exports.
+132 exports.
 
 | Symbol | File | What it is | Used by |
 |---|---|---|---|
@@ -1850,6 +1851,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `TelehealthMaskedContact` | contracts:telehealth.ts | The contact on the record. | **2** · core:telehealth/telehealth.service.ts, web:practice/practitioner/telehealth/TelehealthPanel.tsx |
 | `TelehealthPageView` | contracts:telehealth.ts | The one page, after the code. | **2** · core:telehealth/telehealth.service.ts, web:patient/telehealth/[token]/TelehealthPatientView.tsx |
 | `TelehealthSendResult` | contracts:telehealth.ts | What Send (and Send again) returns. | **2** · core:telehealth/telehealth.service.ts, web:practice/practitioner/telehealth/TelehealthPanel.tsx |
+| `TelehealthSessionDetail` | contracts:telehealth.ts | ONE SESSION IN FULL, FOR A CALL-BACK (Carl, 12 Oct 2026): the session, the patient's record and contact read NOW from the PMS mirror (null if the record has gone), and the relationship of whoever agreed for the patient. | **2** · core:telehealth/telehealth.service.ts, web:practice/practitioner/telehealth/TelehealthPanel.tsx |
 | `TelehealthSessionView` | contracts:telehealth.ts | One session as the provider's panel sees it. | **2** · core:telehealth/telehealth.service.ts, web:practice/practitioner/telehealth/TelehealthPanel.tsx |
 | `AobPrinterChainRegressionView` | contracts:aobprinter-heartbeat.ts | A regression as stored on the row: the finding, and when it was made. | **1** · core:aobprinter-hosts/aobprinter-hosts.service.ts |
 | `AobPrinterExceptionStage` | contracts:aobprinter-heartbeat.ts | One of `AOBPRINTER_EXCEPTION_STAGES`. | **1** · aobprinter:store.ts |
@@ -1903,6 +1905,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `SilentRestoreClient` | contracts:auth.ts |  | **1** · web:AccessGuard.tsx |
 | `TelehealthCodeAccepted` | contracts:telehealth.ts | A right code. | **1** · core:telehealth/telehealth.service.ts |
 | `TelehealthCodeRefused` | contracts:telehealth.ts | A wrong code. | **1** · core:telehealth/telehealth.service.ts |
+| `TelehealthPatientRecord` | contracts:telehealth.ts | The chosen patient's record as the doctor's panel shows it, IN FULL (Carl, D-2026-10-12-03 item 1), so the doctor can compare what the person on the call says. | **1** · core:telehealth/telehealth.service.ts |
 | `ValidationRequest` | contracts:rules-engine.ts |  | **1** · core:rules-client/rules-client.module.ts |
 | `WriteArtefactRequest` | contracts:pms-adapter.ts |  | **1** · connector:mock-adapter.ts |
 | `WriteBackManifest` | contracts:print-capture.ts | THE WRITE-BACK MANIFEST — the small JSON beside the PDF in the patient's folder (DB4-AND-AOBL.md §7, row 3b). | **1** · aobprinter:collector.ts |
@@ -1931,7 +1934,6 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `SignatureChannel` | contracts:signature.ts |  | 0 |
 | `SignatureMethod` | contracts:signature.ts |  | 0 |
 | `TelehealthChannelWire` | contracts:telehealth.ts | Mirrors `TELEHEALTH_CHANNELS` in `@aobplatform/domain`. | 0 |
-| `TelehealthPatientRecord` | contracts:telehealth.ts | The chosen patient's record as the doctor's panel shows it, IN FULL (Carl, D-2026-10-12-03 item 1), so the doctor can compare what the person on the call says. | 0 |
 | `TelehealthSessionStateWire` | contracts:telehealth.ts | Mirrors `TELEHEALTH_SESSION_STATES` in `@aobplatform/domain`. | 0 |
 | `VaultOutboxRow` | contracts:vault.ts | Outbox row shape (FR-11.2). | 0 |
 

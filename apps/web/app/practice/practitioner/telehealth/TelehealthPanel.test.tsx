@@ -88,6 +88,14 @@ beforeEach(() => {
         return reply(201, { session: sessions[0], code: '042917', codeExpiresAt: '2026-10-12T00:10:00.000Z', queued: ['sms'] });
       }
       if (url.endsWith('/telehealth/sessions')) return reply(200, sessions);
+      if (url.endsWith('/telehealth/sessions/s-1')) {
+        return reply(200, {
+          session: { ...session('agreed'), consenterIsPatient: false, consenterName: 'Jane Citizen', consenterMobile: '0400000999' },
+          record: RECORD,
+          consenterRelationship: 'carer',
+        });
+      }
+      if (url.endsWith('/went-ahead')) return reply(201, session('went_ahead'));
       if (url.endsWith('/not-done')) {
         sessions = [session('not_done', { notDoneReason: 'emergency', outcomeRecordedAt: '2026-10-12T00:05:00.000Z' })];
         return reply(201, sessions[0]);
@@ -197,6 +205,25 @@ describe('TelehealthPanel', () => {
     expect(screen.queryByTestId('telehealth-hits')).toBeNull();
     expect(screen.queryByTestId('telehealth-mobile')).toBeNull();
     expect(screen.queryByTestId('telehealth-type-name')).toBeNull();
+  });
+
+  it('clicking the patient in the side panel shows what a call-back needs, read from the record', async () => {
+    sessions = [session('agreed')];
+    render(<TelehealthPanel />);
+    fireEvent.click(await screen.findByTestId('telehealth-open-s-1'));
+    const detail = await screen.findByTestId('telehealth-detail-s-1');
+    expect(screen.getByTestId('telehealth-detail-mobile-s-1').textContent).toBe('0400 000 412');
+    expect(screen.getByTestId('telehealth-detail-carer-mobile-s-1').textContent).toBe('0400000999');
+    expect(detail.textContent).toContain('Jane Citizen (Carer)');
+    expect(detail.textContent).toContain('TH-AB12-CD34');
+  });
+
+  it('an outcome blanks the form; the session stays in the panel', async () => {
+    sessions = [session('agreed')];
+    await choosePatient();
+    fireEvent.click(screen.getByTestId('telehealth-went-ahead-s-1'));
+    await waitFor(() => expect(screen.queryByTestId('telehealth-chosen')).toBeNull());
+    expect((screen.getByTestId('telehealth-search') as HTMLInputElement).value).toBe('');
   });
 
   it('an agreed session offers no new link and code', async () => {

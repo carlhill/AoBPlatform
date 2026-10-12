@@ -204,6 +204,16 @@ export class TelehealthController {
     return this.telehealth.markDidNotProceed(actor, practiceId, id, dto);
   }
 
+  /** One of my sessions in full, for a call-back (Carl, 12 Oct 2026). Read only. */
+  @Get('sessions/:id')
+  sessionDetail(
+    @Headers('x-practice-id') practiceId: string | undefined,
+    @Param('id', ParseUUIDPipe) id: string,
+    @SessionActor() actor: Actor | undefined,
+  ) {
+    return this.telehealth.detail(actor, practiceId, id);
+  }
+
   /** Consultation complete, after the patient agreed (D-2026-10-12-03 item 6). Same body as did-not-proceed. */
   @Post('sessions/:id/went-ahead')
   wentAhead(
