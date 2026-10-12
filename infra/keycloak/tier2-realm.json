@@ -241,10 +241,22 @@
         { "authenticator": "webauthn-authenticator-passwordless", "requirement": "REQUIRED", "priority": 10, "userSetupAllowed": false, "autheticatorFlow": false, "authenticatorConfig": "tier2-amr-passkey-console" },
         { "authenticator": "auth-password-form", "requirement": "DISABLED", "priority": 20, "userSetupAllowed": false, "autheticatorFlow": false }
       ]
+    },
+    {
+      "alias": "no-direct-grant",
+      "description": "The realm's direct grant flow: refuses every OAuth password grant before reading a credential (D-2026-10-11-01).",
+      "//": "Keycloak's stock direct grant flow takes a password and asks for a code only if the account has one, so a password grant would skip both tier 2's REQUIRED code and the operators' passkey. Bound realm-wide, so Keycloak's own admin-cli - created in every realm, not listed in this file - is refused too.",
+      "providerId": "basic-flow",
+      "topLevel": true,
+      "builtIn": false,
+      "authenticationExecutions": [
+        { "authenticator": "deny-access-authenticator", "requirement": "REQUIRED", "priority": 10, "userSetupAllowed": false, "autheticatorFlow": false }
+      ]
     }
   ],
 
   "browserFlow": "practice-browser",
+  "directGrantFlow": "no-direct-grant",
 
   "clients": [
     {
@@ -255,7 +267,7 @@
       "protocol": "openid-connect",
       "publicClient": true,
       "standardFlowEnabled": true,
-      "directAccessGrantsEnabled": true,
+      "directAccessGrantsEnabled": false,
       "serviceAccountsEnabled": false,
       "redirectUris": ["http://localhost:3100/*", "http://localhost:21100/*"],
       "webOrigins": ["http://localhost:3100", "http://localhost:21100"],
