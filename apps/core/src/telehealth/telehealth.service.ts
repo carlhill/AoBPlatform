@@ -618,8 +618,23 @@ export class TelehealthService {
       });
     }
     return this.prisma.withPractice(practiceId, async (tx) => {
-      const current = await tx.telehealthSession.findFirst({ where: { id: session.id } });
-      if (!current) throw new NotFoundException('This page is no longer open.');
+      // The row lock first, so a double press and a practitioner's "not done" queue behind it.
+      const locked = await tx.$queryRaw<{ id: string }[]>`
+        SELECT "id" FROM "telehealth_sessions" WHERE "id" = ${session.id}::uuid FOR UPDATE`;
+      const current = locked.length ? await tx.telehealthSession.findFirst({ where: { id: session.id } }) : null;
+      if (current && current.pageKeyHash !== session.pageKeyHash) {
+        // A fresh link was sent between the read and the press.
+        throw new GoneException({
+          code: 'page_replaced',
+          message: 'A newer link was sent for this consultation. Open the latest message.',
+        });
+      }
+      if (!current) {
+        throw new NotFoundException({
+          code: 'page_not_open',
+          message: 'This page is no longer open. Ask the practitioner on the call for a new link.',
+        });
+      }
       if (current.state === 'agreed') return this.pageView(tx, current);
       if (current.state === 'not_done' || current.state === 'did_not_proceed') {
         // Said by code, so the page shows what the practitioner recorded, not "the wording changed".
@@ -687,11 +702,23 @@ export class TelehealthService {
     });
   }
 
+  /**
+   * THE SESSION, LOCKED FOR THIS TRANSACTION. Every write that reads a state
+   * and then moves it takes the row lock first — as `enterCode` does — so a
+   * "not done" pressed while the patient presses the button, or a fresh link
+   * sent while the code is being typed, queue rather than overwrite each other
+   * (review, 12 Oct 2026). RLS hides another practice's session; the
+   * practitioner filter hides a colleague's.
+   */
   private async ownSession(tx: Prisma.TransactionClient, sessionId: string, practitionerId: string) {
-    // RLS hides another practice's session; the practitioner filter hides a colleague's.
-    const session = await tx.telehealthSession.findFirst({ where: { id: sessionId, practitionerId } });
-    if (!session) throw new NotFoundException('There is no telehealth session of yours with that id at this practice.');
-    return session;
+    const locked = await tx.$queryRaw<{ id: string }[]>`
+      SELECT "id" FROM "telehealth_sessions"
+      WHERE "id" = ${sessionId}::uuid AND "practitionerId" = ${practitionerId}::uuid
+      FOR UPDATE`;
+    if (locked.length === 0) {
+      throw new NotFoundException('There is no telehealth session of yours with that id at this practice.');
+    }
+    return tx.telehealthSession.findFirstOrThrow({ where: { id: sessionId } });
   }
 
   private async byPageKey(pageKey: string | undefined) {

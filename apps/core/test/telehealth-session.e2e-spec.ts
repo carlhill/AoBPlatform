@@ -514,6 +514,83 @@ describe('telehealth sessions (e2e, real Postgres)', () => {
     await request(app.getHttpServer()).get(`/telehealth/link/${forged}`).expect(404);
   });
 
+  /** A session with the code entered, ready for the button: the page key is returned. */
+  const atTheButton = async () => {
+    const sent = await telehealth.send(asPractitioner(gp.practitionerId), practiceId, {
+      patientId,
+      identifierTypes: checked,
+      channel: 'sms',
+      consenterIsPatient: true,
+    });
+    const token = await tokenFrom(sent.session.id);
+    const entered = await request(app.getHttpServer()).post(`/telehealth/link/${token}/code`).send({ code: sent.code }).expect(201);
+    return { sessionId: sent.session.id, pageKey: entered.body.pageKey as string };
+  };
+  const agreeOver = (pageKey: string) =>
+    request(app.getHttpServer())
+      .post('/telehealth/page/agree')
+      .set('x-telehealth-page-key', pageKey)
+      .send({ consentKey: TELEHEALTH_CONTENT.consent.key });
+
+  it('not done racing agree never leaves not_done with an agreement, and never a 500', async () => {
+    for (let round = 0; round < 6; round += 1) {
+      recorded.length = 0;
+      const { sessionId, pageKey } = await atTheButton();
+      const [agreed, marked] = await Promise.all([
+        agreeOver(pageKey),
+        telehealth
+          .markNotDone(asPractitioner(gp.practitionerId), practiceId, sessionId, { reason: 'emergency' })
+          .then(() => 'marked', (err: Error) => err.message),
+      ]);
+      expect([201, 409]).toContain(agreed.status);
+      if (agreed.status === 409) expect(agreed.body.code).toBe('session_not_done');
+      const row = await prisma.withPractice(practiceId, (tx) =>
+        tx.telehealthSession.findFirstOrThrow({ where: { id: sessionId } }),
+      );
+      const consents = recorded.filter((e) => e.subject.id === sessionId && e.event.type === 'telehealth.consent_recorded');
+      if (row.state === 'not_done') {
+        expect({ round, agreedAt: row.agreedAt, consents: consents.length }).toEqual({ round, agreedAt: null, consents: 0 });
+      } else {
+        expect(row.state).toBe('agreed');
+        expect(consents).toHaveLength(1);
+        expect(marked).toMatch(/already agreed/);
+      }
+    }
+  });
+
+  it('a double press of agree records exactly one consent', async () => {
+    recorded.length = 0;
+    const { sessionId, pageKey } = await atTheButton();
+    const replies = await Promise.all([agreeOver(pageKey), agreeOver(pageKey), agreeOver(pageKey)]);
+    for (const reply of replies) expect(reply.status).toBe(201);
+    const consents = recorded.filter((e) => e.subject.id === sessionId && e.event.type === 'telehealth.consent_recorded');
+    expect(consents).toHaveLength(1);
+  });
+
+  it('send again racing a code entry retires the page the code opened', async () => {
+    for (let round = 0; round < 6; round += 1) {
+      const sent = await telehealth.send(asPractitioner(gp.practitionerId), practiceId, {
+        patientId,
+        identifierTypes: checked,
+        channel: 'sms',
+        consenterIsPatient: true,
+      });
+      const token = await tokenFrom(sent.session.id);
+      const [entered] = await Promise.all([
+        request(app.getHttpServer()).post(`/telehealth/link/${token}/code`).send({ code: sent.code }),
+        telehealth.sendAgain(asPractitioner(gp.practitionerId), practiceId, sent.session.id, {}),
+      ]);
+      expect(entered.status).toBeLessThan(500);
+      if (entered.status === 201) {
+        // The code won the race, then the fresh link replaced its page: the page must say so.
+        const page = await request(app.getHttpServer()).get('/telehealth/page').set('x-telehealth-page-key', entered.body.pageKey);
+        expect({ round, status: page.status, code: page.body.code }).toEqual({ round, status: 410, code: 'page_replaced' });
+      } else {
+        expect(entered.body.code).toBe('link_invalid');
+      }
+    }
+  });
+
   it('fails closed outside development and test while the vault events are unapproved', async () => {
     const was = process.env.NODE_ENV;
     try {
@@ -531,7 +608,8 @@ describe('telehealth sessions (e2e, real Postgres)', () => {
   it('is off unless the flag is on', async () => {
     process.env.TELEHEALTH_ENABLED = 'false';
     try {
-      await request(app.getHttpServer()).get('/telehealth/link/not-a-token').expect(404);
+      const off = await request(app.getHttpServer()).get('/telehealth/link/not-a-token').expect(404);
+      expect(off.body.code).toBe('telehealth_not_enabled');
       expect(telehealth.enabled()).toBe(false);
       await expect(telehealth.list(asPractitioner(gp.practitionerId), practiceId)).rejects.toThrow(/not switched on/);
     } finally {
