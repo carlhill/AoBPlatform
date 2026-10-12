@@ -2027,6 +2027,7 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `RulesClientModule` | core:rules-client/rules-client.module.ts |  | **2** · core:agreements/agreements.module.ts, core:service-descriptions/service-descriptions.module.ts |
 | `SandboxGateway` | core:messaging/gateway.ts | Records what would have been sent. | **2** · core:messaging/messaging.module.ts, core:notices/notices.module.ts |
 | `SetupService` | core:organisations/setup.service.ts | The practice setup hub. | **2** · core:organisations/organisations.controller.ts, core:organisations/organisations.module.ts |
+| `SignedDb4RenderRefusal` | core:render/signed-db4-document.ts |  | **2** · core:agreements/signed-db4.service.ts, core:render/signed-db4-renderer.ts |
 | `SignedDb4Renderer` | core:render/signed-db4-renderer.ts | `signed-db4-1` — THE PRACTICE'S OWN FORM, BACK IN THE CHART FOLDER, WITH THE COST ON IT AND THE PATIENT'S SIGNATURE AT THE BOTTOM (D-2026-09-14-02/-03). | **2** · core:agreements/signed-db4.service.ts, core:render/renderer-registry.ts |
 | `SignedDb4Service` | core:agreements/signed-db4.service.ts | PRODUCE THE SIGNED-DB4 — the practice's own form, reproduced by us, with the cost printed, the Medicare card number in full and the patient's signature at the bottom (D-2026-09-14-02/-03; DB4-AND-AOBL.md §12). | **2** · core:agreements/agreements.module.ts, core:agreements/agreements.service.ts |
 | `TabletSessionsModule` | core:tablet-sessions/tablet-sessions.module.ts |  | **2** · core:app.module.ts, core:patients/patients.module.ts |
@@ -2135,7 +2136,6 @@ This is required reading before you write a component, a hook or a helper (wow.m
 | `SetServiceDescriptionDto` | core:service-descriptions/service-descriptions.controller.ts | The chosen words. | **1** · core:dev-seed/dev-seed.controller.ts |
 | `SetSessionStateDto` | core:tablet-sessions/tablet-sessions.dto.ts | `POST /kiosk/session/:id/state` — the tablet says what it is showing. | **1** · core:tablet-sessions/kiosk-session.controller.ts |
 | `SignDto` | core:agreements/agreements.dto.ts |  | **1** · core:agreements/agreements.controller.ts |
-| `SignedDb4RenderRefusal` | core:render/signed-db4-document.ts |  | **1** · core:render/signed-db4-renderer.ts |
 | `SimpleWebAuthnAdapter` | core:portal/portal-webauthn.ts | The real one. | **1** · core:portal/portal.module.ts |
 | `SurfaceGuard` | core:practices/surface.guard.ts | DOES THIS PRACTICE USE THIS PART OF AoB? | **1** · core:practices/practices.module.ts |
 | `TabletSessionsController` | core:tablet-sessions/tablet-sessions.controller.ts | RECEPTION'S SIDE OF THE PUSH — `/practice/tablet` talks to this (TODO.md "Two front doors", Carl 4 Sep 2026). | **1** · core:tablet-sessions/tablet-sessions.module.ts |
