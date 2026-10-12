@@ -227,10 +227,79 @@ const EMPTY_SERVICE: ServiceRow = {
   benefitAssigned: '',
 };
 
+/* ---------------------------------------------------------------------------
+ * LOAD TEST AGREEMENTS (Carl, 12 October 2026: *"put a button at the top of
+ * the test tool for me to load test agreements"*).
+ *
+ * ONE PRESS, FIVE DB4s, FIVE AGREEMENTS ON THE DESK — and still through the
+ * one door. Core's dev-only `POST /dev/aobprinter-test-patients` ensures the
+ * five fake patients exist (a DB4 matches a patient and never creates one)
+ * and says which servicing provider numbers the practice knows; everything
+ * after that is this tool printing forms exactly as a tester would, through
+ * `postDraft` — the same `envelopeWithHash` and the same
+ * `POST /inbound/print-jobs` the Print to AoB button uses.
+ *
+ * ONLY PRESETS THAT PLACE. Each shape below becomes an agreement; the
+ * "refused at the door" presets do not, and a button called "load test
+ * agreements" that loaded refusals would be lying about its own name. The
+ * shapes that fire a band (no amount, no IRN) still place — the band is on
+ * the agreement, which is the point of loading them.
+ * ------------------------------------------------------------------------ */
+const LOAD_TEST_PRESET_KEYS = ['clean', 'ragged-amounts', 'long-form', 'no-amount', 'no-irn'] as const;
+
+/** What the endpoint answers. Dev only, which is why it may carry names. */
+interface TestPatients {
+  readonly patients: ReadonlyArray<{
+    patientRecordNumber: string;
+    givenNames: string;
+    familyName: string;
+    dateOfBirth: string;
+  }>;
+  readonly servicingProviderNumbers: readonly string[];
+  readonly created: number;
+}
+
+/** One form of a press, and what became of it. */
+interface LoadRow {
+  readonly formReference: string;
+  readonly patientName: string;
+  readonly presetLabel: string;
+  readonly httpStatus: number;
+  readonly error?: string;
+  readonly state?: string;
+  readonly placed?: boolean;
+  readonly reason?: string | null;
+}
+
+type LoadResult =
+  | { readonly kind: 'refused'; readonly text: string }
+  | { readonly kind: 'done'; readonly created: number; readonly providerNumber: string; readonly rows: LoadRow[] };
+
+/** The tester's local date, YYYY-MM-DD — the desk reads today's visits. */
+function localDate(): string {
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
+/** How many times a press reads a job back, and how long between reads. */
+const LOAD_POLLS = 10;
+const LOAD_POLL_MS = 700;
+
+/** One line per form, worded from the outcome core actually recorded. */
+function loadRowInWords(row: LoadRow): string {
+  if (row.error !== undefined) return `refused at the door, HTTP ${row.httpStatus}: ${row.error}`;
+  if (row.placed === true) return 'placed — an agreement is on the desk.';
+  if (row.placed === false) return `nothing was placed — ${row.reason ?? 'core recorded no reason code'}.`;
+  return `core had not finished with it after ${LOAD_POLLS} reads (state: ${row.state ?? 'unknown'}). Use Check again on its row below.`;
+}
+
 export function AobPrinterTool() {
   const [draft, setDraft] = useState<Draft>({ ...BLANK, formReference: '', patientRecordNumber: '' });
   const [sent, setSent] = useState<Sent[]>([]);
   const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [loadResult, setLoadResult] = useState<LoadResult | null>(null);
   const [preview, setPreview] = useState(false);
   /*
    * THE FORMS ALREADY SENT (Carl, 28 September 2026: *"we need a drop down of
@@ -311,24 +380,69 @@ export function AobPrinterTool() {
     });
   }, []);
 
-  /** What became of it — state and CODES, never the stored envelope. */
+  /** What became of it — state and CODES, never the stored envelope. Null when it could not be read. */
+  const readOutcome = useCallback(async (jobId: string, practiceId: string) => {
+    try {
+      const res = await fetch(`${coreBaseUrl()}/inbound/print-jobs/${jobId}`, {
+        headers: { 'x-practice-id': practiceId },
+      });
+      if (!res.ok) return null;
+      return (await res.json()) as { state?: string; outcome?: unknown };
+    } catch {
+      /* The tool is a bench instrument; a failed poll is not worth a banner. */
+      return null;
+    }
+  }, []);
+
   const refreshOutcome = useCallback(
     async (jobId: string, practiceId: string) => {
-      try {
-        const res = await fetch(`${coreBaseUrl()}/inbound/print-jobs/${jobId}`, {
-          headers: { 'x-practice-id': practiceId },
-        });
-        if (!res.ok) return;
-        const row = (await res.json()) as { state?: string; outcome?: unknown };
-        setSent((rows) =>
-          rows.map((r) => (r.jobId === jobId ? { ...r, state: row.state, outcome: row.outcome } : r)),
-        );
-      } catch {
-        /* The tool is a bench instrument; a failed poll is not worth a banner. */
-      }
+      const row = await readOutcome(jobId, practiceId);
+      if (!row) return;
+      setSent((rows) =>
+        rows.map((r) => (r.jobId === jobId ? { ...r, state: row.state, outcome: row.outcome } : r)),
+      );
     },
-    [],
+    [readOutcome],
   );
+
+  /**
+   * THE ONE SEND PATH: a draft becomes an envelope, is hashed, and goes through
+   * `POST /inbound/print-jobs`. Print to AoB, Reprint as a correction and Load
+   * test agreements all come through here, so none of them can reach further
+   * than a real driver does.
+   */
+  const postDraft = useCallback(async (outgoing: Draft): Promise<Sent> => {
+    const body = await envelopeWithHash(outgoing);
+    const res = await fetch(`${coreBaseUrl()}/inbound/print-jobs`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-practice-id': outgoing.practiceId },
+      body: JSON.stringify(body),
+    });
+    const text = await res.text();
+    let parsed: { id?: string; duplicate?: boolean; message?: unknown } = {};
+    try {
+      parsed = JSON.parse(text) as typeof parsed;
+    } catch {
+      parsed = { message: text.slice(0, 400) };
+    }
+    return {
+      /*
+       * THE TESTER'S OWN CLOCK (Carl, 28 September 2026: *"what date is on
+       * the top right. My PC says 6:25 PM AEST"*). `toISOString` is UTC, so
+       * a Sydney afternoon read back as a morning and every row looked ten
+       * hours stale. The instant was always right; only the zone was wrong.
+       * A bench instrument is read next to a wall clock, so it shows the
+       * wall clock's time.
+       */
+      at: localStamp(),
+      formReference: outgoing.formReference,
+      jobId: parsed.id ?? null,
+      sourceSha256: String(body.sourceSha256),
+      httpStatus: res.status,
+      duplicate: Boolean(parsed.duplicate),
+      error: res.ok ? undefined : JSON.stringify(parsed.message ?? parsed).slice(0, 400),
+    };
+  }, []);
 
   /**
    * SEND, OPTIONALLY OVERRIDING A FIELD OF THE DRAFT.
@@ -348,36 +462,7 @@ export function AobPrinterTool() {
     const outgoing: Draft = override ? { ...draft, ...override } : draft;
     setBusy(true);
     try {
-      const body = await envelopeWithHash(outgoing);
-      const res = await fetch(`${coreBaseUrl()}/inbound/print-jobs`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-practice-id': outgoing.practiceId },
-        body: JSON.stringify(body),
-      });
-      const text = await res.text();
-      let parsed: { id?: string; duplicate?: boolean; message?: unknown } = {};
-      try {
-        parsed = JSON.parse(text) as typeof parsed;
-      } catch {
-        parsed = { message: text.slice(0, 400) };
-      }
-      const record: Sent = {
-        /*
-         * THE TESTER'S OWN CLOCK (Carl, 28 September 2026: *"what date is on
-         * the top right. My PC says 6:25 PM AEST"*). `toISOString` is UTC, so
-         * a Sydney afternoon read back as a morning and every row looked ten
-         * hours stale. The instant was always right; only the zone was wrong.
-         * A bench instrument is read next to a wall clock, so it shows the
-         * wall clock's time.
-         */
-        at: localStamp(),
-        formReference: outgoing.formReference,
-        jobId: parsed.id ?? null,
-        sourceSha256: String(body.sourceSha256),
-        httpStatus: res.status,
-        duplicate: Boolean(parsed.duplicate),
-        error: res.ok ? undefined : JSON.stringify(parsed.message ?? parsed).slice(0, 400),
-      };
+      const record = await postDraft(outgoing);
       setSent((rows) => [record, ...rows]);
       /*
        * THE HANDLER RUNS AFTER THE 202. A single delayed read is enough on a
@@ -394,7 +479,7 @@ export function AobPrinterTool() {
     } finally {
       setBusy(false);
     }
-  }, [draft, refreshOutcome, loadList]);
+  }, [draft, postDraft, refreshOutcome, loadList]);
 
   /**
    * CORRECTED FROM THE PMS AND REPRINTED — Carl's second half, as one button.
@@ -415,6 +500,146 @@ export function AobPrinterTool() {
     },
     [send],
   );
+
+  /**
+   * LOAD TEST AGREEMENTS — see the block above `AobPrinterTool`.
+   *
+   * A FRESH FORM REFERENCE PER FORM PER PRESS. The reference is what makes a
+   * DB4 the same form (`db4:<formReference>`), so reusing one would reprint
+   * the last batch rather than load a new one.
+   *
+   * THE SUMMARY SAYS WHAT CORE RECORDED, per form: placed, the reason code it
+   * gave for placing nothing, the door's own refusal, or that it had not
+   * finished yet. Never a guess about why.
+   */
+  const loadTestAgreements = useCallback(async () => {
+    const practiceId = draft.practiceId.trim();
+    setLoading(true);
+    setLoadResult(null);
+    try {
+      let res: Response;
+      try {
+        res = await fetch(`${coreBaseUrl()}/dev/aobprinter-test-patients`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-practice-id': practiceId },
+          body: '{}',
+        });
+      } catch (err) {
+        setLoadResult({
+          kind: 'refused',
+          text: `Could not reach core at ${coreBaseUrl()} (${err instanceof Error ? err.message : String(err)}). Nothing was sent.`,
+        });
+        return;
+      }
+      const answer = (await res.json().catch(() => ({}))) as Partial<TestPatients> & {
+        reason?: string;
+        message?: unknown;
+      };
+      if (!res.ok) {
+        const said = typeof answer.message === 'string' ? answer.message : JSON.stringify(answer.message ?? answer);
+        setLoadResult({
+          kind: 'refused',
+          text: `Core refused to set up the test patients (HTTP ${res.status}${answer.reason ? `, ${answer.reason}` : ''}): ${said} Nothing was sent.`,
+        });
+        return;
+      }
+      const patients = answer.patients ?? [];
+      const numbers = answer.servicingProviderNumbers ?? [];
+      // The presets' own servicing number when the practice knows it, so the page matches the presets.
+      const servicing = PRESETS[0]!.apply(BLANK).providers.find((p) => p.role === 'servicing')?.providerNumber;
+      const providerNumber = servicing && numbers.includes(servicing) ? servicing : numbers[0];
+      if (!providerNumber || patients.length === 0) {
+        setLoadResult({
+          kind: 'refused',
+          text: `Core answered with ${patients.length} test patient(s) and ${numbers.length} servicing provider number(s), so there was nothing to print. Nothing was sent.`,
+        });
+        return;
+      }
+
+      const today = localDate();
+      const stamp = Date.now().toString(36).toUpperCase();
+      const forms = patients.map((p, i) => {
+        const preset =
+          PRESETS.find((x) => x.key === LOAD_TEST_PRESET_KEYS[i % LOAD_TEST_PRESET_KEYS.length]) ?? PRESETS[0]!;
+        const started = startFromPreset(preset, {
+          ...BLANK,
+          practiceId,
+          patientRecordNumber: p.patientRecordNumber,
+          givenNames: p.givenNames,
+          familyName: p.familyName,
+        });
+        const outgoing: Draft = {
+          ...started,
+          dateOfBirth: p.dateOfBirth,
+          formReference: `LOAD-${stamp}-${String(i + 1).padStart(2, '0')}`,
+          serviceDate: today,
+          services: started.services.map((s) => ({ ...s, serviceDate: today })),
+          providers: started.providers.map((pr) => (pr.role === 'servicing' ? { ...pr, providerNumber } : pr)),
+        };
+        return { outgoing, patientName: `${p.givenNames} ${p.familyName}`, presetLabel: preset.label };
+      });
+
+      const posted: Array<{ form: (typeof forms)[number]; record: Sent | null; failure?: string }> = [];
+      for (const form of forms) {
+        try {
+          posted.push({ form, record: await postDraft(form.outgoing) });
+        } catch (err) {
+          posted.push({ form, record: null, failure: err instanceof Error ? err.message : String(err) });
+        }
+      }
+      setSent((rows) => [
+        ...posted.flatMap((p) => (p.record ? [p.record] : [])).reverse(),
+        ...rows,
+      ]);
+
+      /* The handler runs after the 202, so read each job back until core has finished with it. */
+      const finished = new Map<string, { state?: string; outcome?: unknown }>();
+      const lastState = new Map<string, string | undefined>();
+      const pending = () =>
+        posted.flatMap((p) => (p.record?.jobId && !finished.has(p.record.jobId) ? [p.record.jobId] : []));
+      for (let attempt = 0; attempt < LOAD_POLLS && pending().length > 0; attempt++) {
+        if (attempt > 0) await new Promise((r) => window.setTimeout(r, LOAD_POLL_MS));
+        for (const id of pending()) {
+          const row = await readOutcome(id, practiceId);
+          if (!row) continue;
+          if (row.state === 'done' || row.state === 'dead') finished.set(id, row);
+          else lastState.set(id, row.state);
+        }
+      }
+      setSent((rows) =>
+        rows.map((r) => {
+          const row = r.jobId ? finished.get(r.jobId) : undefined;
+          return row ? { ...r, state: row.state, outcome: row.outcome } : r;
+        }),
+      );
+
+      const rows: LoadRow[] = posted.map(({ form, record, failure }) => {
+        const base = {
+          formReference: form.outgoing.formReference,
+          patientName: form.patientName,
+          presetLabel: form.presetLabel,
+        };
+        if (!record) return { ...base, httpStatus: 0, error: `the request did not complete (${failure})` };
+        if (record.error !== undefined) return { ...base, httpStatus: record.httpStatus, error: record.error };
+        const row = record.jobId ? finished.get(record.jobId) : undefined;
+        if (!row) {
+          return { ...base, httpStatus: record.httpStatus, state: record.jobId ? lastState.get(record.jobId) : undefined };
+        }
+        const db4 = ((row.outcome as Record<string, unknown> | null)?.db4 ?? null) as Db4Part | null;
+        return {
+          ...base,
+          httpStatus: record.httpStatus,
+          state: row.state,
+          placed: db4?.placed === true,
+          reason: db4 ? (db4.reason ?? null) : `job ${row.state} with no DB4 outcome`,
+        };
+      });
+      setLoadResult({ kind: 'done', created: answer.created ?? 0, providerNumber, rows });
+      void loadList(practiceId);
+    } finally {
+      setLoading(false);
+    }
+  }, [draft.practiceId, postDraft, readOutcome, loadList]);
 
   /** One line per stored form — and the same text the filter matches on. */
   const existingLabel = useCallback(
@@ -462,6 +687,53 @@ export function AobPrinterTool() {
     <main className={styles.page}>
       <header className={styles.head}>
         <h1 className={styles.title}>AOBPrinter test tool</h1>
+        <div className={styles.panel} role="region" aria-labelledby="load-h">
+          <h2 id="load-h" className={styles.h2}>
+            Load test agreements
+          </h2>
+          <div className={styles.actions}>
+            <button
+              type="button"
+              className={styles.primary}
+              onClick={() => void loadTestAgreements()}
+              disabled={loading || busy}
+            >
+              {loading ? 'Loading test agreements…' : 'Load test agreements'}
+            </button>
+          </div>
+          <p className={styles.actionsNote}>
+            Prints five DB4s for practice <code>{draft.practiceId || '(none set)'}</code>, one per fake test
+            patient (PMS patient IDs <code>DB4TEST-01</code> to <code>DB4TEST-05</code>, created by core the first
+            time and reused after), through the same <code>/inbound/print-jobs</code> door as Print to AoB. The
+            five shapes are ones that place: {LOAD_TEST_PRESET_KEYS.map((k) => PRESETS.find((p) => p.key === k)?.label ?? k).join('; ')}. Each press uses new form references and today&rsquo;s date, so it adds five
+            new agreements rather than reprinting the last five.
+          </p>
+          <div aria-live="polite">
+            {loadResult?.kind === 'refused' ? <p className={styles.outcomeLeadBad}>{loadResult.text}</p> : null}
+            {loadResult?.kind === 'done' ? (
+              <div className={styles.outcome}>
+                <p
+                  className={
+                    loadResult.rows.every((r) => r.placed === true) ? styles.outcomeLead : styles.outcomeLeadBad
+                  }
+                >
+                  {`Sent ${loadResult.rows.filter((r) => r.error === undefined).length} of ${loadResult.rows.length} to core; ${loadResult.rows.filter((r) => r.placed === true).length} placed an agreement.`}
+                </p>
+                <p className={styles.outcomeNote}>
+                  {`Servicing provider number ${loadResult.providerNumber}. ${loadResult.created === 0 ? 'The test patients were already on file.' : `Core created ${loadResult.created} test patient(s) first.`}`}
+                </p>
+                <ul className={styles.outcomeNote}>
+                  {loadResult.rows.map((r) => (
+                    <li key={r.formReference}>
+                      <code>{r.formReference}</code> · {r.patientName} · {r.presetLabel}:{' '}
+                      <span className={r.placed === true ? styles.ok : styles.bad}>{loadRowInWords(r)}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </div>
+        </div>
         <p className={styles.lead}>
           Stands in for the practice&rsquo;s print driver. Composes a DB4 print record and posts it to{' '}
           <code>{coreBaseUrl()}/inbound/print-jobs</code> — the same door, the same DTOs. Dev only:
